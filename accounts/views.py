@@ -3,12 +3,13 @@ from datetime import date
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny # اضافه شد برای باز کردن دسترسی عمومی
+from rest_framework.permissions import AllowAny, IsAuthenticated # اضافه شد برای باز کردن دسترسی عمومی
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 
-from .models import User, OTPRequest
+from .models import BankCard, User, OTPRequest
 from .serializers import (
+    BankCardSerializer,
     ResetPasswordConfirmSerializer,
     ResetPasswordOTPSerializer,
     SendOTPSerializer, 
@@ -257,3 +258,37 @@ class ResetPasswordConfirm(APIView):
             return Response({"error": "کد نامعتبر یا منقضی شده است"}, status=400)
             
         return Response(serializer.errors, status=400)
+    
+
+class UserBankCards(APIView):
+    permission_classes = [IsAuthenticated] # فقط کاربران لاگین شده
+
+    def get(self, request):
+        """لیست کارت‌های بانکی کاربر"""
+        cards = BankCard.objects.filter(user=request.user, is_active=True)
+        serializer = BankCardSerializer(cards, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        """ثبت کارت بانکی جدید"""
+        serializer = BankCardSerializer(data=request.data)
+        if serializer.is_valid():
+            # بررسی تعداد کارت‌ها (مثلاً محدودیت ۵ کارت برای هر کاربر)
+            if BankCard.objects.filter(user=request.user).count() >= 5:
+                return Response({"error": "شما حداکثر می‌توانید ۵ کارت ثبت کنید"}, status=400)
+            
+            serializer.save(user=request.user)
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+class DeleteBankCard(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, card_id):
+        """غیرفعال کردن (حذف نرم) کارت بانکی"""
+        card = BankCard.objects.filter(user=request.user, id=card_id).first()
+        if card:
+            card.is_active = False # به جای حذف فیزیکی، غیرفعالش می‌کنیم
+            card.save()
+            return Response({"message": "کارت با موفقیت حذف شد"}, status=200)
+        return Response({"error": "کارت یافت نشد"}, status=404)

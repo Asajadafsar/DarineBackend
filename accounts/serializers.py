@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, OTPRequest
+from .models import BankCard, User, OTPRequest
 from django.contrib.auth.hashers import make_password
 
 class SendOTPSerializer(serializers.Serializer):
@@ -35,3 +35,9 @@ class ResetPasswordConfirmSerializer(serializers.Serializer):
     mobile = serializers.CharField(max_length=11)
     code = serializers.CharField(max_length=6)
     new_password = serializers.CharField(write_only=True, min_length=8)
+
+class BankCardSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BankCard
+        fields = ['id', 'card_number', 'bank_name', 'is_active']
+        read_only_fields = ['id']

@@ -74,3 +74,18 @@ def is_expired(self):
     # افزایش زمان انقضا به 10 دقیقه برای تست راحت‌تر
     expire_time = self.created_at + timedelta(minutes=10)
     return now > expire_time
+
+
+class BankCard(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cards', verbose_name="کاربر")
+    card_number = models.CharField(max_length=16, verbose_name="شماره کارت")
+    bank_name = models.CharField(max_length=50, blank=True, null=True, verbose_name="نام بانک")
+    is_active = models.BooleanField(default=True, verbose_name="وضعیت فعال")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "کارت بانکی"
+        verbose_name_plural = "کارت‌های بانکی"
+
+    def __str__(self):
+        return f"{self.user.mobile} - {self.card_number}"

@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import RegisterStepOne, RegisterStepTwo, RegisterStepThree , LoginWithPassword , LoginWithOTP, ResetPasswordConfirm, ResetPasswordRequest
+from .views import DeleteBankCard, RegisterStepOne, RegisterStepTwo, RegisterStepThree , LoginWithPassword , LoginWithOTP, ResetPasswordConfirm, ResetPasswordRequest, UserBankCards
 
 urlpatterns = [
     path('send-otp/', RegisterStepOne.as_view(), name='send_otp'),
@@ -9,4 +9,6 @@ urlpatterns = [
     path('login/otp/', LoginWithOTP.as_view()),
     path('reset-password/request/', ResetPasswordRequest.as_view(), name='reset_password_request'),
     path('reset-password/confirm/', ResetPasswordConfirm.as_view(), name='reset_password_confirm'),
+    path('cards/', UserBankCards.as_view(), name='user_cards'),
+    path('cards/<int:card_id>/', DeleteBankCard.as_view(), name='delete_card'),
 ]
