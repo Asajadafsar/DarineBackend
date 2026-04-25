@@ -3,10 +3,12 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from decimal import Decimal
-from .models import GoldInventory, GoldTransaction
+
+from silver_app.models import SilverInventory, SilverTransaction
+from .models import AdminBankInfo, FinancialTransaction, GoldInventory, GoldTransaction
 from .utils import get_live_gold_price
 from .models import GoldInventory, GoldTransaction, Wallet
-
+from .utils import get_live_gold_price
 
 class BuyGold(APIView):
     permission_classes = [IsAuthenticated]
@@ -156,24 +158,160 @@ class SellGold(APIView):
         })
     
 
+from silver_app.models import SilverInventory
+from .utils import get_live_gold_price, get_live_silver_price
+
 class UserAssets(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        price_per_gram = get_live_gold_price()
-        inventory, _ = GoldInventory.objects.get_or_create(user=request.user)
+        # دریافت قیمت‌های لحظه‌ای
+        gold_price = get_live_gold_price()
+        silver_price = get_live_silver_price()
+
+        # دریافت موجودی‌ها (اگر رکورد نباشد، ساخته می‌شود)
+        gold_inv, _ = GoldInventory.objects.get_or_create(user=request.user)
+        silver_inv, _ = SilverInventory.objects.get_or_create(user=request.user)
         wallet, _ = Wallet.objects.get_or_create(user=request.user)
 
-        gold_weight = Decimal(str(inventory.balance))
-        gold_value_toman = gold_weight * price_per_gram
+        # تبدیل مقادیر به Decimal برای محاسبات دقیق
+        gold_weight = Decimal(str(gold_inv.balance))
+        silver_weight = Decimal(str(silver_inv.balance))
         wallet_balance = Decimal(str(wallet.balance))
+
+        # محاسبه ارزش ریالی هر دارایی
+        gold_value = gold_weight * gold_price
+        silver_value = silver_weight * silver_price
         
-        # ارزش کل دارایی = ارزش طلای موجود + موجودی نقدی کیف پول
-        total_assets_value = gold_value_toman + wallet_balance
+        # مجموع کل دارایی‌ها
+        total_assets_value = gold_value + silver_value + wallet_balance
 
         return Response({
-            "total_assets_value": round(total_assets_value), # ارزش کل دارایی ب تومان
-            "gold_balance_gr": round(gold_weight, 5),        # موجودی طلا ب گرم
-            "wallet_balance_toman": round(wallet_balance),   # موجودی ب تومان (کیف پول)
-            "live_price": price_per_gram                     # قیمت لحظه‌ای جهت اطلاع
+            "total_assets_value": round(total_assets_value), # جمع کل (ریال + طلا + نقره)
+            "gold_balance_gr": round(gold_weight, 5),
+            "silver_balance_gr": round(silver_weight, 5),
+            "wallet_balance_toman": round(wallet_balance),
+            "gold_value_toman": round(gold_value),     # ارزش طلای کاربر به تومان
+            "silver_value_toman": round(silver_value), # ارزش نقره کاربر به تومان
+            "live_gold_price": gold_price,
+            "live_silver_price": silver_price
         })
+
+from .utils import get_live_silver_price 
+
+class DepositMoney(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """نمایش اطلاعات حساب جهت واریز کاربر"""
+        bank_info = AdminBankInfo.get_active_info()
+        return Response(bank_info)
+
+    def post(self, request):
+        """ثبت رسید واریز وجه"""
+        amount = request.data.get('amount')
+        receipt = request.FILES.get('receipt')
+
+        if not amount or not receipt:
+            return Response({"error": "مبلغ و تصویر رسید الزامی است"}, status=400)
+
+        FinancialTransaction.objects.create(
+            user=request.user,
+            amount=Decimal(str(amount)),
+            type='DEPOSIT',
+            method='CARD',
+            receipt_image=receipt,
+            status='PENDING'
+        )
+        return Response({"message": "رسید با موفقیت ثبت شد. پس از تایید مدیریت، کیف پول شارژ می‌شود."}, status=201)
+
+from decimal import Decimal, InvalidOperation
+
+class WithdrawMoney(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """درخواست برداشت وجه یا تبدیل به نقره"""
+        amount_raw = request.data.get('amount')
+        target = request.data.get('target')  # 'bank' or 'silver'
+
+        if not amount_raw or not target:
+            return Response({"error": "مبلغ و مقصد (target) الزامی هستند"}, status=400)
+
+        try:
+            # تبدیل امن به Decimal برای جلوگیری از خطای نوع داده
+            amount = Decimal(str(amount_raw))
+        except InvalidOperation:
+            return Response({"error": "مبلغ وارد شده معتبر نیست"}, status=400)
+
+        if amount <= 0:
+            return Response({"error": "مبلغ باید بیشتر از صفر باشد"}, status=400)
+
+        # دریافت کیف پول ریالی
+        wallet, _ = Wallet.objects.get_or_create(user=request.user)
+        # اطمینان از Decimal بودن موجودی کیف پول
+        current_wallet_balance = Decimal(str(wallet.balance))
+
+        if current_wallet_balance < amount:
+            return Response({"error": "موجودی کیف پول کافی نیست"}, status=400)
+
+        # --- سناریو ۱: تبدیل مستقیم به نقره ---
+        if target == 'silver':
+            silver_price = get_live_silver_price()
+            if not silver_price:
+                return Response({"error": "خطا در دریافت قیمت لحظه‌ای نقره"}, status=500)
+            
+            # محاسبه وزن نقره (Decimal / Decimal)
+            weight_to_add = amount / silver_price
+
+            # کسر از کیف پول ریالی
+            wallet.balance = current_wallet_balance - amount
+            wallet.save()
+
+            # اضافه به موجودی نقره
+            silver_inv, _ = SilverInventory.objects.get_or_create(user=request.user)
+            # تبدیل موجودی فعلی به Decimal قبل از جمع
+            silver_inv.balance = Decimal(str(silver_inv.balance)) + weight_to_add
+            silver_inv.save()
+
+            # ثبت در تاریخچه نقره
+            SilverTransaction.objects.create(
+                user=request.user,
+                amount_gr=weight_to_add,
+                total_amount=amount,
+                type='CONVERT'
+            )
+            return Response({
+                "message": "مبلغ با موفقیت به موجودی نقره تبدیل شد",
+                "added_weight": round(weight_to_add, 5),
+                "new_wallet_balance": wallet.balance
+            })
+
+        # --- سناریو ۲: درخواست واریز به حساب بانکی ---
+        elif target == 'bank':
+            card_id = request.data.get('card_id')
+            if not card_id:
+                return Response({"error": "برای واریز نقدی انتخاب کارت الزامی است"}, status=400)
+
+            # ثبت تراکنش مالی ریالی
+            FinancialTransaction.objects.create(
+                user=request.user,
+                amount=amount,
+                type='WITHDRAW',
+                method='CARD',
+                user_card_id=card_id,
+                status='PENDING'
+            )
+            
+            # کسر از کیف پول (پول بلوکه می‌شود تا ادمین واریز کند)
+            wallet.balance = current_wallet_balance - amount
+            wallet.save()
+
+            return Response({
+                "message": "درخواست واریز نقدی ثبت شد و در صف بررسی قرار گرفت.",
+                "new_wallet_balance": wallet.balance
+            })
+
+        return Response({"error": "مقصد نامعتبر است"}, status=400)
+    
+

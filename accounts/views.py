@@ -10,6 +10,8 @@ from django.contrib.auth import authenticate
 from .models import BankCard, User, OTPRequest
 from .serializers import (
     BankCardSerializer,
+    ChangeMobileConfirmSerializer,
+    ChangeMobileRequestSerializer,
     ResetPasswordConfirmSerializer,
     ResetPasswordOTPSerializer,
     SendOTPSerializer, 
@@ -292,3 +294,66 @@ class DeleteBankCard(APIView):
             card.save()
             return Response({"message": "کارت با موفقیت حذف شد"}, status=200)
         return Response({"error": "کارت یافت نشد"}, status=404)
+    
+
+class ChangeMobileRequest(APIView):
+    """مرحله اول: ارسال کد تایید به شماره جدید"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangeMobileRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            new_mobile = serializer.validated_data['new_mobile']
+
+            # بررسی اینکه شماره جدید قبلاً در سیستم نباشد
+            if User.objects.filter(mobile=new_mobile).exists():
+                return Response({"error": "این شماره موبایل قبلاً توسط کاربر دیگری ثبت شده است"}, status=400)
+
+            code = str(random.randint(100000, 999999))
+            
+            # ارسال پیامک به شماره جدید
+            sms_sent = send_otp_sms(new_mobile, code)
+            
+            if sms_sent:
+                # ذخیره در جدول OTP (می‌توانیم در دیتابیس مشخص کنیم برای چه موبایلی است)
+                OTPRequest.objects.create(mobile=new_mobile, code=code)
+                return Response({"message": f"کد تایید به شماره {new_mobile} ارسال شد"}, status=200)
+            
+            return Response({"error": "خطا در ارسال پیامک"}, status=500)
+        
+        return Response(serializer.errors, status=400)
+
+
+class ChangeMobileConfirm(APIView):
+    """مرحله دوم: تایید کد و جایگزینی شماره موبایل در پروفایل"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangeMobileConfirmSerializer(data=request.data)
+        if serializer.is_valid():
+            new_mobile = serializer.validated_data['new_mobile']
+            code = serializer.validated_data['code']
+
+            # بررسی صحت کد برای شماره جدید
+            otp = OTPRequest.objects.filter(
+                mobile=new_mobile, 
+                code=code, 
+                is_used=False
+            ).order_by('-created_at').first()
+
+            if otp and not otp.is_expired():
+                # تایید شماره جدید و تغییر آن در مدل کاربر
+                user = request.user
+                user.mobile = new_mobile
+                user.username = new_mobile  # چون Username ما همان موبایل است
+                user.save()
+
+                # باطل کردن کد
+                otp.is_used = True
+                otp.save()
+
+                return Response({"message": "شماره موبایل با موفقیت تغییر یافت"}, status=200)
+            
+            return Response({"error": "کد وارد شده اشتباه یا منقضی شده است"}, status=400)
+            
+        return Response(serializer.errors, status=400)

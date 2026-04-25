@@ -41,3 +41,11 @@ class BankCardSerializer(serializers.ModelSerializer):
         model = BankCard
         fields = ['id', 'card_number', 'bank_name', 'is_active']
         read_only_fields = ['id']
+
+
+class ChangeMobileRequestSerializer(serializers.Serializer):
+    new_mobile = serializers.CharField(max_length=11)
+
+class ChangeMobileConfirmSerializer(serializers.Serializer):
+    new_mobile = serializers.CharField(max_length=11)
+    code = serializers.CharField(max_length=6)
