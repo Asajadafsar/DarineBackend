@@ -18,7 +18,15 @@ class User(AbstractUser):
         ('verified', 'تایید شده'),
         ('rejected', 'رد شده'),
     )
+    TYPE_CHOICES = (
+    ('BUY', 'خرید نقره'),
+    ('SELL', 'فروش نقره'),
+    ('CONVERT', 'تبدیل از ریال'),
+    ('REFERRAL_REWARD', 'پاداش معرفی دوستان'), # اضافه شود
+)
+    
 
+    
     mobile = models.CharField(max_length=11, unique=True, verbose_name="شماره موبایل")
     national_code = models.CharField(max_length=10, unique=True, null=True, blank=True, verbose_name="کد ملی")
     birth_date = models.DateField(null=True, blank=True, verbose_name="تاریخ تولد")
