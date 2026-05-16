@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 from datetime import timedelta
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -23,6 +22,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
+    'drf_spectacular',
     'accounts',
     'gold_app',  
     'silver_app',
@@ -59,12 +59,28 @@ TEMPLATES = [
 WSGI_APPLICATION = 'darine_config.wsgi.application'
 
 REST_FRAMEWORK = {
+
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'accounts.authentication.CookieJWTAuthentication',
     ),
+
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Darine API',
+    'DESCRIPTION': 'API documentation for Darine project',
+    'VERSION': '1.0.0',
+    'PREPROCESSING_HOOKS': [
+        'drf_spectacular.hooks.preprocess_exclude_path_format',
+    ],
+    'SCHEMA_PATH_PREFIX': '/api/v1',
+    'DEFAULT_GENERATOR_CLASS': 'drf_spectacular.generators.SchemaGenerator',
+    'SERVE_INCLUDE_SCHEMA': False,  # این خط رو اضافه کن
 }
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
@@ -78,7 +94,7 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'darine_db',
-        'USER': 'postgres',
+        'USER': 'Arad',
         'PASSWORD': os.environ.get('DB_PASSWORD', ''), 
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': '5432',
@@ -165,3 +181,4 @@ CORS_ALLOW_METHODS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_PREFLIGHT_MAX_AGE = 86400  # 24 ساعت
+

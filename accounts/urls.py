@@ -1,16 +1,113 @@
+# accounts/urls.py
+
 from django.urls import path
-from .views import ChangeMobileConfirm, ChangeMobileRequest, DeleteBankCard, RegisterStepOne, RegisterStepTwo, RegisterStepThree , LoginWithPassword , LoginWithOTP, ResetPasswordConfirm, ResetPasswordRequest, UserBankCards
+
+from .views import (
+
+    RegisterStepOne,
+    RegisterStepTwo,
+    RegisterStepThree,
+
+    LoginWithPassword,
+    LoginWithOTP,
+
+    RefreshTokenView,
+    LogoutView,
+
+    ProfileView,
+
+    UserBankCards,
+    DeleteBankCard,
+
+    ResetPasswordRequest,
+    ResetPasswordVerify,
+    ResetPasswordComplete,
+
+    ChangeMobileRequest,
+    ChangeMobileConfirm,
+)
 
 urlpatterns = [
-    path('send-otp/', RegisterStepOne.as_view(), name='send_otp'),
-    path('verify-otp/', RegisterStepTwo.as_view(), name='verify_otp'),
-    path('complete-register/', RegisterStepThree.as_view(), name='complete_register'),
-    path('login/password/', LoginWithPassword.as_view()),
-    path('login/otp/', LoginWithOTP.as_view()),
-    path('reset-password/request/', ResetPasswordRequest.as_view(), name='reset_password_request'),
-    path('reset-password/confirm/', ResetPasswordConfirm.as_view(), name='reset_password_confirm'),
-    path('cards/', UserBankCards.as_view(), name='user_cards'),
-    path('cards/<int:card_id>/', DeleteBankCard.as_view(), name='delete_card'),
-    path('change-mobile/request/', ChangeMobileRequest.as_view(), name='change_mobile_request'),
-    path('change-mobile/confirm/', ChangeMobileConfirm.as_view(), name='change_mobile_confirm'),
+
+    # register
+    path(
+        'send-otp/',
+        RegisterStepOne.as_view()
+    ),
+
+    path(
+        'verify-otp/',
+        RegisterStepTwo.as_view()
+    ),
+
+    path(
+        'complete-register/',
+        RegisterStepThree.as_view()
+    ),
+
+    # login
+    path(
+        'login/password/',
+        LoginWithPassword.as_view()
+    ),
+
+    path(
+        'login/otp/',
+        LoginWithOTP.as_view()
+    ),
+
+    # auth
+    path(
+        'token/refresh/',
+        RefreshTokenView.as_view()
+    ),
+
+    path(
+        'logout/',
+        LogoutView.as_view()
+    ),
+
+    # profile
+    path(
+        'profile/',
+        ProfileView.as_view()
+    ),
+
+    # cards
+    path(
+        'cards/',
+        UserBankCards.as_view()
+    ),
+
+    path(
+        'cards/<int:card_id>/',
+        DeleteBankCard.as_view()
+    ),
+
+    # reset password
+    path(
+        'reset-password/request/',
+        ResetPasswordRequest.as_view()
+    ),
+
+    path(
+        'reset-password/verify/',
+        ResetPasswordVerify.as_view()
+    ),
+
+    path(
+        'reset-password/complete/',
+        ResetPasswordComplete.as_view()
+    ),
+
+    # change mobile
+    path(
+        'change-mobile/request/',
+        ChangeMobileRequest.as_view()
+    ),
+
+    path(
+        'change-mobile/confirm/',
+        ChangeMobileConfirm.as_view()
+    ),
 ]

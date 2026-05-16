@@ -1,361 +1,846 @@
-import random
-from datetime import date
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated # اضافه شد برای باز کردن دسترسی عمومی
-from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth import authenticate
-from rest_framework import serializers
-from .models import BankCard, User, OTPRequest
+# accounts/views.py
 
+import random
+
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny, IsAuthenticated
+
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from drf_spectacular.utils import extend_schema
+
+from django.contrib.auth import authenticate
+from django.utils import timezone
+from datetime import date
+
+from .models import User, OTPRequest, BankCard
 
 from .serializers import (
+    SendOTPSerializer,
+    VerifyOTPSerializer,
+
+    LoginSerializer,
+    LoginOTPSerializer,
+
+    ResetPasswordRequestSerializer,
+    ResetPasswordVerifySerializer,
+    ResetPasswordCompleteSerializer,
+
+    UserProfileSerializer,
     BankCardSerializer,
-    ChangeMobileConfirmSerializer,
+
     ChangeMobileRequestSerializer,
-    ResetPasswordConfirmSerializer,
-    ResetPasswordOTPSerializer,
-    SendOTPSerializer, 
-    VerifyOTPSerializer, 
-    CompleteRegistrationSerializer
+    ChangeMobileConfirmSerializer,
 )
+
 from .sms_service import send_otp_sms
 
+from .cookies import (
+    set_auth_cookies,
+    clear_auth_cookies
+)
+
+from .utils import (
+    success_response,
+    error_response
+)
+
+
+# ==========================================
+# REGISTER STEP 1
+# ==========================================
+
 class RegisterStepOne(APIView):
-    """مرحله اول: ارسال کد تایید - دسترسی آزاد"""
+
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        request=SendOTPSerializer
+    )
     def post(self, request):
-        serializer = SendOTPSerializer(data=request.data)
-        if serializer.is_valid():
-            mobile = serializer.validated_data['mobile']
-            
-            # تولید کد ۶ رقمی تصادفی
-            code = str(random.randint(100000, 999999))
-            
-            # ارسال پیامک از طریق سرویس
-            sms_sent = send_otp_sms(mobile, code)
-            
-            if sms_sent:
-                # ذخیره کد در دیتابیس
-                OTPRequest.objects.create(mobile=mobile, code=code)
-                return Response({"message": "کد تایید پیامک شد"}, status=status.HTTP_200_OK)
-            else:
-                return Response({"error": "خطا در سامانه پیامکی. لطفا دوباره تلاش کنید"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-                
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        serializer = SendOTPSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return error_response(
+                "اطلاعات نامعتبر است",
+                serializer.errors
+            )
+
+        mobile = serializer.validated_data["mobile"]
+
+        code = str(random.randint(100000, 999999))
+
+        sms_sent = send_otp_sms(
+            mobile,
+            code
+        )
+
+        if not sms_sent:
+            return error_response(
+                "خطا در ارسال پیامک",
+                status_code=500
+            )
+
+        OTPRequest.objects.create(
+            mobile=mobile,
+            code=code
+        )
+
+        return success_response(
+            message="کد تایید ارسال شد"
+        )
+
+
+# ==========================================
+# REGISTER STEP 2
+# ==========================================
 
 class RegisterStepTwo(APIView):
+
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        request=VerifyOTPSerializer
+    )
     def post(self, request):
-        mobile = request.data.get('mobile')
-        code = request.data.get('code')
 
-        if not mobile or not code:
-            return Response({"error": "شماره موبایل و کد الزامی هستند"}, status=400)
+        serializer = VerifyOTPSerializer(
+            data=request.data
+        )
 
-        mobile = str(mobile).strip()
-        code = str(code).strip()
+        if not serializer.is_valid():
+            return error_response(
+                "اطلاعات نامعتبر",
+                serializer.errors
+            )
 
-        # پیدا کردن آخرین کد ساخته شده برای این موبایل
+        mobile = serializer.validated_data["mobile"]
+        code = serializer.validated_data["code"]
+
         otp = OTPRequest.objects.filter(
-            mobile=mobile, 
-            code=code, 
+            mobile=mobile,
+            code=code,
             is_used=False
-        ).order_by('-created_at').first()
+        ).last()
 
-        if otp:
-            if not otp.is_expired():
-                otp.is_used = True
-                otp.save()
-                return Response({
-                    "message": "کد تایید شد", 
-                    "mobile": mobile
-                }, status=200)
-            else:
-                # برای دیباگ، اینجا چاپ می‌کنیم که چقدر زمان گذشته
-                return Response({"error": "کد منقضی شده است. لطفا کد جدید دریافت کنید."}, status=400)
-        
-        return Response({"error": "کد وارد شده اشتباه است یا قبلاً استفاده شده"}, status=400)
+        if not otp:
+            return error_response(
+                "کد تایید اشتباه است"
+            )
 
+        if otp.is_expired():
+            return error_response(
+                "کد تایید منقضی شده است"
+            )
+
+        otp.is_used = True
+        otp.save()
+
+        return success_response(
+            message="کد تایید شد"
+        )
+
+
+# ==========================================
+# REGISTER STEP 3
+# ==========================================
 
 class RegisterStepThree(APIView):
-    """مرحله نهایی: دریافت اطلاعات شخصی و ایجاد حساب - دسترسی آزاد"""
+
     permission_classes = [AllowAny]
 
     def post(self, request):
-        mobile = request.data.get('mobile')
-        
-        # بررسی تکراری نبودن شماره موبایل
+
+        mobile = request.data.get("mobile")
+
         if User.objects.filter(mobile=mobile).exists():
-            return Response({"error": "این شماره موبایل قبلاً ثبت‌نام شده است"}, status=400)
 
-        # بررسی تایید شدن OTP در مرحله قبل
-        otp_verified = OTPRequest.objects.filter(mobile=mobile, is_used=True).exists()
+            return error_response(
+                "این شماره قبلاً ثبت شده"
+            )
+
+        otp_verified = OTPRequest.objects.filter(
+            mobile=mobile,
+            is_used=True
+        ).exists()
+
         if not otp_verified:
-            return Response({"error": "ابتدا باید شماره موبایل خود را تایید کنید"}, status=403)
 
-        serializer = CompleteRegistrationSerializer(data=request.data)
-        if serializer.is_valid():
-            data = serializer.validated_data
-            
-            # اعتبارسنجی و تبدیل تاریخ تولد
-            try:
-                birth_date = date(int(data['birth_year']), int(data['birth_month']), int(data['birth_day']))
-            except (ValueError, KeyError):
-                return Response({"error": "تاریخ وارد شده معتبر نیست"}, status=400)
-            
-            # بررسی کد معرف (اختیاری)
-            ref_code = data.get('referral_code')
-            referred_by = User.objects.filter(referral_code=ref_code).first() if ref_code else None
+            return error_response(
+                "ابتدا شماره موبایل را تایید کنید",
+                status_code=403
+            )
 
-            # ایجاد کاربر جدید با اطلاعات کامل
+        password = request.data.get("password")
+        confirm_password = request.data.get("confirm_password")
+
+        if password != confirm_password:
+
+            return error_response(
+                "تکرار رمز عبور صحیح نیست"
+            )
+
+        try:
+
             user = User.objects.create(
                 mobile=mobile,
                 username=mobile,
-                first_name=data.get('first_name', ''), 
-                last_name=data.get('last_name', ''),   
-                national_code=data.get('national_code'),
-                card_number=data.get('card_number'),
-                birth_date=birth_date,
-                referred_by=referred_by,
-                auth_status='pending'
-            )
-            user.set_password(data['password']) # هش کردن رمز عبور
-            user.save()
-            
-            return Response({"message": "حساب کاربری با موفقیت ایجاد شد"}, status=201)
-        
-        return Response(serializer.errors, status=400)
 
+                first_name=request.data.get("first_name"),
+                last_name=request.data.get("last_name"),
+
+                national_code=request.data.get("national_code"),
+
+                birth_date=request.data.get("birth_date"),
+
+                role="customer",
+                auth_status="pending"
+            )
+
+            user.set_password(password)
+
+            user.save()
+
+            return success_response(
+                message="ثبت نام با موفقیت انجام شد",
+                data={
+                    "user_id": user.id
+                },
+                status_code=201
+            )
+
+        except Exception as e:
+
+            return error_response(
+                str(e)
+            )
+
+# ==========================================
+# LOGIN PASSWORD
+# ==========================================
 
 class LoginWithPassword(APIView):
-    """ورود با رمز عبور ثابت - اصلاح شده"""
+
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        request=LoginSerializer
+    )
     def post(self, request):
-        mobile = request.data.get('mobile')
-        password = request.data.get('password')
-        
-        if not mobile or not password:
-            return Response({"error": "موبایل و رمز عبور را وارد کنید"}, status=400)
 
-        # پیدا کردن یوزر بر اساس موبایل
-        user = User.objects.filter(mobile=mobile).first()
-        
-        # چک کردن وجود یوزر و صحت پسورد (با استفاده از check_password)
-        if user and user.check_password(password):
-            refresh = RefreshToken.for_user(user)
-            return Response({
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-                'role': user.role,
-                'status': user.auth_status,
-                'full_name': f"{user.first_name} {user.last_name}"
-            })
-        
-        return Response({"error": "شماره موبایل یا رمز عبور اشتباه است"}, status=status.HTTP_401_UNAUTHORIZED)
+        serializer = LoginSerializer(
+            data=request.data
+        )
 
+        if not serializer.is_valid():
+
+            return error_response(
+                "اطلاعات نامعتبر",
+                serializer.errors
+            )
+
+        mobile = serializer.validated_data["mobile"]
+
+        password = serializer.validated_data["password"]
+
+        user = authenticate(
+            request,
+            mobile=mobile,
+            password=password
+        )
+
+        if not user:
+
+            return error_response(
+                "شماره موبایل یا رمز عبور اشتباه است",
+                status_code=401
+            )
+
+        refresh = RefreshToken.for_user(user)
+
+        access = refresh.access_token
+
+        response = success_response(
+            message="ورود موفق",
+            data={
+                "user": {
+                    "id": user.id,
+                    "full_name": f"{user.first_name} {user.last_name}",
+                    "role": user.role,
+                    "status": user.auth_status
+                }
+            }
+        )
+
+        set_auth_cookies(
+            response,
+            str(access),
+            str(refresh)
+        )
+
+        return response
+
+
+# ==========================================
+# LOGIN OTP
+# ==========================================
 
 class LoginWithOTP(APIView):
-    """ورود با شماره موبایل و کد یکبار مصرف (بدون پسورد)"""
+
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        request=LoginOTPSerializer
+    )
     def post(self, request):
-        mobile = request.data.get('mobile')
-        code = request.data.get('code')
-        
-        if not mobile or not code:
-            return Response({"error": "لطفاً موبایل و کد تایید را وارد کنید"}, status=400)
 
-        # جستجو برای آخرین کد استفاده نشده و معتبر
+        serializer = LoginOTPSerializer(
+            data=request.data
+        )
+
+        if not serializer.is_valid():
+
+            return error_response(
+                "اطلاعات نامعتبر",
+                serializer.errors
+            )
+
+        mobile = serializer.validated_data["mobile"]
+
+        code = serializer.validated_data["code"]
+
         otp = OTPRequest.objects.filter(
-            mobile=mobile, 
-            code=code, 
+            mobile=mobile,
+            code=code,
             is_used=False
-        ).order_by('-created_at').first()
-        
-        if otp and not otp.is_expired():
-            # پیدا کردن کاربر متصل به این شماره موبایل
-            user = User.objects.filter(mobile=mobile).first()
-            
-            if user:
-                otp.is_used = True
-                otp.save()
-                
-                refresh = RefreshToken.for_user(user)
-                return Response({
-                    'refresh': str(refresh),
-                    'access': str(refresh.access_token),
-                    'role': user.role,
-                    'full_name': f"{user.first_name} {user.last_name}"
-                })
-            else:
-                return Response({"error": "کاربری با این شماره یافت نشد. ابتدا ثبت‌نام کنید"}, status=404)
-            
-        return Response({"error": "کد وارد شده اشتباه یا منقضی شده است"}, status=400)
-    
+        ).last()
+
+        if not otp:
+            return error_response(
+                "کد اشتباه است"
+            )
+
+        if otp.is_expired():
+            return error_response(
+                "کد منقضی شده"
+            )
+
+        user = User.objects.filter(
+            mobile=mobile
+        ).first()
+
+        if not user:
+            return error_response(
+                "کاربر یافت نشد",
+                status_code=404
+            )
+
+        otp.is_used = True
+        otp.save()
+
+        refresh = RefreshToken.for_user(user)
+
+        access = refresh.access_token
+
+        response = success_response(
+            message="ورود موفق",
+            data={
+                "user": {
+                    "id": user.id,
+                    "full_name": f"{user.first_name} {user.last_name}",
+                    "role": user.role,
+                    "status": user.auth_status
+                }
+            }
+        )
+
+        set_auth_cookies(
+            response,
+            str(access),
+            str(refresh)
+        )
+
+        return response
 
 
-class ResetPasswordRequest(APIView):
-    """مرحله اول فراموشی رمز: ارسال کد OTP"""
+# ==========================================
+# REFRESH TOKEN
+# ==========================================
+
+class RefreshTokenView(APIView):
+
     permission_classes = [AllowAny]
 
     def post(self, request):
-        serializer = ResetPasswordOTPSerializer(data=request.data)
-        if serializer.is_valid():
-            mobile = serializer.validated_data['mobile']
-            
-            # بررسی اینکه آیا اصلاً کاربری با این شماره داریم؟
-            if not User.objects.filter(mobile=mobile).exists():
-                return Response({"error": "کاربری با این شماره یافت نشد"}, status=404)
 
-            code = str(random.randint(100000, 999999))
-            
-            # استفاده از سرویس پیامک خودت
-            sms_sent = send_otp_sms(mobile, code)
-            
-            if sms_sent:
-                OTPRequest.objects.create(mobile=mobile, code=code)
-                return Response({"message": "کد بازنشانی رمز عبور ارسال شد"}, status=200)
-            return Response({"error": "خطا در ارسال پیامک"}, status=500)
-        
-        return Response(serializer.errors, status=400)
+        refresh_token = request.COOKIES.get(
+            "refreshToken"
+        )
+
+        if not refresh_token:
+            return error_response(
+                "رفرش توکن یافت نشد",
+                status_code=401
+            )
+
+        try:
+
+            refresh = RefreshToken(
+                refresh_token
+            )
+
+            access_token = str(
+                refresh.access_token
+            )
+
+            response = success_response(
+                message="توکن بروزرسانی شد"
+            )
+
+            response.set_cookie(
+                key="accessToken",
+                value=access_token,
+                httponly=True,
+                secure=False,
+                samesite="Lax",
+                path="/",
+                max_age=600
+            )
+
+            return response
+
+        except Exception:
+
+            return error_response(
+                "رفرش توکن نامعتبر است",
+                status_code=401
+            )
 
 
-class ResetPasswordConfirm(APIView):
-    """مرحله دوم فراموشی رمز: تایید کد و تغییر پسورد"""
-    permission_classes = [AllowAny]
+# ==========================================
+# LOGOUT
+# ==========================================
+
+class LogoutView(APIView):
+
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        serializer = ResetPasswordConfirmSerializer(data=request.data)
-        if serializer.is_valid():
-            data = serializer.validated_data
-            mobile = data['mobile']
-            code = data['code']
-            new_password = data['new_password']
 
-            # بررسی صحت کد OTP
-            otp = OTPRequest.objects.filter(
-                mobile=mobile, 
-                code=code, 
-                is_used=False
-            ).order_by('-created_at').first()
+        response = success_response(
+            message="خروج موفق"
+        )
 
-            if otp and not otp.is_expired():
-                user = User.objects.filter(mobile=mobile).first()
-                if user:
-                    # تغییر رمز و هش کردن خودکار
-                    user.set_password(new_password)
-                    user.save()
-                    
-                    # باطل کردن کد استفاده شده
-                    otp.is_used = True
-                    otp.save()
-                    
-                    return Response({"message": "رمز عبور با موفقیت تغییر کرد"}, status=200)
-                return Response({"error": "کاربر یافت نشد"}, status=404)
-            
-            return Response({"error": "کد نامعتبر یا منقضی شده است"}, status=400)
-            
-        return Response(serializer.errors, status=400)
-    
+        clear_auth_cookies(response)
 
-class UserBankCards(APIView):
-    permission_classes = [IsAuthenticated] # فقط کاربران لاگین شده
+        return response
+
+
+# ==========================================
+# PROFILE
+# ==========================================
+
+class ProfileView(APIView):
+
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """لیست کارت‌های بانکی کاربر"""
-        cards = BankCard.objects.filter(user=request.user, is_active=True)
-        serializer = BankCardSerializer(cards, many=True)
-        return Response(serializer.data)
+
+        serializer = UserProfileSerializer(
+            request.user
+        )
+
+        return success_response(
+            message="اطلاعات پروفایل",
+            data=serializer.data
+        )
+
+
+# ==========================================
+# BANK CARDS
+# ==========================================
+
+class UserBankCards(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        cards = BankCard.objects.filter(
+            user=request.user,
+            is_active=True
+        )
+
+        serializer = BankCardSerializer(
+            cards,
+            many=True
+        )
+
+        return success_response(
+            message="لیست کارت‌ها",
+            data=serializer.data
+        )
 
     def post(self, request):
-        """ثبت کارت بانکی جدید"""
-        serializer = BankCardSerializer(data=request.data)
-        if serializer.is_valid():
-            # بررسی تعداد کارت‌ها (مثلاً محدودیت ۵ کارت برای هر کاربر)
-            if BankCard.objects.filter(user=request.user).count() >= 5:
-                return Response({"error": "شما حداکثر می‌توانید ۵ کارت ثبت کنید"}, status=400)
-            
-            serializer.save(user=request.user)
-            return Response(serializer.data, status=201)
-        return Response(serializer.errors, status=400)
+
+        active_cards_count = BankCard.objects.filter(
+            user=request.user,
+            is_active=True
+        ).count()
+
+        if active_cards_count >= 5:
+
+            return error_response(
+                "حداکثر ۵ کارت مجاز است"
+            )
+
+        serializer = BankCardSerializer(
+            data=request.data
+        )
+
+        if not serializer.is_valid():
+
+            return error_response(
+                "اطلاعات کارت نامعتبر است",
+                serializer.errors
+            )
+
+        serializer.save(
+            user=request.user
+        )
+
+        return success_response(
+            message="کارت ثبت شد",
+            data=serializer.data,
+            status_code=201
+        )
+
+
+# ==========================================
+# DELETE CARD
+# ==========================================
 
 class DeleteBankCard(APIView):
+
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, card_id):
-        """غیرفعال کردن (حذف نرم) کارت بانکی"""
-        card = BankCard.objects.filter(user=request.user, id=card_id).first()
-        if card:
-            card.is_active = False # به جای حذف فیزیکی، غیرفعالش می‌کنیم
-            card.save()
-            return Response({"message": "کارت با موفقیت حذف شد"}, status=200)
-        return Response({"error": "کارت یافت نشد"}, status=404)
-    
+
+        card = BankCard.objects.filter(
+            id=card_id,
+            user=request.user,
+            is_active=True
+        ).first()
+
+        if not card:
+
+            return error_response(
+                "کارت یافت نشد",
+                status_code=404
+            )
+
+        card.is_active = False
+        card.save()
+
+        return success_response(
+            message="کارت حذف شد"
+        )
+
+
+# ==========================================
+# RESET PASSWORD REQUEST
+# ==========================================
+
+class ResetPasswordRequest(APIView):
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        request=ResetPasswordRequestSerializer
+    )
+    def post(self, request):
+
+        serializer = ResetPasswordRequestSerializer(
+            data=request.data
+        )
+
+        if not serializer.is_valid():
+
+            return error_response(
+                "اطلاعات نامعتبر",
+                serializer.errors
+            )
+
+        mobile = serializer.validated_data["mobile"]
+
+        user = User.objects.filter(
+            mobile=mobile
+        ).first()
+
+        if not user:
+
+            return error_response(
+                "کاربر یافت نشد",
+                status_code=404
+            )
+
+        code = str(random.randint(100000, 999999))
+
+        sms_sent = send_otp_sms(
+            mobile,
+            code
+        )
+
+        if not sms_sent:
+
+            return error_response(
+                "خطا در ارسال پیامک",
+                status_code=500
+            )
+
+        OTPRequest.objects.create(
+            mobile=mobile,
+            code=code
+        )
+
+        return success_response(
+            message="کد بازیابی ارسال شد"
+        )
+
+
+# ==========================================
+# RESET PASSWORD VERIFY
+# ==========================================
+
+class ResetPasswordVerify(APIView):
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        request=ResetPasswordVerifySerializer
+    )
+    def post(self, request):
+
+        serializer = ResetPasswordVerifySerializer(
+            data=request.data
+        )
+
+        if not serializer.is_valid():
+
+            return error_response(
+                "اطلاعات نامعتبر",
+                serializer.errors
+            )
+
+        mobile = serializer.validated_data["mobile"]
+
+        code = serializer.validated_data["code"]
+
+        otp = OTPRequest.objects.filter(
+            mobile=mobile,
+            code=code,
+            is_used=False
+        ).last()
+
+        if not otp:
+            return error_response(
+                "کد اشتباه است"
+            )
+
+        if otp.is_expired():
+            return error_response(
+                "کد منقضی شده است"
+            )
+
+        return success_response(
+            message="کد تایید شد"
+        )
+
+
+# ==========================================
+# RESET PASSWORD COMPLETE
+# ==========================================
+
+class ResetPasswordComplete(APIView):
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        request=ResetPasswordCompleteSerializer
+    )
+    def post(self, request):
+
+        serializer = ResetPasswordCompleteSerializer(
+            data=request.data
+        )
+
+        if not serializer.is_valid():
+
+            return error_response(
+                "اطلاعات نامعتبر",
+                serializer.errors
+            )
+
+        mobile = serializer.validated_data["mobile"]
+
+        code = serializer.validated_data["code"]
+
+        password = serializer.validated_data["password"]
+
+        otp = OTPRequest.objects.filter(
+            mobile=mobile,
+            code=code,
+            is_used=False
+        ).last()
+
+        if not otp:
+            return error_response(
+                "کد اشتباه است"
+            )
+
+        if otp.is_expired():
+            return error_response(
+                "کد منقضی شده است"
+            )
+
+        user = User.objects.filter(
+            mobile=mobile
+        ).first()
+
+        if not user:
+            return error_response(
+                "کاربر یافت نشد",
+                status_code=404
+            )
+
+        user.set_password(password)
+        user.save()
+
+        otp.is_used = True
+        otp.save()
+
+        return success_response(
+            message="رمز عبور تغییر کرد"
+        )
+
+
+# ==========================================
+# CHANGE MOBILE REQUEST
+# ==========================================
 
 class ChangeMobileRequest(APIView):
-    """مرحله اول: ارسال کد تایید به شماره جدید"""
+
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=ChangeMobileRequestSerializer
+    )
     def post(self, request):
-        serializer = ChangeMobileRequestSerializer(data=request.data)
-        if serializer.is_valid():
-            new_mobile = serializer.validated_data['new_mobile']
 
-            # بررسی اینکه شماره جدید قبلاً در سیستم نباشد
-            if User.objects.filter(mobile=new_mobile).exists():
-                return Response({"error": "این شماره موبایل قبلاً توسط کاربر دیگری ثبت شده است"}, status=400)
+        serializer = ChangeMobileRequestSerializer(
+            data=request.data
+        )
 
-            code = str(random.randint(100000, 999999))
-            
-            # ارسال پیامک به شماره جدید
-            sms_sent = send_otp_sms(new_mobile, code)
-            
-            if sms_sent:
-                # ذخیره در جدول OTP (می‌توانیم در دیتابیس مشخص کنیم برای چه موبایلی است)
-                OTPRequest.objects.create(mobile=new_mobile, code=code)
-                return Response({"message": f"کد تایید به شماره {new_mobile} ارسال شد"}, status=200)
-            
-            return Response({"error": "خطا در ارسال پیامک"}, status=500)
-        
-        return Response(serializer.errors, status=400)
+        if not serializer.is_valid():
 
+            return error_response(
+                "اطلاعات نامعتبر",
+                serializer.errors
+            )
+
+        new_mobile = serializer.validated_data[
+            "new_mobile"
+        ]
+
+        if User.objects.filter(
+            mobile=new_mobile
+        ).exists():
+
+            return error_response(
+                "این شماره قبلا ثبت شده"
+            )
+
+        code = str(random.randint(100000, 999999))
+
+        sms_sent = send_otp_sms(
+            new_mobile,
+            code
+        )
+
+        if not sms_sent:
+
+            return error_response(
+                "خطا در ارسال پیامک",
+                status_code=500
+            )
+
+        OTPRequest.objects.create(
+            mobile=new_mobile,
+            code=code
+        )
+
+        return success_response(
+            message="کد تایید ارسال شد"
+        )
+
+
+# ==========================================
+# CHANGE MOBILE CONFIRM
+# ==========================================
 
 class ChangeMobileConfirm(APIView):
-    """مرحله دوم: تایید کد و جایگزینی شماره موبایل در پروفایل"""
+
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=ChangeMobileConfirmSerializer
+    )
     def post(self, request):
-        serializer = ChangeMobileConfirmSerializer(data=request.data)
-        if serializer.is_valid():
-            new_mobile = serializer.validated_data['new_mobile']
-            code = serializer.validated_data['code']
 
-            # بررسی صحت کد برای شماره جدید
-            otp = OTPRequest.objects.filter(
-                mobile=new_mobile, 
-                code=code, 
-                is_used=False
-            ).order_by('-created_at').first()
+        serializer = ChangeMobileConfirmSerializer(
+            data=request.data
+        )
 
-            if otp and not otp.is_expired():
-                # تایید شماره جدید و تغییر آن در مدل کاربر
-                user = request.user
-                user.mobile = new_mobile
-                user.username = new_mobile  # چون Username ما همان موبایل است
-                user.save()
+        if not serializer.is_valid():
 
-                # باطل کردن کد
-                otp.is_used = True
-                otp.save()
+            return error_response(
+                "اطلاعات نامعتبر",
+                serializer.errors
+            )
 
-                return Response({"message": "شماره موبایل با موفقیت تغییر یافت"}, status=200)
-            
-            return Response({"error": "کد وارد شده اشتباه یا منقضی شده است"}, status=400)
-            
-        return Response(serializer.errors, status=400)
+        new_mobile = serializer.validated_data[
+            "new_mobile"
+        ]
+
+        code = serializer.validated_data[
+            "code"
+        ]
+
+        otp = OTPRequest.objects.filter(
+            mobile=new_mobile,
+            code=code,
+            is_used=False
+        ).last()
+
+        if not otp:
+            return error_response(
+                "کد اشتباه است"
+            )
+
+        if otp.is_expired():
+            return error_response(
+                "کد منقضی شده"
+            )
+
+        request.user.mobile = new_mobile
+        request.user.username = new_mobile
+
+        request.user.save()
+
+        otp.is_used = True
+        otp.save()
+
+        return success_response(
+            message="شماره موبایل تغییر کرد"
+        )
