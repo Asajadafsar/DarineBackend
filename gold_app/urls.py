@@ -1,27 +1,130 @@
+# gold_app/urls.py
+
 from django.urls import path
-from .views import BuyGold, DepositMoney, GiftCardOrderView, GoldDashboardAPI, GoldWalletAPI, PriceAlertDeleteView, PriceAlertView, RedeemGiftCardView, ReferralDashboardView, ReportsView, SellGold, UserAssets, UserGiftCardListView, WithdrawMoney
-from .views import ProductListView, CartView, CheckoutView, OrderHistoryView
 
-
-
+from .views import (
+    GoldDashboardAPIView,
+    UserBalanceAPIView,
+    GoldChartAPIView,
+    BuyGoldAPIView,
+    SellGoldAPIView,
+    DepositAPIView,
+    WithdrawAPIView,
+    ProductListAPIView,
+    CartAPIView,
+    CheckoutAPIView,
+    OrderHistoryAPIView,
+    ReportsAPIView,
+    RecentTransactionsAPIView,
+    RecentDeliveriesAPIView,
+    PriceAlertAPIView,
+    DeletePriceAlertAPIView,
+    ReferralDashboardAPIView,
+    GiftCardOrderAPIView,
+    GiftCardOrderAPIView,
+    GiftCardOrderListAPIView,
+    RedeemGiftCardAPIView,
+    GiftCardListAPIView,
+)
 
 urlpatterns = [
-    path('dashboard/', GoldDashboardAPI.as_view(), name='gold-dashboard-new'),
-    path('wallet/', GoldWalletAPI.as_view(), name='gold-wallet-new'),
-    path('buy/', BuyGold.as_view(), name='buy_gold'),
-    path('sell/', SellGold.as_view(), name='sell_gold'),
-    path('assets/', UserAssets.as_view(), name='user_assets'),
-    path('deposit/', DepositMoney.as_view(), name='deposit_money'),
-    path('withdraw/', WithdrawMoney.as_view(), name='withdraw_money'),
-    path('products/', ProductListView.as_view(), name='product_list'),
-    path('cart/', CartView.as_view(), name='cart_manage'),
-    path('checkout/', CheckoutView.as_view(), name='checkout'),
-    path('orders/', OrderHistoryView.as_view(), name='order_history'),
-    path('giftcard/order/', GiftCardOrderView.as_view(), name='giftcard_order'),
-    path('giftcard/redeem/', RedeemGiftCardView.as_view(), name='giftcard_redeem'),
-    path('giftcard/list/', UserGiftCardListView.as_view(), name='giftcard_list'),
-    path('reports/', ReportsView.as_view(), name='user_reports'),
-    path('price-alerts/', PriceAlertView.as_view(), name='price_alerts'),
-    path('price-alerts/<int:pk>/', PriceAlertDeleteView.as_view(), name='delete_alert'),
-    path('referral/', ReferralDashboardView.as_view(), name='referral_dashboard'),
+
+    # DASHBOARD
+    path(
+        'dashboard/',
+        GoldDashboardAPIView.as_view()
+    ),
+
+    path(
+        'balance/',
+        UserBalanceAPIView.as_view()
+    ),
+
+    path(
+        'chart/',
+        GoldChartAPIView.as_view()
+    ),
+
+    # GOLD
+    path(
+        'buy/',
+        BuyGoldAPIView.as_view()
+    ),
+
+    path(
+        'sell/',
+        SellGoldAPIView.as_view()
+    ),
+
+    # WALLET
+    path(
+        'deposit/',
+        DepositAPIView.as_view()
+    ),
+
+    path(
+        'withdraw/',
+        WithdrawAPIView.as_view()
+    ),
+
+    # PRODUCTS
+    path(
+        'products/',
+        ProductListAPIView.as_view()
+    ),
+
+    path(
+        'cart/',
+        CartAPIView.as_view()
+    ),
+
+    path(
+        'checkout/',
+        CheckoutAPIView.as_view()
+    ),
+
+    # ORDERS
+    path(
+        'orders/',
+        OrderHistoryAPIView.as_view()
+    ),
+
+    # GIFT CARD
+    path('gift-card/order/', GiftCardOrderAPIView.as_view()),
+    path('gift-card/orders/', GiftCardOrderListAPIView.as_view()),
+    path('gift-card/redeem/', RedeemGiftCardAPIView.as_view()),
+    path('gift-card/list/', GiftCardListAPIView.as_view()),
+
+    # REPORTS
+    path(
+        'reports/',
+        ReportsAPIView.as_view()
+    ),
+
+    path(
+        'recent-transactions/',
+        RecentTransactionsAPIView.as_view()
+    ),
+
+    path(
+        'recent-deliveries/',
+        RecentDeliveriesAPIView.as_view()
+    ),
+
+    # ALERTS
+    path(
+        'price-alerts/',
+        PriceAlertAPIView.as_view()
+    ),
+
+    path(
+        'price-alerts/<int:pk>/',
+        DeletePriceAlertAPIView.as_view()
+    ),
+
+    # REFERRAL
+    path(
+        'referral-dashboard/',
+        ReferralDashboardAPIView.as_view()
+    ),
 ]

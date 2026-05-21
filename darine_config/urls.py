@@ -8,7 +8,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
     path('gold/', include('gold_app.urls')),
-    path('silver/', include('silver_app.urls')),
+    # path('silver/', include('silver_app.urls')),
     # path('silver/', include('silver_app.urls')), # اگر برای نقره هم یو‌آر‌ال مجزا داری
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
