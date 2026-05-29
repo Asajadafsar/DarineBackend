@@ -379,54 +379,24 @@ class GiftCardSerializer(serializers.ModelSerializer):
         ]
 
 
-# =========================================================
-# GIFT CARD ORDER
-# =========================================================
-
-class GiftCardOrderSerializer(serializers.ModelSerializer):
-
-    status_display = serializers.CharField(
-        source='get_status_display',
-        read_only=True
-    )
-
-    class Meta:
-        model = GiftCardOrder
-        fields = [
-            'id',
-            'weight_per_card',
-            'quantity',
-            'total_price',
-            'province',
-            'city',
-            'address',
-            'postal_code',
-            'plaque',
-            'unit',
-            'status',
-            'status_display',
-            'tracking_code',
-            'created_at',
-            'updated_at'
-        ]
-
-        read_only_fields = [
-            'user',
-            'total_price',
-            'status',
-            'tracking_code'
-        ]
 
 
 # =========================================================
-# PRICE ALERT
+# PRICE ALERT SERIALIZER
 # =========================================================
 
 class PriceAlertSerializer(serializers.ModelSerializer):
 
-    alert_type_display = serializers.CharField(
-        source='get_alert_type_display',
-        read_only=True
+    target_price = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=5
+    )
+
+    alert_type = serializers.ChoiceField(
+        choices=[
+            ('ABOVE', 'بالاتر'),
+            ('BELOW', 'پایین‌تر'),
+        ]
     )
 
     class Meta:
@@ -435,10 +405,107 @@ class PriceAlertSerializer(serializers.ModelSerializer):
             'id',
             'target_price',
             'alert_type',
-            'alert_type_display',
             'is_active',
             'created_at'
         ]
+
+        read_only_fields = [
+            'id',
+            'created_at'
+        ]
+
+
+
+# =========================================================
+# GIFT CARD ORDER SERIALIZER
+# =========================================================
+
+class GiftCardOrderSerializer(serializers.ModelSerializer):
+
+    address_id = serializers.IntegerField(
+        required=False
+    )
+
+    province = serializers.CharField(
+        required=False
+    )
+
+    city = serializers.CharField(
+        required=False
+    )
+
+    address = serializers.CharField(
+        required=False
+    )
+
+    postal_code = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+
+    plaque = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+
+    unit = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+
+    class Meta:
+
+        model = GiftCardOrder
+
+        fields = [
+
+            'address_id',
+
+            'weight_per_card',
+
+            'quantity',
+
+            'province',
+
+            'city',
+
+            'address',
+
+            'postal_code',
+
+            'plaque',
+
+            'unit'
+        ]
+
+    def validate(self, attrs):
+
+        address_id = attrs.get(
+            'address_id'
+        )
+
+        # =====================================
+        # IF NO ADDRESS ID
+        # REQUIRE ADDRESS FIELDS
+        # =====================================
+
+        if not address_id:
+
+            required_fields = [
+                'province',
+                'city',
+                'address'
+            ]
+
+            for field in required_fields:
+
+                if not attrs.get(field):
+
+                    raise serializers.ValidationError({
+                        field: 'این فیلد اجباری است'
+                    })
+
+        return attrs
 
 
 # =========================================================
@@ -501,7 +568,6 @@ class PurchaseCreditSerializer(serializers.ModelSerializer):
             'created_at'
         ]
 
-
 # =========================================================
 # AUTO SAVING PLAN
 # =========================================================
@@ -519,7 +585,9 @@ class AutoSavingPlanSerializer(serializers.ModelSerializer):
     )
 
     class Meta:
+
         model = AutoSavingPlan
+
         fields = [
             'id',
             'type',
@@ -532,6 +600,12 @@ class AutoSavingPlanSerializer(serializers.ModelSerializer):
             'created_at'
         ]
 
+        read_only_fields = [
+            'period_days',
+            'next_execute_at',
+            'status',
+            'created_at'
+        ]
 
 # =========================================================
 # FILTER SERIALIZERS
@@ -764,14 +838,16 @@ class BuyGoldSerializer(serializers.Serializer):
 
     toman = serializers.DecimalField(
         max_digits=20,
-        decimal_places=0,
-        required=False
+        decimal_places=2,
+        required=False,
+        allow_null=True
     )
 
     weight = serializers.DecimalField(
         max_digits=20,
-        decimal_places=5,
-        required=False
+        decimal_places=8,
+        required=False,
+        allow_null=True
     )
 
     def validate(self, attrs):
@@ -780,12 +856,12 @@ class BuyGoldSerializer(serializers.Serializer):
         weight = attrs.get('weight')
 
         if not toman and not weight:
-
             raise serializers.ValidationError({
                 "message": "مبلغ یا وزن الزامی است"
             })
 
         return attrs
+
 
 # =========================================================
 # SELL GOLD
@@ -795,34 +871,26 @@ class SellGoldSerializer(serializers.Serializer):
 
     toman = serializers.DecimalField(
         max_digits=20,
-        decimal_places=0,
-        required=False
+        decimal_places=2,
+        required=False,
+        allow_null=True
     )
 
     weight = serializers.DecimalField(
         max_digits=20,
-        decimal_places=5,
-        required=False
+        decimal_places=8,
+        required=False,
+        allow_null=True
     )
 
     def validate(self, attrs):
 
-        toman = attrs.get('toman')
-
-        weight = attrs.get('weight')
-
-        if not toman and not weight:
-
+        if not attrs.get('toman') and not attrs.get('weight'):
             raise serializers.ValidationError({
                 "message": "مبلغ یا وزن الزامی است"
             })
 
         return attrs
-
-
-
-
-
 # =========================================================
 # WITHDRAW
 # =========================================================

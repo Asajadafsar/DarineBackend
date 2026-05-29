@@ -1,5 +1,3 @@
-# gold_app/urls.py
-
 from django.urls import path
 
 from .views import (
@@ -21,10 +19,11 @@ from .views import (
     DeletePriceAlertAPIView,
     ReferralDashboardAPIView,
     GiftCardOrderAPIView,
-    GiftCardOrderAPIView,
     GiftCardOrderListAPIView,
     RedeemGiftCardAPIView,
     GiftCardListAPIView,
+    AutoSavingPlanAPIView,
+    UserAddressesAPIView,
 )
 
 urlpatterns = [
@@ -90,10 +89,37 @@ urlpatterns = [
     ),
 
     # GIFT CARD
-    path('gift-card/order/', GiftCardOrderAPIView.as_view()),
-    path('gift-card/orders/', GiftCardOrderListAPIView.as_view()),
-    path('gift-card/redeem/', RedeemGiftCardAPIView.as_view()),
-    path('gift-card/list/', GiftCardListAPIView.as_view()),
+    path(
+        'gift-card/order/',
+        GiftCardOrderAPIView.as_view()
+    ),
+
+    path(
+        'gift-card/orders/',
+        GiftCardOrderListAPIView.as_view()
+    ),
+
+    path(
+        'gift-card/redeem/',
+        RedeemGiftCardAPIView.as_view()
+    ),
+
+    path(
+        'gift-card/list/',
+        GiftCardListAPIView.as_view()
+    ),
+
+    # AUTO SAVING
+    path(
+        'auto-saving/',
+        AutoSavingPlanAPIView.as_view()
+    ),
+
+    # USER ADDRESSES
+    path(
+        'addresses/',
+        UserAddressesAPIView.as_view()
+    ),
 
     # REPORTS
     path(
@@ -127,4 +153,5 @@ urlpatterns = [
         'referral-dashboard/',
         ReferralDashboardAPIView.as_view()
     ),
+    
 ]

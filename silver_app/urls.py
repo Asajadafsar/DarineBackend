@@ -1,21 +1,61 @@
 from django.urls import path
-from .views import (
-    DepositMoney, ReferralDashboardView, SilverDashboardAPI, SilverProductListView, SilverWalletAPI, BuySilver, 
-    SellSilver, SilverDeposit, BankCardAPI, SubmitPhysicalDelivery, UserReportsView, WithdrawMoney
-)
+from . import views
 
 urlpatterns = [
-    path('dashboard/', SilverDashboardAPI.as_view()),
-    path('wallet/', SilverWalletAPI.as_view()),
-    path('buy/', BuySilver.as_view()),
-    path('sell/', SellSilver.as_view()),
-    path('deposit/', SilverDeposit.as_view()),
-    path('cards/', BankCardAPI.as_view()),
-    path('deposit/', DepositMoney.as_view(), name='silver-deposit'),
-    path('withdraw/', WithdrawMoney.as_view(), name='silver-withdraw'),
-    path('physical-products/', SilverProductListView.as_view(), name='silver_products'),
-    path('physical-delivery/submit/', SubmitPhysicalDelivery.as_view(), name='submit_delivery'),
-    path('reports/', UserReportsView.as_view(), name='user_reports'),
-    path('referral/dashboard/', ReferralDashboardView.as_view(), name='referral-dashboard'),
-    
+
+    # =========================
+    # BALANCE & CHART
+    # =========================
+    path('balance/', views.SilverBalanceAPIView.as_view()),
+    path('chart/', views.SilverChartAPIView.as_view()),
+
+    # =========================
+    # TRADE
+    # =========================
+    path('buy/', views.BuySilverAPIView.as_view()),
+    path('sell/', views.SellSilverAPIView.as_view()),
+
+    # =========================
+    # WALLET
+    # =========================
+    path('deposit/', views.DepositSilverAPIView.as_view()),
+    path('withdraw/', views.WithdrawSilverAPIView.as_view()),
+
+    # =========================
+    # PRODUCT
+    # =========================
+    path('products/', views.SilverProductListAPIView.as_view()),
+
+    # =========================
+    # CART & CHECKOUT
+    # =========================
+    path('cart/', views.SilverCartAPIView.as_view()),
+    path('checkout/', views.SilverCheckoutAPIView.as_view()),
+
+    # =========================
+    # ORDERS
+    # =========================
+    path('orders/', views.SilverOrderHistoryAPIView.as_view()),
+
+    # =========================
+    # TRANSACTIONS
+    # =========================
+    path('recent-transactions/', views.SilverRecentTransactionsAPIView.as_view()),
+
+    # =========================
+    # REFERRAL
+    # =========================
+    path('referral-dashboard/', views.SilverReferralDashboardAPIView.as_view()),
+    # =========================
+# REPORTS
+# =========================
+path('reports/', views.SilverReportsAPIView.as_view()),
+
+# =========================
+# RECENT DELIVERIES
+# =========================
+path(
+    'recent-deliveries/',
+    views.SilverRecentDeliveriesAPIView.as_view()
+),
 ]

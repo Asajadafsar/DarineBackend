@@ -5,7 +5,7 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 
-from accounts.models import BankCard
+from accounts.models import BankCard, User
 
 
 # =========================================================
@@ -495,7 +495,7 @@ class PriceAlert(models.Model):
 
     target_price = models.DecimalField(
         max_digits=20,
-        decimal_places=0
+        decimal_places=5
     )
 
     alert_type = models.CharField(
@@ -503,13 +503,9 @@ class PriceAlert(models.Model):
         choices=ALERT_CHOICES
     )
 
-    is_active = models.BooleanField(
-        default=True
-    )
+    is_active = models.BooleanField(default=True)
 
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 # =========================================================
@@ -546,23 +542,47 @@ class ReferralEarning(models.Model):
 
 class GiftCard(models.Model):
 
+    STATUS_CHOICES = (
+        ('ACTIVE', 'ACTIVE'),
+        ('USED', 'USED'),
+        ('EXPIRED', 'EXPIRED'),
+    )
+
     serial_number = models.CharField(
         max_length=100,
         unique=True
     )
 
     weight = models.DecimalField(
-        max_digits=20,
+        max_digits=12,
         decimal_places=5
+    )
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='created_gift_cards'
+    )
+
+    activated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='activated_gift_cards'
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='ACTIVE'
     )
 
     is_used = models.BooleanField(
         default=False
     )
 
-    activated_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
+    used_at = models.DateTimeField(
         null=True,
         blank=True
     )
@@ -571,6 +591,9 @@ class GiftCard(models.Model):
         auto_now_add=True
     )
 
+    def __str__(self):
+
+        return self.serial_number
 
 # =========================================================
 # GIFT CARD ORDER
@@ -731,7 +754,8 @@ class AutoSavingPlan(models.Model):
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE
+        on_delete=models.CASCADE,
+        related_name='saving_plans'
     )
 
     type = models.CharField(
@@ -757,3 +781,7 @@ class AutoSavingPlan(models.Model):
     created_at = models.DateTimeField(
         auto_now_add=True
     )
+
+    def __str__(self):
+
+        return f"{self.user} - {self.type}"

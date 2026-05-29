@@ -1,17 +1,30 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY',
+    'django-insecure-temp-key-for-dev'
+)
 
+DEBUG = True
 
-# SECRET_KEY = 'django-insecure-jqr0%aw^1q2pgn$hr!mld%++q*7r6!z@2y%i5p+&14=g=a1g*('
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-temp-key-for-dev')
+ALLOWED_HOSTS = [
+    '127.0.0.1',
+    'localhost',
 
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+    'api.darine.shop',
+    'gold.darine.shop',
+    'silver.darine.shop',
+    'darine.shop',
+    'www.darine.shop',
+]
 
-
-
+# =========================================================
+# APPS
+# =========================================================
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -20,36 +33,65 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
     'rest_framework',
     'corsheaders',
+
     'drf_spectacular',
+    'drf_spectacular_sidecar',
+
     'accounts',
-    'gold_app',  
+    'gold_app',
     'silver_app',
 ]
 
+# =========================================================
+# MIDDLEWARE
+# =========================================================
+
 MIDDLEWARE = [
+
     'corsheaders.middleware.CorsMiddleware',
+
     'django.middleware.security.SecurityMiddleware',
+
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+
     'django.contrib.sessions.middleware.SessionMiddleware',
+
     'django.middleware.common.CommonMiddleware',
+
     'django.middleware.csrf.CsrfViewMiddleware',
+
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+
     'django.contrib.messages.middleware.MessageMiddleware',
+
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
 ROOT_URLCONF = 'darine_config.urls'
 
+# =========================================================
+# TEMPLATES
+# =========================================================
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
+
         'DIRS': [],
+
         'APP_DIRS': True,
+
         'OPTIONS': {
+
             'context_processors': [
+
                 'django.template.context_processors.request',
+
                 'django.contrib.auth.context_processors.auth',
+
                 'django.contrib.messages.context_processors.messages',
             ],
         },
@@ -58,127 +100,209 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'darine_config.wsgi.application'
 
+# =========================================================
+# DATABASE
+# =========================================================
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+
+        'NAME': 'darine_db',
+
+        'USER': 'Arad',
+
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+
+        'PORT': '5432',
+    }
+}
+
+# =========================================================
+# AUTH USER
+# =========================================================
+
+AUTH_USER_MODEL = 'accounts.User'
+
+# =========================================================
+# REST FRAMEWORK
+# =========================================================
+
 REST_FRAMEWORK = {
 
     'DEFAULT_AUTHENTICATION_CLASSES': (
+
         'accounts.authentication.CookieJWTAuthentication',
     ),
 
     'DEFAULT_PERMISSION_CLASSES': (
+
         'rest_framework.permissions.IsAuthenticated',
     ),
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
-SPECTACULAR_SETTINGS = {
-    'TITLE': 'Darine API',
-    'DESCRIPTION': 'API documentation for Darine project',
-    'VERSION': '1.0.0',
-    'PREPROCESSING_HOOKS': [
-        'drf_spectacular.hooks.preprocess_exclude_path_format',
-    ],
-    'SCHEMA_PATH_PREFIX': '/api/v1',
-    'DEFAULT_GENERATOR_CLASS': 'drf_spectacular.generators.SchemaGenerator',
-    'SERVE_INCLUDE_SCHEMA': False,  # این خط رو اضافه کن
-}
-# Database
-# https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+# =========================================================
+# JWT
+# =========================================================
 
+SIMPLE_JWT = {
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,193.5.44.190').split(',')
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
 
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 
+    'ROTATE_REFRESH_TOKENS': False,
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'darine_db',
-        'USER': 'Arad',
-        'PASSWORD': os.environ.get('DB_PASSWORD', ''), 
-        'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': '5432',
-    }
+    'BLACKLIST_AFTER_ROTATION': True,
+
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-
-# Password validation
-# https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
-
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
-]
-
-
-# Internationalization
-# https://docs.djangoproject.com/en/6.0/topics/i18n/
+# =========================================================
+# LANGUAGE
+# =========================================================
 
 LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = 'Asia/Tehran'
-USE_TZ = True
 
 USE_I18N = True
 
 USE_TZ = True
 
+# =========================================================
+# STATIC
+# =========================================================
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.0/howto/static-files/
+STATIC_URL = '/static/'
 
-STATIC_URL = 'static/'
-AUTH_USER_MODEL = 'accounts.User'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+STATICFILES_STORAGE = (
+    'whitenoise.storage.CompressedManifestStaticFilesStorage'
+)
 
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1), # زمان انقضای اکسس توکن
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7), # زمان انقضای رفرش توکن
-    'ROTATE_REFRESH_TOKENS': False,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'AUTH_HEADER_TYPES': ('Bearer',),
-}
-
+# =========================================================
+# MEDIA
+# =========================================================
 
 MEDIA_URL = '/media/'
+
 MEDIA_ROOT = BASE_DIR / 'media'
-# DEBUG = False
-CORS_ALLOW_ALL_ORIGINS = True
+
+# =========================================================
+# CORS
+# =========================================================
+
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",          # React dev
-    "http://localhost:8080",          # Vue dev
-    "http://127.0.0.1:5500",          # Live server
-    "http://193.5.44.190:8000",       # خود سرور
+
+    "https://gold.darine.shop",
+
+    "https://silver.darine.shop",
+
+    "https://darine.shop",
+
+    "https://www.darine.shop",
+
+    # local
+    "http://localhost:3000",
+
+    "http://127.0.0.1:3000",
 ]
+
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_ALL_ORIGINS = False
+
 CORS_ALLOW_HEADERS = [
+
     'accept',
+
     'accept-encoding',
+
     'authorization',
+
     'content-type',
+
     'dnt',
+
     'origin',
+
     'user-agent',
+
     'x-csrftoken',
+
     'x-requested-with',
 ]
+
 CORS_ALLOW_METHODS = [
+
     'DELETE',
+
     'GET',
+
     'OPTIONS',
+
     'PATCH',
+
     'POST',
+
     'PUT',
 ]
-CORS_ALLOW_CREDENTIALS = True
-CORS_PREFLIGHT_MAX_AGE = 86400  # 24 ساعت
 
+# =========================================================
+# COOKIE SETTINGS
+# =========================================================
+
+SESSION_COOKIE_SECURE = True
+
+CSRF_COOKIE_SECURE = True
+
+SESSION_COOKIE_SAMESITE = "None"
+
+CSRF_COOKIE_SAMESITE = "None"
+
+# =========================================================
+# HTTPS
+# =========================================================
+
+SECURE_PROXY_SSL_HEADER = (
+    'HTTP_X_FORWARDED_PROTO',
+    'https'
+)
+
+SECURE_SSL_REDIRECT = False
+
+# =========================================================
+# SPECTACULAR
+# =========================================================
+
+SPECTACULAR_SETTINGS = {
+
+    'TITLE': 'Darine API',
+
+    'DESCRIPTION': 'API documentation for Darine project',
+
+    'VERSION': '1.0.0',
+
+    'SWAGGER_UI_DIST': 'SIDECAR',
+
+    'SWAGGER_UI_FAVICON_HREF': 'SIDECAR',
+
+    'REDOC_DIST': 'SIDECAR',
+}
+
+CSRF_TRUSTED_ORIGINS = [
+
+    "https://gold.darine.shop",
+
+    "https://silver.darine.shop",
+
+    "https://darine.shop",
+
+    "https://www.darine.shop",
+]

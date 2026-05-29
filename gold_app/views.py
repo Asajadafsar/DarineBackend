@@ -3,7 +3,7 @@
 from decimal import Decimal
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from rest_framework import status
@@ -75,10 +75,13 @@ def success_response(
     status_code=status.HTTP_200_OK
 ):
 
+    if data is None:
+        data = {}
+
     return Response({
         "success": True,
         "message": message,
-        "data": data or {}
+        "data": data
     }, status=status_code)
 
 
@@ -88,11 +91,15 @@ def error_response(
     data=None
 ):
 
+    if data is None:
+        data = {}
+
     return Response({
         "success": False,
         "message": message,
-        "data": data or {}
+        "data": data
     }, status=status_code)
+
 
 
 # =========================================================
@@ -1534,10 +1541,13 @@ class ReferralDashboardAPIView(APIView):
         )
     
 
-
 # =========================================================
 # AUTO SAVING PLAN
 # =========================================================
+
+from datetime import timedelta
+from django.utils import timezone
+
 
 class AutoSavingPlanAPIView(APIView):
 
@@ -1561,19 +1571,58 @@ class AutoSavingPlanAPIView(APIView):
 
     def post(self, request):
 
-        serializer = AutoSavingPlanSerializer(
-            data=request.data
-        )
+        saving_type = request.data.get('type')
+        amount = request.data.get('amount')
 
-        if not serializer.is_valid():
+        if not saving_type:
 
             return error_response(
-                message='اطلاعات نامعتبر است',
-                data=serializer.errors
+                message='نوع پلن الزامی است'
             )
 
-        serializer.save(
-            user=request.user
+        if not amount:
+
+            return error_response(
+                message='مبلغ الزامی است'
+            )
+
+        # =====================================
+        # PERIOD DAYS
+        # =====================================
+
+        if saving_type == 'DAILY':
+
+            period_days = 1
+
+        elif saving_type == 'WEEKLY':
+
+            period_days = 7
+
+        elif saving_type == 'MONTHLY':
+
+            period_days = 30
+
+        else:
+
+            return error_response(
+                message='نوع پلن نامعتبر است'
+            )
+
+        # =====================================
+        # CREATE PLAN
+        # =====================================
+
+        plan = AutoSavingPlan.objects.create(
+            user=request.user,
+            type=saving_type,
+            amount=amount,
+            period_days=period_days,
+            next_execute_at=timezone.now() + timedelta(days=period_days),
+            status='ACTIVE'
+        )
+
+        serializer = AutoSavingPlanSerializer(
+            plan
         )
 
         return success_response(
@@ -1581,32 +1630,31 @@ class AutoSavingPlanAPIView(APIView):
             data=serializer.data,
             status_code=201
         )
-    
 
-# # =========================================================
-# # GIFT CARD
-# # =========================================================
+    def delete(self, request):
 
-# class GiftCardAPIView(APIView):
+        plan_id = request.data.get(
+            'plan_id'
+        )
 
-#     permission_classes = [IsAuthenticated]
+        try:
 
-#     def get(self, request):
+            plan = AutoSavingPlan.objects.get(
+                id=plan_id,
+                user=request.user
+            )
 
-#         cards = GiftCard.objects.filter(
-#             activated_by=request.user
-#         ).order_by('-created_at')
+        except AutoSavingPlan.DoesNotExist:
 
-#         serializer = GiftCardSerializer(
-#             cards,
-#             many=True
-#         )
+            return error_response(
+                message='پلن یافت نشد'
+            )
 
-#         return success_response(
-#             message='کارت هدیه ها دریافت شد',
-#             data=serializer.data
-#         )
-    
+        plan.delete()
+
+        return success_response(
+            message='پلن حذف شد'
+        )
 
 # =========================================================
 # GIFT CARD ORDER
@@ -1624,6 +1672,7 @@ class GiftCardOrderAPIView(APIView):
         )
 
         if not serializer.is_valid():
+
             return error_response(
                 message='اطلاعات نامعتبر است',
                 data=serializer.errors
@@ -1631,52 +1680,209 @@ class GiftCardOrderAPIView(APIView):
 
         user = request.user
 
-        wallet, _ = Wallet.objects.get_or_create(user=user)
+        wallet, _ = Wallet.objects.get_or_create(
+            user=user
+        )
 
         gold_price = get_live_gold_price()
 
-        weight_per_card = serializer.validated_data['weight_per_card']
-        quantity = serializer.validated_data['quantity']
+        if not gold_price:
 
-        total_weight = Decimal(weight_per_card) * quantity
-        total_price = total_weight * Decimal(str(gold_price))
+            return error_response(
+                message='خطا در دریافت قیمت طلا'
+            )
+
+        weight_per_card = Decimal(
+            str(
+                serializer.validated_data[
+                    'weight_per_card'
+                ]
+            )
+        )
+
+        quantity = serializer.validated_data[
+            'quantity'
+        ]
+
+        total_weight = (
+            weight_per_card * quantity
+        )
+
+        total_price = (
+            total_weight * gold_price
+        )
 
         if wallet.balance < total_price:
+
             return error_response(
-                message='موجودی کافی نیست'
+                message='موجودی کیف پول کافی نیست'
             )
+
+        # =====================================
+        # ADDRESS
+        # =====================================
+
+        address_id = request.data.get(
+            'address_id'
+        )
+
+        province = None
+        city = None
+        address = None
+        postal_code = None
+        plaque = None
+        unit = None
+
+        # =====================================
+        # USE OLD ADDRESS
+        # =====================================
+
+        if address_id:
+
+            old_order = Order.objects.filter(
+                id=address_id,
+                user=user
+            ).first()
+
+            old_gift = GiftCardOrder.objects.filter(
+                id=address_id,
+                user=user
+            ).first()
+
+            source = old_order or old_gift
+
+            if not source:
+
+                return error_response(
+                    message='آدرس یافت نشد'
+                )
+
+            province = source.province
+            city = source.city
+            address = source.address
+            postal_code = source.postal_code
+            plaque = source.plaque
+            unit = source.unit
+
+        # =====================================
+        # NEW ADDRESS
+        # =====================================
+
+        else:
+
+            province = serializer.validated_data[
+                'province'
+            ]
+
+            city = serializer.validated_data[
+                'city'
+            ]
+
+            address = serializer.validated_data[
+                'address'
+            ]
+
+            postal_code = serializer.validated_data.get(
+                'postal_code'
+            )
+
+            plaque = serializer.validated_data.get(
+                'plaque'
+            )
+
+            unit = serializer.validated_data.get(
+                'unit'
+            )
+
+        # =====================================
+        # WALLET
+        # =====================================
 
         wallet.balance -= total_price
         wallet.save()
 
+        # =====================================
+        # CREATE ORDER
+        # =====================================
+
         order = GiftCardOrder.objects.create(
+
             user=user,
+
             weight_per_card=weight_per_card,
+
             quantity=quantity,
+
             total_price=total_price,
-            province=serializer.validated_data['province'],
-            city=serializer.validated_data['city'],
-            address=serializer.validated_data['address'],
-            postal_code=serializer.validated_data.get('postal_code'),
-            plaque=serializer.validated_data.get('plaque'),
-            unit=serializer.validated_data.get('unit'),
+
+            province=province,
+
+            city=city,
+
+            address=address,
+
+            postal_code=postal_code,
+
+            plaque=plaque,
+
+            unit=unit,
+
             status='PENDING',
-            tracking_code=generate_tracking_code('GFT')
+
+            tracking_code=generate_tracking_code(
+                'GFT'
+            )
         )
+
+        # =====================================
+        # CREATE CARDS
+        # =====================================
+
+        created_cards = []
+
+        for i in range(quantity):
+
+            serial = generate_tracking_code(
+                'CARD'
+            )
+
+            card = GiftCard.objects.create(
+
+                serial_number=serial,
+
+                weight=weight_per_card,
+
+                created_by=user,
+
+                status='ACTIVE',
+
+                is_used=False
+            )
+
+            created_cards.append({
+
+                "serial_number": card.serial_number,
+
+                "weight": card.weight
+            })
 
         return success_response(
-            message='سفارش ثبت شد',
+
+            message='سفارش کارت هدیه ثبت شد',
+
+            status_code=201,
+
             data={
+
                 "order_id": order.id,
+
                 "tracking_code": order.tracking_code,
+
                 "total_price": total_price,
-                "wallet_balance": wallet.balance
-            },
-            status_code=201
+
+                "cards": created_cards
+            }
         )
-    
-
-
 
 class GiftCardOrderListAPIView(APIView):
 
@@ -1699,6 +1905,10 @@ class GiftCardOrderListAPIView(APIView):
         )
     
 
+# =========================================================
+# REDEEM GIFT CARD
+# =========================================================
+
 class RedeemGiftCardAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -1706,16 +1916,28 @@ class RedeemGiftCardAPIView(APIView):
     @transaction.atomic
     def post(self, request):
 
-        serial = request.data.get('serial_number')
+        serial = request.data.get(
+            'serial_number'
+        )
+
+        if not serial:
+
+            return error_response(
+                message='کد کارت الزامی است'
+            )
 
         try:
+
             card = GiftCard.objects.get(
                 serial_number=serial,
+                status='ACTIVE',
                 is_used=False
             )
+
         except GiftCard.DoesNotExist:
+
             return error_response(
-                message='کارت معتبر نیست'
+                message='کارت هدیه نامعتبر است'
             )
 
         inventory, _ = GoldInventory.objects.get_or_create(
@@ -1726,17 +1948,27 @@ class RedeemGiftCardAPIView(APIView):
         inventory.save()
 
         card.is_used = True
+        card.status = 'USED'
         card.activated_by = request.user
+        card.used_at = timezone.now()
         card.save()
 
         return success_response(
-            message='کارت فعال شد',
+
+            message='کارت هدیه فعال شد',
+
             data={
+
                 "weight_added": card.weight,
+
                 "new_balance": inventory.balance
             }
         )
-    
+
+
+# =========================================================
+# GIFT CARD LIST
+# =========================================================
 
 class GiftCardListAPIView(APIView):
 
@@ -1744,16 +1976,97 @@ class GiftCardListAPIView(APIView):
 
     def get(self, request):
 
-        cards = GiftCard.objects.filter(
-            activated_by=request.user
+        queryset = GiftCard.objects.filter(
+
+            Q(created_by=request.user)
+            |
+            Q(activated_by=request.user)
+
         ).order_by('-created_at')
 
         serializer = GiftCardSerializer(
-            cards,
+            queryset,
             many=True
         )
 
         return success_response(
-            message='لیست کارت‌ها',
+            message='لیست کارت هدیه',
             data=serializer.data
         )
+
+# =========================================================
+# USER ADDRESSES
+# =========================================================
+
+class UserAddressesAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        data = []
+
+        # =====================================
+        # PRODUCT ORDERS
+        # =====================================
+
+        orders = Order.objects.filter(
+            user=request.user
+        ).order_by('-created_at')
+
+        for item in orders:
+
+            data.append({
+
+                "id": item.id,
+
+                "type": "PRODUCT_ORDER",
+
+                "province": item.province,
+
+                "city": item.city,
+
+                "address": item.address,
+
+                "postal_code": item.postal_code,
+
+                "plaque": item.plaque,
+
+                "unit": item.unit
+            })
+
+        # =====================================
+        # GIFT CARD ORDERS
+        # =====================================
+
+        gifts = GiftCardOrder.objects.filter(
+            user=request.user
+        ).order_by('-created_at')
+
+        for item in gifts:
+
+            data.append({
+
+                "id": item.id,
+
+                "type": "GIFT_CARD_ORDER",
+
+                "province": item.province,
+
+                "city": item.city,
+
+                "address": item.address,
+
+                "postal_code": item.postal_code,
+
+                "plaque": item.plaque,
+
+                "unit": item.unit
+            })
+
+        return success_response(
+            message='آدرس‌ها دریافت شد',
+            data=data
+        )
+
+
