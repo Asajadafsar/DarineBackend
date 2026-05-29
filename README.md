@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🚀 Darine Backend
 
 Backend service for **Darine**, a modern trading platform for **Gold (Melted), Silver, and Cryptocurrencies**.
@@ -156,3 +157,7 @@ Developed with ❤️ by Sajad Afsar
 ## 📄 License
 
 MIT License
+=======
+# diploy
+Backend service for **Darine**, a modern trading platform for **Gold (Melted), Silver, and Cryptocurrencies.
+>>>>>>> a36f9ee3dc780377d5038dea50d67a3b5487876f
