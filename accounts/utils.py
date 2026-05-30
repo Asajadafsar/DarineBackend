@@ -20,6 +20,17 @@ def error_response(message="", errors=None, status_code=400):
 from .models import FeeSetting, ReferralEarning
 
 
+from decimal import Decimal
+
+from accounts.models import (
+    ReferralEarning,
+    FeeSetting
+)
+
+from gold_app.models import Wallet
+from silver_app.models import SilverWallet
+
+
 def apply_referral_bonus(user, amount, source_type):
 
     if not user.referred_by:
@@ -27,18 +38,48 @@ def apply_referral_bonus(user, amount, source_type):
 
     referrer = user.referred_by
 
-    fee_setting = FeeSetting.objects.first()
+    settings_obj = FeeSetting.objects.first()
 
+    if not settings_obj:
+        settings_obj = FeeSetting.objects.create()
+
+    # درصد سود
     if source_type == "GOLD":
-        percent = Decimal("0.01")  # یا از setting بخون
-    else:
-        percent = Decimal("0.008")
 
-    bonus = amount * percent
+        percent = settings_obj.gold_referral_percent
+
+    else:
+
+        percent = settings_obj.silver_referral_percent
+
+    bonus = (
+        Decimal(str(amount))
+        * Decimal(str(percent))
+        / Decimal("100")
+    )
 
     ReferralEarning.objects.create(
         referrer=referrer,
         user=user,
-        amount=int(bonus),
+        amount=bonus,
         source_type=source_type
     )
+
+    # واریز به کیف پول
+    if source_type == "GOLD":
+
+        wallet, _ = Wallet.objects.get_or_create(
+            user=referrer
+        )
+
+        wallet.balance += bonus
+        wallet.save()
+
+    else:
+
+        wallet, _ = SilverWallet.objects.get_or_create(
+            user=referrer
+        )
+
+        wallet.balance += bonus
+        wallet.save()

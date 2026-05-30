@@ -502,9 +502,9 @@ def format_money(amount):
 #GET API LIST
 import requests
 import logging
+import re
 
 logger = logging.getLogger(__name__)
-
 
 PRICE_URLS = {
     "gerami": "https://prices.wallgold.ir/indicator/summary-table-data/gerami",
@@ -518,13 +518,32 @@ PRICE_URLS = {
 }
 
 
+def clean_number(value):
+    """حذف کاما و تبدیل به عدد"""
+    if value is None:
+        return 0
+
+    value = re.sub(r"<.*?>", "", str(value))  # حذف span
+    value = value.replace(",", "").strip()
+
+    try:
+        return float(value)
+    except:
+        return 0
+
+
+def clean_percent(value):
+    value = re.sub(r"<.*?>", "", str(value))
+    value = value.replace("%", "").strip()
+    try:
+        return float(value)
+    except:
+        return 0
+
+
 def get_latest_price(key: str):
-    """
-    فقط آخرین قیمت (جدیدترین رکورد)
-    """
 
     url = PRICE_URLS.get(key)
-
     if not url:
         return None
 
@@ -536,23 +555,28 @@ def get_latest_price(key: str):
             return None
 
         data = res.json()
-
         rows = data.get("data")
 
         if not rows:
             return None
 
-        last = rows[0]   # 🔥 فقط آخرین دیتا
+        last = rows[0]
+
+        buy = clean_number(last[0])
+        sell = clean_number(last[1])
+        high = clean_number(last[2])
+        low = clean_number(last[3])
+        change = clean_number(last[4])
+        percent = clean_percent(last[5])
 
         return {
-            "buy": last[0],
-            "sell": last[1],
-            "high": last[2],
-            "low": last[3],
-            "change": last[4],
-            "percent": last[5],
-            "date": last[6],
-            "jalali": last[7],
+            "typeGold": key,
+            "currentRate": sell,
+            "minPriceDay": low,
+            "maxPriceDay": high,
+            "dayChange": change,
+            "monthChange": percent,
+            "weeklyChart": rows[:7],  # یا اگر خواستی جدا حرفه‌ای می‌کنیم
         }
 
     except Exception as e:

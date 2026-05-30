@@ -462,20 +462,20 @@ class GiftCardOrderSerializer(serializers.ModelSerializer):
 
 class ReferralEarningSerializer(serializers.ModelSerializer):
 
-    referred_user_mobile = serializers.CharField(
-        source='referred_user.mobile',
+    user_mobile = serializers.CharField(
+        source="user.mobile",
         read_only=True
     )
 
     class Meta:
         model = ReferralEarning
         fields = [
-            'id',
-            'referred_user_mobile',
-            'amount',
-            'transaction_date'
+            "id",
+            "user_mobile",
+            "amount",
+            "source_type",
+            "created_at"
         ]
-
 
 # =========================================================
 # GOLD PRICE HISTORY

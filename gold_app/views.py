@@ -45,6 +45,7 @@ from .serializers import (
     GiftCardSerializer,
     GoldOrderSerializer,
     PhysicalOrderSerializer,
+    PriceQuerySerializer,
     ProductSerializer,
     OrderSerializer,
     PriceAlertSerializer,
@@ -1292,37 +1293,36 @@ class ReferralDashboardAPIView(APIView):
         total_invited = user.subscribers.count()
 
         total_earned = ReferralEarning.objects.filter(
-            referrer=user
+            referrer=user,
+            source_type="GOLD"
         ).aggregate(
-            total=Sum('amount')
-        )['total'] or 0
+            total=Sum("amount")
+        )["total"] or 0
 
         recent_earnings = ReferralEarning.objects.filter(
-            referrer=user
-        ).order_by('-transaction_date')[:10]
+            referrer=user,
+            source_type="GOLD"
+        ).order_by(
+            "-created_at"
+        )[:10]
 
         serializer = ReferralEarningSerializer(
             recent_earnings,
             many=True
         )
 
-        referral_link = (
-            f"https://gold.darine.shop/register?"
-            f"ref={user.referral_code}"
-        )
-
         return success_response(
-            message='اطلاعات دعوت دوستان دریافت شد',
+            message="اطلاعات دعوت دوستان دریافت شد",
             data={
                 "referral_code": user.referral_code,
-                "referral_link": referral_link,
+                "referral_link":
+                    f"https://gold.darine.shop/register?ref={user.referral_code}",
                 "total_invited": total_invited,
                 "total_earned": int(total_earned),
                 "recent_earnings": serializer.data
             }
         )
     
-
 
 # =========================================================
 # AUTO SAVING PLAN
@@ -1943,6 +1943,9 @@ class GoldOrderAPIView(APIView):
         )
     
 
+
+
+
 class LatestPriceAPIView(APIView):
 
     permission_classes = [AllowAny]
@@ -1963,5 +1966,3 @@ class LatestPriceAPIView(APIView):
             message="آخرین قیمت دریافت شد",
             data=price
         )
-    
-

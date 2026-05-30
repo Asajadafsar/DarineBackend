@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import User, BankCard
 from rest_framework import serializers
 from .models import CooperationRequest
-
+import jdatetime
 
 class SendOTPSerializer(serializers.Serializer):
     mobile = serializers.CharField(max_length=11)
@@ -49,9 +49,13 @@ class ResetPasswordCompleteSerializer(serializers.Serializer):
         return attrs
 
 
+
+
+
 class UserProfileSerializer(serializers.ModelSerializer):
 
     full_name = serializers.SerializerMethodField()
+    birth_date = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -68,7 +72,19 @@ class UserProfileSerializer(serializers.ModelSerializer):
         ]
 
     def get_full_name(self, obj):
-        return f"{obj.first_name} {obj.last_name}"
+        return f"{obj.first_name or ''} {obj.last_name or ''}".strip()
+
+    def get_birth_date(self, obj):
+
+        if not obj.birth_date:
+            return ""
+
+        # تبدیل میلادی به شمسی
+        jdate = jdatetime.date.fromgregorian(date=obj.birth_date)
+
+        return jdate.strftime("%Y/%m/%d")
+
+
 
 
 class BankCardSerializer(serializers.ModelSerializer):

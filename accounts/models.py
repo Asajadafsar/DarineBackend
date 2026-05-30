@@ -153,6 +153,7 @@ class ReferralEarning(models.Model):
 
 class FeeSetting(models.Model):
 
+    # کارمزد معاملات
     gold_fee = models.DecimalField(
         max_digits=5,
         decimal_places=4,
@@ -163,6 +164,19 @@ class FeeSetting(models.Model):
         max_digits=5,
         decimal_places=4,
         default=0.01
+    )
+
+    # درصد سود معرف
+    gold_referral_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=20.00
+    )
+
+    silver_referral_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=10.00
     )
 
     updated_at = models.DateTimeField(auto_now=True)

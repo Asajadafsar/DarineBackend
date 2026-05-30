@@ -2,6 +2,7 @@
 
 import random
 
+import jdatetime
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
@@ -156,10 +157,7 @@ class RegisterStepThree(APIView):
         mobile = request.data.get("mobile")
 
         if User.objects.filter(mobile=mobile).exists():
-
-            return error_response(
-                "این شماره قبلاً ثبت شده"
-            )
+            return error_response("این شماره قبلاً ثبت شده")
 
         otp_verified = OTPRequest.objects.filter(
             mobile=mobile,
@@ -167,7 +165,6 @@ class RegisterStepThree(APIView):
         ).exists()
 
         if not otp_verified:
-
             return error_response(
                 "ابتدا شماره موبایل را تایید کنید",
                 status_code=403
@@ -177,10 +174,25 @@ class RegisterStepThree(APIView):
         confirm_password = request.data.get("confirm_password")
 
         if password != confirm_password:
+            return error_response("تکرار رمز عبور صحیح نیست")
 
-            return error_response(
-                "تکرار رمز عبور صحیح نیست"
-            )
+        # =========================
+        # 🔥 CONVERT BIRTH DATE
+        # =========================
+        birth_date_input = request.data.get("birth_date")
+        birth_date_gregorian = None
+
+        if birth_date_input:
+
+            try:
+                # فرض: ورودی شمسی "1402/10/01"
+                y, m, d = map(int, birth_date_input.split("/"))
+
+                jalali_date = jdatetime.date(y, m, d)
+                birth_date_gregorian = jalali_date.togregorian()
+
+            except Exception:
+                return error_response("فرمت تاریخ صحیح نیست (مثال: 1402/10/01)")
 
         try:
 
@@ -193,14 +205,13 @@ class RegisterStepThree(APIView):
 
                 national_code=request.data.get("national_code"),
 
-                birth_date=request.data.get("birth_date"),
+                birth_date=birth_date_gregorian,  # ✅ ذخیره میلادی
 
                 role="customer",
                 auth_status="pending"
             )
 
             user.set_password(password)
-
             user.save()
 
             return success_response(
@@ -212,10 +223,8 @@ class RegisterStepThree(APIView):
             )
 
         except Exception as e:
+            return error_response(str(e))
 
-            return error_response(
-                str(e)
-            )
 
 # ==========================================
 # LOGIN PASSWORD

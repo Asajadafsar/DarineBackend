@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from decimal import Decimal
 
+from accounts.models import ReferralEarning
+
 from .models import (
     SilverInventory,
     SilverTransaction,
@@ -230,3 +232,25 @@ class CheckoutSilverSerializer(serializers.Serializer):
 class SilverChartSerializer(serializers.Serializer):
     price = serializers.DecimalField(max_digits=20, decimal_places=0)
     created_at = serializers.DateTimeField()
+
+
+# =========================================================
+# REFERRAL EARNING
+# =========================================================
+
+class ReferralEarningSerializer(serializers.ModelSerializer):
+
+    user_mobile = serializers.CharField(
+        source="user.mobile",
+        read_only=True
+    )
+
+    class Meta:
+        model = ReferralEarning
+        fields = [
+            "id",
+            "user_mobile",
+            "amount",
+            "source_type",
+            "created_at"
+        ]

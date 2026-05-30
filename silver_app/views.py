@@ -13,7 +13,7 @@ from rest_framework.permissions import (
 )
 from rest_framework.response import Response
 
-from accounts.models import FeeSetting
+from accounts.models import FeeSetting, ReferralEarning
 from accounts.utils import apply_referral_bonus
 
 from .models import (
@@ -28,6 +28,7 @@ from .models import (
 )
 
 from .serializers import (
+    ReferralEarningSerializer,
     SilverProductSerializer,
     SilverCartSerializer,
     SilverOrderSerializer,
@@ -889,8 +890,6 @@ class SilverRecentDeliveriesAPIView(APIView):
 # =========================================================
 
 
-
-
 class SilverReferralDashboardAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -901,31 +900,31 @@ class SilverReferralDashboardAPIView(APIView):
 
         total_invited = user.subscribers.count()
 
-        total_earned = SilverReferralEarning.objects.filter(
-            referrer=user
+        total_earned = ReferralEarning.objects.filter(
+            referrer=user,
+            source_type="SILVER"
         ).aggregate(
-            total=Sum('amount')
-        )['total'] or 0
+            total=Sum("amount")
+        )["total"] or 0
 
-        recent_earnings = SilverReferralEarning.objects.filter(
-            referrer=user
-        ).order_by('-created_at')[:10]
+        recent_earnings = ReferralEarning.objects.filter(
+            referrer=user,
+            source_type="SILVER"
+        ).order_by(
+            "-created_at"
+        )[:10]
 
-        serializer = SilverReferralEarningSerializer(
+        serializer = ReferralEarningSerializer(
             recent_earnings,
             many=True
         )
 
-        referral_link = (
-            f"https://silver.darine.shop/register?"
-            f"ref={user.referral_code}"
-        )
-
         return success_response(
-            message='اطلاعات دعوت دوستان دریافت شد',
+            message="اطلاعات دعوت دوستان دریافت شد",
             data={
                 "referral_code": user.referral_code,
-                "referral_link": referral_link,
+                "referral_link":
+                    f"https://silver.darine.shop/register?ref={user.referral_code}",
                 "total_invited": total_invited,
                 "total_earned": int(total_earned),
                 "recent_earnings": serializer.data
