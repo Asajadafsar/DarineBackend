@@ -487,3 +487,74 @@ def format_money(amount):
     except Exception:
 
         return "0"
+    
+
+
+
+
+
+
+
+
+
+
+
+#GET API LIST
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+PRICE_URLS = {
+    "gerami": "https://prices.wallgold.ir/indicator/summary-table-data/gerami",
+    "rob": "https://prices.wallgold.ir/indicator/summary-table-data/rob",
+    "ons": "https://prices.wallgold.ir/indicator/summary-table-data/ons",
+    "nim": "https://prices.wallgold.ir/indicator/summary-table-data/nim",
+    "sekeb": "https://prices.wallgold.ir/indicator/summary-table-data/sekeb",
+    "sekee": "https://prices.wallgold.ir/indicator/summary-table-data/sekee",
+    "geram18": "https://prices.wallgold.ir/indicator/summary-table-data/geram18",
+    "geram24": "https://prices.wallgold.ir/indicator/summary-table-data/geram24",
+}
+
+
+def get_latest_price(key: str):
+    """
+    فقط آخرین قیمت (جدیدترین رکورد)
+    """
+
+    url = PRICE_URLS.get(key)
+
+    if not url:
+        return None
+
+    try:
+        res = requests.get(url, timeout=10)
+
+        if res.status_code != 200:
+            logger.error(f"Price API error: {res.status_code}")
+            return None
+
+        data = res.json()
+
+        rows = data.get("data")
+
+        if not rows:
+            return None
+
+        last = rows[0]   # 🔥 فقط آخرین دیتا
+
+        return {
+            "buy": last[0],
+            "sell": last[1],
+            "high": last[2],
+            "low": last[3],
+            "change": last[4],
+            "percent": last[5],
+            "date": last[6],
+            "jalali": last[7],
+        }
+
+    except Exception as e:
+        logger.error(f"Price error: {str(e)}")
+        return None

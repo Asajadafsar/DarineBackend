@@ -13,6 +13,9 @@ from rest_framework.permissions import (
 )
 from rest_framework.response import Response
 
+from accounts.models import FeeSetting
+from accounts.utils import apply_referral_bonus
+
 from .models import (
     SilverInventory,
     SilverTransaction,
@@ -155,89 +158,101 @@ class BuySilverAPIView(APIView):
         serializer = BuySilverSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return error_response(
-                message="اطلاعات نامعتبر است",
-                data=serializer.errors
-            )
+            return error_response(data=serializer.errors)
 
         user = request.user
 
-        toman_amount = serializer.validated_data.get("toman")
-        weight_amount = serializer.validated_data.get("weight")
+        toman = serializer.validated_data.get("toman")
+        weight_input = serializer.validated_data.get("weight")
         payment_method = serializer.validated_data.get("payment_method")
 
         silver_price = get_live_silver_price()
-        fee_rate = Decimal("0.01")
 
-        # =========================
+        if not silver_price:
+            return error_response(message="خطا در دریافت قیمت نقره", status_code=500)
+
+        # ======================
+        # FEE FROM SETTINGS
+        # ======================
+        fee_setting = FeeSetting.objects.first()
+        fee_rate = fee_setting.silver_fee if fee_setting else Decimal("0.01")
+
+        # ======================
         # CALCULATION
-        # =========================
-        if toman_amount:
+        # ======================
+        if toman:
 
-            total_toman = Decimal(str(toman_amount))
-            fee = total_toman * fee_rate
-            net_amount = total_toman - fee
-            weight = net_amount / silver_price
+            total = Decimal(str(toman))
+            fee = total * fee_rate
+            net = total - fee
+
+            weight = (net / silver_price).quantize(Decimal("0.0001"))
 
         else:
 
-            weight = Decimal(str(weight_amount))
-            pure_price = weight * silver_price
-            fee = pure_price * fee_rate
-            total_toman = pure_price + fee
+            weight = Decimal(str(weight_input)).quantize(Decimal("0.0001"))
 
-        # =========================
+            pure = weight * silver_price
+            fee = pure * fee_rate
+            total = pure + fee
+
+        # ======================
         # WALLET
-        # =========================
+        # ======================
         wallet, _ = SilverWallet.objects.get_or_create(user=user)
 
         if payment_method == "WALLET":
 
-            if wallet.balance < total_toman:
-                return error_response(message="موجودی کیف پول کافی نیست")
+            if wallet.balance < total:
+                return error_response(message="موجودی کافی نیست")
 
-            wallet.balance -= total_toman
+            wallet.balance -= total
             wallet.save()
 
         elif payment_method == "GATEWAY":
-            # چون درگاه نداریم → فرض موفق
             pass
 
         else:
             return error_response(message="روش پرداخت نامعتبر است")
 
-        # =========================
+        # ======================
         # INVENTORY
-        # =========================
+        # ======================
         inventory, _ = SilverInventory.objects.get_or_create(user=user)
         inventory.balance += weight
         inventory.save()
 
-        # =========================
+        # ======================
         # TRANSACTION
-        # =========================
+        # ======================
         tx = SilverTransaction.objects.create(
             user=user,
             type="BUY",
-            status="COMPLETED",
+            status="PENDING",
             amount_gr=weight,
             price_per_gram=silver_price,
             fee=fee,
-            total_amount=total_toman,
+            total_amount=total,
             tracking_code=generate_tracking_code("SBUY")
         )
 
+        # ======================
+        # REFERRAL BONUS
+        # ======================
+        apply_referral_bonus(user, total, "SILVER")
+
         return success_response(
-            message="خرید نقره موفق بود",
+            message="خرید نقره ثبت شد",
             status_code=201,
             data={
                 "transaction_id": tx.id,
                 "tracking_code": tx.tracking_code,
-                "silver_weight": float(round(weight, 5)),
-                "paid_amount": float(round(total_toman)),
-                "wallet_balance": float(round(wallet.balance, 2))
+                "silver_weight": float(weight),
+                "paid_amount": float(total),
+                "wallet_balance": float(wallet.balance)
             }
         )
+    
 
 
 # =========================================================
@@ -872,6 +887,9 @@ class SilverRecentDeliveriesAPIView(APIView):
 # =========================================================
 # REFERRAL DASHBOARD
 # =========================================================
+
+
+
 
 class SilverReferralDashboardAPIView(APIView):
 

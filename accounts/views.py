@@ -16,6 +16,7 @@ from datetime import date
 from .models import User, OTPRequest, BankCard
 
 from .serializers import (
+    CooperationRequestSerializer,
     SendOTPSerializer,
     VerifyOTPSerializer,
 
@@ -843,4 +844,31 @@ class ChangeMobileConfirm(APIView):
 
         return success_response(
             message="شماره موبایل تغییر کرد"
+        )
+    
+
+
+
+
+
+
+class CooperationRequestAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+
+        serializer = CooperationRequestSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return error_response(data=serializer.errors)
+
+        obj = serializer.save()
+
+        return success_response(
+            message="درخواست همکاری با موفقیت ثبت شد",
+            status_code=201,
+            data={
+                "request_id": obj.id
+            }
         )

@@ -16,8 +16,9 @@ from rest_framework.response import Response
 
 from drf_spectacular.utils import extend_schema
 
-from accounts.models import BankCard
+from accounts.models import BankCard, FeeSetting, ReferralEarning
 
+from accounts.utils import apply_referral_bonus
 from silver_app.models import (
     SilverInventory
 )
@@ -27,36 +28,38 @@ from .models import (
     GiftCard,
     GiftCardOrder,
     GoldInventory,
+    GoldOrder,
     GoldTransaction,
+    UserAddress,
     Wallet,
     FinancialTransaction,
     Product,
-    Cart,
     Order,
     OrderItem,
-    PriceAlert,
-    ReferralEarning
+    PriceAlert
 )
 
 from .serializers import (
     AutoSavingPlanSerializer,
     GiftCardOrderSerializer,
     GiftCardSerializer,
+    GoldOrderSerializer,
+    PhysicalOrderSerializer,
     ProductSerializer,
-    CartSerializer,
     OrderSerializer,
     PriceAlertSerializer,
     FinancialTransactionSerializer,
     GoldTransactionSerializer,
-    ReferralEarningSerializer,
     BuyGoldSerializer,
+    ReferralEarningSerializer,
     SellGoldSerializer,
     DepositSerializer,
-    WithdrawSerializer,
-    CheckoutSerializer
-)
+    UserAddressSerializer,
+    WithdrawSerializer
+    )
 
 from .utils import (
+    get_latest_price,
     get_live_gold_price,
     generate_tracking_code,
     get_gold_chart_data,
@@ -65,8 +68,10 @@ from .utils import (
 )
 
 
+
+
 # =========================================================
-# BASE RESPONSE
+# SUCCESS RESPONSE
 # =========================================================
 
 def success_response(
@@ -75,15 +80,17 @@ def success_response(
     status_code=status.HTTP_200_OK
 ):
 
-    if data is None:
-        data = {}
-
-    return Response({
-        "success": True,
-        "message": message,
-        "data": data
-    }, status=status_code)
-
+    return Response(
+        {
+            "success": True,
+            "message": message,
+            "data": data or {}
+        },
+        status=status_code
+    )
+# =========================================================
+# ERROR RESPONSE
+# =========================================================
 
 def error_response(
     message="خطایی رخ داده است",
@@ -91,16 +98,40 @@ def error_response(
     data=None
 ):
 
-    if data is None:
-        data = {}
+    response_data = data or {}
 
-    return Response({
-        "success": False,
-        "message": message,
-        "data": data
-    }, status=status_code)
+    final_message = message
 
+    if isinstance(response_data, dict):
 
+        # non field errors
+        if "non_field_errors" in response_data:
+            err = response_data["non_field_errors"]
+            final_message = err[0] if isinstance(err, list) else err
+
+        # message field
+        elif "message" in response_data:
+            err = response_data["message"]
+            final_message = err[0] if isinstance(err, list) else err
+
+        # first field error
+        else:
+            for v in response_data.values():
+                if isinstance(v, list) and v:
+                    final_message = v[0]
+                    break
+                elif isinstance(v, str):
+                    final_message = v
+                    break
+
+    return Response(
+        {
+            "success": False,
+            "message": str(final_message),
+            "data": {}   # 👈 همیشه تمیز
+        },
+        status=status_code
+    )
 
 # =========================================================
 # DASHBOARD
@@ -211,175 +242,118 @@ class BuyGoldAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(
-        tags=['Gold'],
-        request=BuyGoldSerializer,
-        summary='خرید طلا'
-    )
     @transaction.atomic
     def post(self, request):
 
-        try:
+        serializer = BuyGoldSerializer(data=request.data)
 
-            serializer = BuyGoldSerializer(
-                data=request.data
-            )
+        if not serializer.is_valid():
+            return error_response(data=serializer.errors)
 
-            if not serializer.is_valid():
+        user = request.user
 
-                return error_response(
-                    message='اطلاعات نامعتبر است',
-                    data=serializer.errors
-                )
+        toman = serializer.validated_data.get("toman")
+        weight_input = serializer.validated_data.get("weight")
+        payment_method = serializer.validated_data.get("payment_method")
 
-            user = request.user
+        gold_price = get_live_gold_price()
 
-            toman_amount = serializer.validated_data.get(
-                'toman'
-            )
+        if not gold_price:
+            return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
 
-            weight_amount = serializer.validated_data.get(
-                'weight'
-            )
+        # ======================
+        # FEE FROM SETTINGS
+        # ======================
+        fee_setting = FeeSetting.objects.first()
+        fee_rate = fee_setting.gold_fee if fee_setting else Decimal("0.0099")
 
-            payment_method = serializer.validated_data.get(
-                'payment_method'
-            )
+        # ======================
+        # CALCULATION
+        # ======================
+        if toman:
 
-            gold_price = get_live_gold_price()
+            total_toman = Decimal(str(toman))
+            fee = total_toman * fee_rate
+            net = total_toman - fee
 
-            if not gold_price:
+            weight = (net / gold_price).quantize(Decimal("0.0001"))
 
-                return error_response(
-                    message='خطا در دریافت قیمت طلا',
-                    status_code=500
-                )
+        else:
 
-            fee_rate = Decimal('0.01')
+            weight = Decimal(str(weight_input)).quantize(Decimal("0.0001"))
 
-            # =====================================
-            # CALCULATE
-            # =====================================
+            pure = weight * gold_price
+            fee = pure * fee_rate
+            total_toman = pure + fee
 
-            if toman_amount:
+        # ======================
+        # WALLET
+        # ======================
+        wallet, _ = Wallet.objects.get_or_create(user=user)
 
-                total_toman = Decimal(
-                    str(toman_amount)
-                )
+        if payment_method == "WALLET":
 
-                fee = total_toman * fee_rate
+            if wallet.balance < total_toman:
+                return error_response(message="موجودی کافی نیست")
 
-                net_amount = total_toman - fee
+            wallet.balance -= total_toman
+            wallet.save()
 
-                weight = (
-                    net_amount / gold_price
-                )
+        elif payment_method == "GATEWAY":
 
-            else:
-
-                weight = Decimal(
-                    str(weight_amount)
-                )
-
-                pure_price = (
-                    weight * gold_price
-                )
-
-                fee = pure_price * fee_rate
-
-                total_toman = (
-                    pure_price + fee
-                )
-
-            wallet, _ = Wallet.objects.get_or_create(
-                user=user
-            )
-
-            # =====================================
-            # WALLET PAYMENT
-            # =====================================
-
-            if payment_method == 'WALLET':
-
-                if wallet.balance < total_toman:
-
-                    return error_response(
-                        message='موجودی کیف پول کافی نیست'
-                    )
-
-                wallet.balance -= total_toman
-                wallet.save()
-
-            # =====================================
-            # GATEWAY PAYMENT
-            # =====================================
-
-            elif payment_method == 'GATEWAY':
-
-                FinancialTransaction.objects.create(
-                    user=user,
-                    amount=total_toman,
-                    type='DEPOSIT',
-                    method='ONLINE',
-                    status='COMPLETED',
-                    tracking_code=generate_tracking_code(
-                        'PAY'
-                    ),
-                    description='پرداخت آنلاین خرید طلا'
-                )
-
-            else:
-
-                return error_response(
-                    message='روش پرداخت نامعتبر است'
-                )
-
-            # =====================================
-            # GOLD INVENTORY
-            # =====================================
-
-            inventory, _ = GoldInventory.objects.get_or_create(
-                user=user
-            )
-
-            inventory.balance += weight
-            inventory.save()
-
-            # =====================================
-            # GOLD TRANSACTION
-            # =====================================
-
-            transaction_obj = GoldTransaction.objects.create(
+            FinancialTransaction.objects.create(
                 user=user,
-                type='BUY',
-                status='COMPLETED',
-                amount_gr=weight,
-                price_per_gram=gold_price,
-                fee=fee,
-                total_amount=total_toman,
-                tracking_code=generate_tracking_code(
-                    'BUY'
-                )
+                amount=total_toman,
+                type="DEPOSIT",
+                method="ONLINE",
+                status="COMPLETED",
+                tracking_code=generate_tracking_code("PAY"),
+                description="پرداخت خرید طلا"
             )
 
-            return success_response(
-                message='خرید طلا با موفقیت انجام شد',
-                status_code=201,
-                data={
-                    "transaction_id": transaction_obj.id,
-                    "tracking_code": transaction_obj.tracking_code,
-                    "gold_weight": round(weight, 5),
-                    "paid_amount": round(total_toman),
-                    "wallet_balance": round(wallet.balance)
-                }
-            )
+        else:
+            return error_response(message="روش پرداخت نامعتبر است")
 
-        except Exception as e:
+        # ======================
+        # INVENTORY
+        # ======================
+        inventory, _ = GoldInventory.objects.get_or_create(user=user)
+        inventory.balance += weight
+        inventory.save()
 
-            return error_response(
-                message=str(e),
-                status_code=500
-            )
+        # ======================
+        # TRANSACTION (PENDING)
+        # ======================
+        tx = GoldTransaction.objects.create(
+            user=user,
+            type="BUY",
+            status="PENDING",
+            amount_gr=weight,
+            price_per_gram=gold_price,
+            fee=fee,
+            total_amount=total_toman,
+            tracking_code=generate_tracking_code("BUY")
+        )
+
+        # ======================
+        # REFERRAL BONUS
+        # ======================
+        apply_referral_bonus(user, total_toman, "GOLD")
+
+        return success_response(
+            message="خرید طلا ثبت شد و در انتظار تایید است",
+            status_code=201,
+            data={
+                "transaction_id": tx.id,
+                "tracking_code": tx.tracking_code,
+                "gold_weight": float(weight),
+                "paid_amount": float(total_toman),
+                "wallet_balance": float(wallet.balance)
+            }
+        )
+
+
+
 
 # =========================================================
 # SELL GOLD
@@ -423,7 +397,7 @@ class SellGoldAPIView(APIView):
             user=user
         )
 
-        fee_rate = Decimal('0.01')
+        fee_rate = Decimal('0.99')
 
         if toman:
 
@@ -482,6 +456,11 @@ class SellGoldAPIView(APIView):
                 "wallet_balance": round(wallet.balance)
             }
         )
+
+
+
+
+
 
 # =========================================================
 # DEPOSIT WALLET
@@ -760,403 +739,206 @@ class ProductListAPIView(APIView):
 
         queryset = Product.objects.filter(
             is_active=True
-        ).order_by('-created_at')
+        ).select_related('category').order_by('-created_at')
 
-        category = request.GET.get(
-            'category'
-        )
-
-        delivery_type = request.GET.get(
-            'delivery_type'
-        )
-
-        # PHYSICAL / GIFT_CARD
+        category = request.GET.get("category")
+        delivery_type = request.GET.get("delivery_type")
 
         if category:
-
-            queryset = queryset.filter(
-                category=category
-            )
+            queryset = queryset.filter(category__slug=category)
 
         if delivery_type:
+            queryset = queryset.filter(delivery_type=delivery_type)
 
-            queryset = queryset.filter(
-                delivery_type=delivery_type
-            )
-
-        serializer = ProductSerializer(
-            queryset,
-            many=True
-        )
+        serializer = ProductSerializer(queryset, many=True)
 
         return success_response(
-            message='محصولات دریافت شد',
+            message="محصولات دریافت شد",
             data=serializer.data
         )
-
-
-# =========================================================
-# CHECKOUT
 # =========================================================
 
-class CheckoutAPIView(APIView):
+
+
+
+class PhysicalOrderAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request):
 
-        serializer = CheckoutSerializer(
-            data=request.data
-        )
+        serializer = PhysicalOrderSerializer(data=request.data)
 
         if not serializer.is_valid():
-
-            return error_response(
-                message='اطلاعات نامعتبر است',
-                data=serializer.errors
-            )
+            return error_response(data=serializer.errors)
 
         user = request.user
 
-        cart_items = Cart.objects.filter(
-            user=user
-        ).select_related('product')
-
-        if not cart_items.exists():
-
-            return error_response(
-                message='سبد خرید خالی است'
+        # =========================
+        # PRODUCT CHECK
+        # =========================
+        try:
+            product = Product.objects.get(
+                id=serializer.validated_data["product_id"],
+                is_active=True
             )
+        except Product.DoesNotExist:
+            return error_response(message="محصول یافت نشد")
 
-        payment_method = serializer.validated_data.get(
-            'payment_method'
-        )
+        quantity = serializer.validated_data["quantity"]
 
-        delivery_type = serializer.validated_data.get(
-            'delivery_type'
-        )
+        if product.inventory_count < quantity:
+            return error_response(message="موجودی کافی نیست")
 
-        wallet, _ = Wallet.objects.get_or_create(
-            user=user
-        )
+        # =========================
+        # CALCULATION
+        # =========================
+        total_gold = product.total_weight_with_fees * quantity
+        total_toman = product.buy_price * quantity
 
-        inventory, _ = GoldInventory.objects.get_or_create(
-            user=user
-        )
+        payment_method = serializer.validated_data["payment_method"]
 
-        total_gold = Decimal('0')
-        total_toman = Decimal('0')
+        wallet, _ = Wallet.objects.get_or_create(user=user)
+        inventory, _ = GoldInventory.objects.get_or_create(user=user)
 
-        # =====================================================
-        # CALCULATE
-        # =====================================================
-
-        for item in cart_items:
-
-            product = item.product
-
-            if product.inventory_count < item.quantity:
-
-                return error_response(
-                    message=f'موجودی {product.name} کافی نیست'
-                )
-
-            total_gold += (
-                product.total_weight_with_fees
-                * item.quantity
-            )
-
-            total_toman += (
-                product.buy_price
-                * item.quantity
-            )
-
-        # =====================================================
-        # PAYMENT TOMAN
-        # =====================================================
-
-        if payment_method == 'TOMAN':
+        # =========================
+        # PAYMENT
+        # =========================
+        if payment_method == "TOMAN":
 
             if wallet.balance < total_toman:
-
-                return error_response(
-                    message='موجودی کیف پول کافی نیست'
-                )
+                return error_response(message="موجودی کیف پول کافی نیست")
 
             wallet.balance -= total_toman
             wallet.save()
 
-        # =====================================================
-        # PAYMENT GOLD
-        # =====================================================
-
-        elif payment_method == 'GOLD':
+        else:
 
             if inventory.balance < total_gold:
-
-                return error_response(
-                    message='موجودی طلا کافی نیست'
-                )
+                return error_response(message="موجودی طلا کافی نیست")
 
             inventory.balance -= total_gold
             inventory.save()
 
+        # =========================
+        # ADDRESS HANDLING (FIXED)
+        # =========================
+        address = None
+
+        address_id = serializer.validated_data.get("address_id")
+
+        if address_id:
+
+            address = UserAddress.objects.filter(
+                id=address_id,
+                user=user
+            ).first()
+
+            if not address:
+                return error_response(
+                    message="آدرس یافت نشد",
+                    data={
+                        "address_id": address_id,
+                        "user_id": user.id
+                    }
+                )
+
+        # =========================
+        # SET ADDRESS DATA
+        # =========================
+        if address:
+
+            province = address.province
+            city = address.city
+            full_address = address.address
+            postal_code = address.postal_code
+            plaque = address.plaque
+            unit = address.unit
+
         else:
 
-            return error_response(
-                message='روش پرداخت نامعتبر است'
+            province = serializer.validated_data["province"]
+            city = serializer.validated_data["city"]
+            full_address = serializer.validated_data["address"]
+            postal_code = serializer.validated_data.get("postal_code")
+            plaque = serializer.validated_data.get("plaque")
+            unit = serializer.validated_data.get("unit")
+
+            # =========================
+            # AUTO SAVE NEW ADDRESS
+            # =========================
+            address = UserAddress.objects.create(
+                user=user,
+                province=province,
+                city=city,
+                address=full_address,
+                postal_code=postal_code,
+                plaque=plaque,
+                unit=unit,
             )
 
-        # =====================================================
+        # =========================
         # CREATE ORDER
-        # =====================================================
-
+        # =========================
         order = Order.objects.create(
             user=user,
-            province=serializer.validated_data.get(
-                'province'
-            ),
-            city=serializer.validated_data.get(
-                'city'
-            ),
-            address=serializer.validated_data.get(
-                'address'
-            ),
-            postal_code=serializer.validated_data.get(
-                'postal_code'
-            ),
-            plaque=serializer.validated_data.get(
-                'plaque'
-            ),
-            unit=serializer.validated_data.get(
-                'unit'
-            ),
+            province=province,
+            city=city,
+            address=full_address,
+            postal_code=postal_code,
+            plaque=plaque,
+            unit=unit,
             payment_method=payment_method,
-            delivery_type=delivery_type,
+            delivery_type=serializer.validated_data["delivery_type"],
             total_gold_amount=total_gold,
             total_toman_amount=total_toman,
-            tracking_code=generate_tracking_code(
-                'ORD'
-            ),
-            status='PENDING'
+            tracking_code=generate_tracking_code("ORD"),
+            status="PENDING"
         )
 
-        # =====================================================
-        # ORDER ITEMS
-        # =====================================================
+        OrderItem.objects.create(
+            order=order,
+            product=product,
+            quantity=quantity,
+            price_at_time=product.buy_price,
+            weight_at_time=product.total_weight_with_fees
+        )
 
-        for item in cart_items:
-
-            product = item.product
-
-            OrderItem.objects.create(
-                order=order,
-                product=product,
-                quantity=item.quantity,
-                price_at_time=product.buy_price,
-                weight_at_time=product.total_weight_with_fees
-            )
-
-            # کم کردن موجودی محصول
-            product.inventory_count -= item.quantity
-            product.save()
-
-        cart_items.delete()
+        product.inventory_count -= quantity
+        product.save()
 
         return success_response(
-            message='سفارش با موفقیت ثبت شد',
+            message="سفارش با موفقیت ثبت شد",
             status_code=201,
             data={
                 "order_id": order.id,
                 "tracking_code": order.tracking_code,
-                "payment_method": payment_method,
-                "delivery_type": delivery_type,
                 "total_price": int(total_toman),
-                "total_gold": round(total_gold, 5)
+                "total_gold": float(total_gold)
             }
         )
+    
 
-
-
-# =========================================================
-# CART
-# =========================================================
-
-class CartAPIView(APIView):
+class UserAddressListAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
 
-        queryset = Cart.objects.filter(
+        addresses = UserAddress.objects.filter(
             user=request.user
-        ).select_related('product')
+        ).order_by("-created_at")
 
-        serializer = CartSerializer(
-            queryset,
-            many=True
-        )
-
-        total_price = sum([
-            item.product.buy_price * item.quantity
-            for item in queryset
-        ])
-
-        total_gold = sum([
-            item.product.total_weight_with_fees * item.quantity
-            for item in queryset
-        ])
+        serializer = UserAddressSerializer(addresses, many=True)
 
         return success_response(
-            message='سبد خرید دریافت شد',
-            data={
-                "items": serializer.data,
-                "total_price": int(total_price),
-                "total_gold": round(total_gold, 5),
-                "count": queryset.count()
-            }
+            message="لیست آدرس‌ها دریافت شد",
+            data=serializer.data
         )
 
-    def post(self, request):
 
-        product_id = request.data.get(
-            'product_id'
-        )
 
-        quantity = int(
-            request.data.get(
-                'quantity',
-                1
-            )
-        )
-
-        if quantity < 1:
-
-            return error_response(
-                message='تعداد نامعتبر است'
-            )
-
-        try:
-
-            product = Product.objects.get(
-                id=product_id,
-                is_active=True
-            )
-
-        except Product.DoesNotExist:
-
-            return error_response(
-                message='محصول یافت نشد',
-                status_code=404
-            )
-
-        if product.inventory_count < quantity:
-
-            return error_response(
-                message='موجودی محصول کافی نیست'
-            )
-
-        cart_item, created = Cart.objects.get_or_create(
-            user=request.user,
-            product=product
-        )
-
-        if created:
-
-            cart_item.quantity = quantity
-
-        else:
-
-            final_quantity = (
-                cart_item.quantity + quantity
-            )
-
-            if final_quantity > product.inventory_count:
-
-                return error_response(
-                    message='موجودی کافی نیست'
-                )
-
-            cart_item.quantity = final_quantity
-
-        cart_item.save()
-
-        return success_response(
-            message='محصول به سبد خرید اضافه شد',
-            data={
-                "cart_item_id": cart_item.id,
-                "quantity": cart_item.quantity
-            }
-        )
-
-    def put(self, request):
-
-        item_id = request.data.get(
-            'item_id'
-        )
-
-        quantity = int(
-            request.data.get(
-                'quantity',
-                1
-            )
-        )
-
-        try:
-
-            cart_item = Cart.objects.get(
-                id=item_id,
-                user=request.user
-            )
-
-        except Cart.DoesNotExist:
-
-            return error_response(
-                message='آیتم یافت نشد'
-            )
-
-        if quantity < 1:
-
-            cart_item.delete()
-
-            return success_response(
-                message='آیتم حذف شد'
-            )
-
-        if quantity > cart_item.product.inventory_count:
-
-            return error_response(
-                message='موجودی محصول کافی نیست'
-            )
-
-        cart_item.quantity = quantity
-        cart_item.save()
-
-        return success_response(
-            message='سبد خرید بروزرسانی شد'
-        )
-
-    def delete(self, request):
-
-        item_id = request.data.get(
-            'item_id'
-        )
-
-        deleted = Cart.objects.filter(
-            id=item_id,
-            user=request.user
-        ).delete()
-
-        if not deleted[0]:
-
-            return error_response(
-                message='آیتم یافت نشد'
-            )
-
-        return success_response(
-            message='آیتم حذف شد'
-        )
 # =========================================================
 # ORDER HISTORY
 # =========================================================
@@ -1540,6 +1322,7 @@ class ReferralDashboardAPIView(APIView):
             }
         )
     
+
 
 # =========================================================
 # AUTO SAVING PLAN
@@ -2069,4 +1852,116 @@ class UserAddressesAPIView(APIView):
             data=data
         )
 
+
+class GoldOrderAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+
+        serializer = GoldOrderSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return error_response(
+                message="اطلاعات نامعتبر است",
+                data=serializer.errors
+            )
+
+        user = request.user
+
+        order_type = serializer.validated_data["order_type"]
+        target_price = Decimal(serializer.validated_data["target_price"])
+
+        amount_toman = serializer.validated_data.get("amount_toman")
+        gold_weight = serializer.validated_data.get("gold_weight")
+
+        fee_rate = Decimal("0.0099")  # 0.99%
+
+        # ==============================
+        # BUY ORDER (خرید در قیمت پایین)
+        # ==============================
+        if order_type == "BUY":
+
+            if amount_toman:
+
+                amount_toman = Decimal(amount_toman)
+
+                fee = amount_toman * fee_rate
+                net_amount = amount_toman - fee
+
+                estimated_weight = net_amount / target_price
+
+            else:
+
+                estimated_weight = Decimal(gold_weight)
+
+        # ==============================
+        # SELL ORDER (فروش در قیمت بالا)
+        # ==============================
+        else:
+
+            if gold_weight:
+
+                estimated_weight = Decimal(gold_weight)
+                gross_amount = estimated_weight * target_price
+
+                fee = gross_amount * fee_rate
+                net_amount = gross_amount - fee
+
+            else:
+
+                amount_toman = Decimal(amount_toman)
+
+                fee = amount_toman * fee_rate
+                net_amount = amount_toman - fee
+
+                estimated_weight = amount_toman / target_price
+
+        # ==============================
+        # CREATE ORDER (PENDING)
+        # ==============================
+        order = GoldOrder.objects.create(
+            user=user,
+            order_type=order_type,
+            target_price=target_price,
+            amount_toman=amount_toman if amount_toman else None,
+            gold_weight=gold_weight if gold_weight else None,
+            estimated_weight=estimated_weight,
+            status="PENDING"
+        )
+
+        return success_response(
+            message="سفارش با موفقیت ثبت شد (در انتظار اجرا)",
+            status_code=201,
+            data={
+                "order_id": order.id,
+                "type": order_type,
+                "target_price": str(target_price),
+                "estimated_weight": str(round(estimated_weight, 4))
+            }
+        )
+    
+
+class LatestPriceAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        key = request.GET.get("key")
+
+        if not key:
+            return error_response(message="key الزامی است")
+
+        price = get_latest_price(key)
+
+        if not price:
+            return error_response(message="قیمت یافت نشد")
+
+        return success_response(
+            message="آخرین قیمت دریافت شد",
+            data=price
+        )
+    
 

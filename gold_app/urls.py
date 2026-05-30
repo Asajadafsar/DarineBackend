@@ -2,6 +2,9 @@ from django.urls import path
 
 from .views import (
     GoldDashboardAPIView,
+    GoldOrderAPIView,
+    LatestPriceAPIView,
+    PhysicalOrderAPIView,
     UserBalanceAPIView,
     GoldChartAPIView,
     BuyGoldAPIView,
@@ -9,8 +12,6 @@ from .views import (
     DepositAPIView,
     WithdrawAPIView,
     ProductListAPIView,
-    CartAPIView,
-    CheckoutAPIView,
     OrderHistoryAPIView,
     ReportsAPIView,
     RecentTransactionsAPIView,
@@ -71,16 +72,10 @@ urlpatterns = [
         'products/',
         ProductListAPIView.as_view()
     ),
+    path("gold-limit-order/", GoldOrderAPIView.as_view()),
+    path("prices/", LatestPriceAPIView.as_view()),
 
-    path(
-        'cart/',
-        CartAPIView.as_view()
-    ),
 
-    path(
-        'checkout/',
-        CheckoutAPIView.as_view()
-    ),
 
     # ORDERS
     path(
@@ -153,5 +148,12 @@ urlpatterns = [
         'referral-dashboard/',
         ReferralDashboardAPIView.as_view()
     ),
-    
+    path(
+    'physical-order/',
+    PhysicalOrderAPIView.as_view()
+),
+
+
+
+
 ]

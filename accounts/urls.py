@@ -4,6 +4,7 @@ from django.urls import path
 
 from .views import (
 
+    CooperationRequestAPIView,
     RegisterStepOne,
     RegisterStepTwo,
     RegisterStepThree,
@@ -110,4 +111,5 @@ urlpatterns = [
         'change-mobile/confirm/',
         ChangeMobileConfirm.as_view()
     ),
+    path("cooperation-request/", CooperationRequestAPIView.as_view()),
 ]

@@ -4,6 +4,8 @@ from django.utils import timezone
 from datetime import timedelta
 import uuid
 
+from darine_config import settings
+
 
 
 class User(AbstractUser):
@@ -97,3 +99,73 @@ class BankCard(models.Model):
 
     def __str__(self):
         return f"{self.user.mobile} - {self.card_number}"
+    
+
+
+class CooperationRequest(models.Model):
+
+    organization_name = models.CharField(max_length=255)
+
+    full_name = models.CharField(max_length=255)
+
+    email = models.EmailField()
+
+    mobile = models.CharField(max_length=20)
+
+    description = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    is_reviewed = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.full_name
+    
+
+
+
+class ReferralEarning(models.Model):
+
+    TYPE_CHOICES = (
+        ("GOLD", "طلا"),
+        ("SILVER", "نقره"),
+    )
+
+    referrer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="referral_earnings"
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="referrals"
+    )
+
+    amount = models.DecimalField(max_digits=20, decimal_places=0)
+
+    source_type = models.CharField(max_length=10, choices=TYPE_CHOICES)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+
+class FeeSetting(models.Model):
+
+    gold_fee = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        default=0.0099
+    )
+
+    silver_fee = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        default=0.01
+    )
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return "Fee Settings"

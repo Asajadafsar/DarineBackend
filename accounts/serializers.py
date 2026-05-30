@@ -1,5 +1,7 @@
 from rest_framework import serializers
 from .models import User, BankCard
+from rest_framework import serializers
+from .models import CooperationRequest
 
 
 class SendOTPSerializer(serializers.Serializer):
@@ -88,3 +90,30 @@ class ChangeMobileRequestSerializer(serializers.Serializer):
 class ChangeMobileConfirmSerializer(serializers.Serializer):
     new_mobile = serializers.CharField(max_length=11)
     code = serializers.CharField(max_length=6)
+
+
+
+
+
+class CooperationRequestSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = CooperationRequest
+        fields = [
+            "id",
+            "organization_name",
+            "full_name",
+            "email",
+            "mobile",
+            "description",
+        ]
+
+    def validate_mobile(self, value):
+
+        if not value.isdigit():
+            raise serializers.ValidationError("شماره همراه نامعتبر است")
+
+        if len(value) < 10:
+            raise serializers.ValidationError("شماره همراه کوتاه است")
+
+        return value
