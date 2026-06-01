@@ -127,14 +127,17 @@ def get_live_silver_price():
 
 def save_gold_price_history():
 
-    """
-    ذخیره قیمت لحظه‌ای طلا
-    """
-
     price = get_live_gold_price()
 
     if not price:
         return False
+
+    last = GoldPriceHistory.objects.order_by(
+        "-created_at"
+    ).first()
+
+    if last and last.price == price:
+        return True
 
     GoldPriceHistory.objects.create(
         price=price
@@ -142,73 +145,56 @@ def save_gold_price_history():
 
     return True
 
-
 # =========================================================
 # GOLD CHART DATA
 # =========================================================
 
-def get_gold_chart_data(filter_type='24H'):
+from django.db.models import Avg
+from django.db.models.functions import TruncHour, TruncDate
 
-    from django.utils import timezone
-    from datetime import timedelta
+from datetime import timedelta
+from django.utils import timezone
+
+
+def get_gold_chart_data(filter_type='24H'):
 
     now = timezone.now()
 
-    # =========================================
-    # FILTER
-    # =========================================
-
-    if filter_type == '24H':
-
+    if filter_type == "24H":
         start_date = now - timedelta(hours=24)
 
-        queryset = GoldPriceHistory.objects.filter(
-            created_at__gte=start_date
-        ).order_by('created_at')
-
-        labels = [
-            item.created_at.strftime('%H:%M')
-            for item in queryset
-        ]
-
-    elif filter_type == 'WEEKLY':
-
+    elif filter_type == "WEEKLY":
         start_date = now - timedelta(days=7)
 
-        queryset = GoldPriceHistory.objects.filter(
-            created_at__gte=start_date
-        ).order_by('created_at')
-
-        labels = [
-            item.created_at.strftime('%m/%d')
-            for item in queryset
-        ]
-
     else:
-
         start_date = now - timedelta(days=30)
 
-        queryset = GoldPriceHistory.objects.filter(
-            created_at__gte=start_date
-        ).order_by('created_at')
+    queryset = GoldPriceHistory.objects.filter(
+        created_at__gte=start_date
+    ).order_by("created_at")
 
-        labels = [
-            item.created_at.strftime('%m/%d')
-            for item in queryset
-        ]
+    labels = []
+    prices = []
 
-    # =========================================
-    # PRICES
-    # =========================================
+    for item in queryset:
 
-    prices = [
-        int(item.price)
-        for item in queryset
-    ]
+        prices.append(int(item.price))
 
-    # =========================================
-    # EMPTY DATA
-    # =========================================
+        if filter_type == "24H":
+
+            labels.append(
+                item.created_at.strftime(
+                    "%H:%M:%S"
+                )
+            )
+
+        else:
+
+            labels.append(
+                item.created_at.strftime(
+                    "%m/%d %H:%M"
+                )
+            )
 
     if not prices:
 
@@ -221,40 +207,27 @@ def get_gold_chart_data(filter_type='24H'):
                 "current_price": 0,
                 "highest_price": 0,
                 "lowest_price": 0,
-                "change_percent": 0
+                "change_percent": 0,
+                "min_y": 0,
+                "max_y": 0
             }
         }
 
-    # =========================================
-    # STATS
-    # =========================================
-
     current_price = prices[-1]
-
     highest_price = max(prices)
-
     lowest_price = min(prices)
 
     first_price = prices[0]
 
     change_percent = round(
-        (
-            (current_price - first_price)
-            / first_price
-        ) * 100,
+        ((current_price - first_price) / first_price) * 100,
         2
     )
-
-    # =========================================
-    # RESPONSE
-    # =========================================
 
     return {
 
         "chart": {
-
             "labels": labels,
-
             "prices": prices
         },
 
@@ -266,7 +239,11 @@ def get_gold_chart_data(filter_type='24H'):
 
             "lowest_price": lowest_price,
 
-            "change_percent": change_percent
+            "change_percent": change_percent,
+
+            "min_y": lowest_price,
+
+            "max_y": highest_price
         }
     }
 

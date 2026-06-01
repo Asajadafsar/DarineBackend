@@ -661,8 +661,12 @@ class GoldPriceHistory(models.Model):
     )
 
     created_at = models.DateTimeField(
-        auto_now_add=True
+        auto_now_add=True,
+        db_index=True
     )
+
+    class Meta:
+        ordering = ["created_at"]
 
 
 # =========================================================
@@ -757,8 +761,11 @@ class AutoSavingPlan(models.Model):
 
 class UserAddress(models.Model):
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='gold_addresses'
+    )
     province = models.CharField(max_length=100)
     city = models.CharField(max_length=100)
     address = models.TextField()

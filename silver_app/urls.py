@@ -1,61 +1,106 @@
+# =========================================================
+# SILVER URLS
+# =========================================================
+
 from django.urls import path
-from . import views
 
-urlpatterns = [
-
-    # =========================
-    # BALANCE & CHART
-    # =========================
-    path('balance/', views.SilverBalanceAPIView.as_view()),
-    path('chart/', views.SilverChartAPIView.as_view()),
+from .views import (
 
     # =========================
-    # TRADE
+    # DASHBOARD & BALANCE
     # =========================
-    path('buy/', views.BuySilverAPIView.as_view()),
-    path('sell/', views.SellSilverAPIView.as_view()),
+    SilverDashboardAPIView,
+    SilverUserBalanceAPIView,
+
+    # =========================
+    # CHART
+    # =========================
+    SilverChartAPIView,
+
+    # =========================
+    # BUY / SELL
+    # =========================
+    BuySilverAPIView,
+    SellSilverAPIView,
 
     # =========================
     # WALLET
     # =========================
-    path('deposit/', views.DepositSilverAPIView.as_view()),
-    path('withdraw/', views.WithdrawSilverAPIView.as_view()),
+    DepositAPIView,
+    WithdrawAPIView,
 
     # =========================
-    # PRODUCT
+    # PRODUCTS & ORDERS
     # =========================
-    path('products/', views.SilverProductListAPIView.as_view()),
+    SilverProductListAPIView,
+    SilverPhysicalOrderAPIView,
+    SilverUserAddressListAPIView,
+    SilverOrderHistoryAPIView,
 
     # =========================
-    # CART & CHECKOUT
+    # REPORTS
     # =========================
-    path('cart/', views.SilverCartAPIView.as_view()),
-    path('checkout/', views.SilverCheckoutAPIView.as_view()),
+    SilverReportsAPIView,
 
     # =========================
-    # ORDERS
+    # RECENT
     # =========================
-    path('orders/', views.SilverOrderHistoryAPIView.as_view()),
-
-    # =========================
-    # TRANSACTIONS
-    # =========================
-    path('recent-transactions/', views.SilverRecentTransactionsAPIView.as_view()),
+    SilverRecentTransactionsAPIView,
+    SilverRecentDeliveriesAPIView,
 
     # =========================
     # REFERRAL
     # =========================
-    path('referral-dashboard/', views.SilverReferralDashboardAPIView.as_view()),
-    # =========================
-# REPORTS
-# =========================
-path('reports/', views.SilverReportsAPIView.as_view()),
+    SilverReferralDashboardAPIView,
 
-# =========================
-# RECENT DELIVERIES
-# =========================
-path(
-    'recent-deliveries/',
-    views.SilverRecentDeliveriesAPIView.as_view()
-),
+)
+
+urlpatterns = [
+
+    # =====================================================
+    # DASHBOARD & BALANCE
+    # =====================================================
+    path("dashboard/", SilverDashboardAPIView.as_view(), name="silver-dashboard"),
+    path("balance/", SilverUserBalanceAPIView.as_view(), name="silver-balance"),
+
+    # =====================================================
+    # CHART
+    # =====================================================
+    path("chart/", SilverChartAPIView.as_view(), name="silver-chart"),
+
+    # =====================================================
+    # BUY / SELL
+    # =====================================================
+    path("buy/", BuySilverAPIView.as_view(), name="silver-buy"),
+    path("sell/", SellSilverAPIView.as_view(), name="silver-sell"),
+
+    # =====================================================
+    # WALLET
+    # =====================================================
+    path("wallet/deposit/", DepositAPIView.as_view(), name="silver-deposit"),
+    path("wallet/withdraw/", WithdrawAPIView.as_view(), name="silver-withdraw"),
+
+    # =====================================================
+    # PRODUCTS & ORDERS
+    # =====================================================
+    path("products/", SilverProductListAPIView.as_view(), name="silver-products"),
+    path("order/", SilverPhysicalOrderAPIView.as_view(), name="silver-order"),
+    path("addresses/", SilverUserAddressListAPIView.as_view(), name="silver-addresses"),
+    path("orders/", SilverOrderHistoryAPIView.as_view(), name="silver-orders"),
+
+    # =====================================================
+    # REPORTS
+    # =====================================================
+    path("reports/", SilverReportsAPIView.as_view(), name="silver-reports"),
+
+    # =====================================================
+    # RECENT DATA
+    # =====================================================
+    path("recent/transactions/", SilverRecentTransactionsAPIView.as_view(), name="silver-recent-transactions"),
+    path("recent/deliveries/", SilverRecentDeliveriesAPIView.as_view(), name="silver-recent-deliveries"),
+
+    # =====================================================
+    # REFERRAL
+    # =====================================================
+    path("referral/", SilverReferralDashboardAPIView.as_view(), name="silver-referral"),
 ]

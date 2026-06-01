@@ -687,6 +687,7 @@ class GoldChartSerializer(
     filter_type = serializers.CharField()
 
 
+
 # =========================================================
 # RECENT TRANSACTION SERIALIZER
 # =========================================================

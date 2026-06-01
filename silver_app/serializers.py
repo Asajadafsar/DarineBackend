@@ -1,21 +1,48 @@
 from rest_framework import serializers
 from decimal import Decimal
 
-from accounts.models import ReferralEarning
+from accounts.models import BankCard, ReferralEarning
 
 from .models import (
+    SilverWallet,
     SilverInventory,
     SilverTransaction,
-    SilverWallet,
     SilverFinancialTransaction,
     SilverProduct,
-    SilverCart,
+    SilverProductCategory,
     SilverOrder,
     SilverOrderItem,
-    SilverPriceAlert,
-    SilverReferralEarning,
     SilverPriceHistory,
+    SilverReferralEarning,
+    SilverRecentTransaction,
+    SilverRecentDelivery,
+    UserAddress
 )
+
+# =========================================================
+# BASE RESPONSE
+# =========================================================
+
+class MessageResponseSerializer(serializers.Serializer):
+    message = serializers.CharField()
+
+
+# =========================================================
+# BANK CARD
+# =========================================================
+
+class BankCardSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = BankCard
+        fields = [
+            "id",
+            "card_number",
+            "bank_name",
+            "is_active",
+            "created_at"
+        ]
+
 
 # =========================================================
 # WALLET
@@ -31,11 +58,11 @@ class SilverWalletSerializer(serializers.ModelSerializer):
             "balance",
             "blocked_balance",
             "available_balance",
-            "updated_at",
+            "updated_at"
         ]
 
     def get_available_balance(self, obj):
-        return obj.balance - obj.blocked_balance
+        return int(obj.balance - obj.blocked_balance)
 
 
 # =========================================================
@@ -52,15 +79,15 @@ class SilverInventorySerializer(serializers.ModelSerializer):
             "balance",
             "blocked_balance",
             "available_balance",
-            "updated_at",
+            "updated_at"
         ]
 
     def get_available_balance(self, obj):
-        return obj.balance - obj.blocked_balance
+        return round(obj.balance - obj.blocked_balance, 5)
 
 
 # =========================================================
-# TRANSACTION
+# TRANSACTION (BUY / SELL SILVER)
 # =========================================================
 
 class SilverTransactionSerializer(serializers.ModelSerializer):
@@ -68,20 +95,59 @@ class SilverTransactionSerializer(serializers.ModelSerializer):
     type_display = serializers.CharField(source="get_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
 
+    final_price = serializers.SerializerMethodField()
+
     class Meta:
         model = SilverTransaction
-        fields = "__all__"
+        fields = [
+            "id",
+            "type",
+            "type_display",
+            "status",
+            "status_display",
+            "amount_gr",
+            "price_per_gram",
+            "fee",
+            "total_amount",
+            "final_price",
+            "tracking_code",
+            "created_at"
+        ]
+
+    def get_final_price(self, obj):
+        return int(obj.total_amount - obj.fee)
 
 
 # =========================================================
-# FINANCIAL TRANSACTION
+# FINANCIAL (DEPOSIT / WITHDRAW)
 # =========================================================
 
 class SilverFinancialTransactionSerializer(serializers.ModelSerializer):
 
+    method_display = serializers.CharField(source="get_method_display", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+    user_card_number = serializers.SerializerMethodField()
+
     class Meta:
         model = SilverFinancialTransaction
-        fields = "__all__"
+        fields = [
+            "id",
+            "amount",
+            "type",
+            "method",
+            "method_display",
+            "status",
+            "status_display",
+            "user_card",
+            "user_card_number",
+            "receipt_image",
+            "tracking_code",
+            "created_at"
+        ]
+
+    def get_user_card_number(self, obj):
+        return obj.user_card.card_number if obj.user_card else None
 
 
 # =========================================================
@@ -90,22 +156,26 @@ class SilverFinancialTransactionSerializer(serializers.ModelSerializer):
 
 class SilverProductSerializer(serializers.ModelSerializer):
 
+    category_name = serializers.CharField(source="category.name", read_only=True)
+
     class Meta:
         model = SilverProduct
-        fields = "__all__"
-
-
-# =========================================================
-# CART
-# =========================================================
-
-class SilverCartSerializer(serializers.ModelSerializer):
-
-    product_details = SilverProductSerializer(source="product", read_only=True)
-
-    class Meta:
-        model = SilverCart
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "category",
+            "category_name",
+            "delivery_type",
+            "weight",
+            "total_weight_with_fees",
+            "buy_price",
+            "sell_price",
+            "inventory_count",
+            "image",
+            "description",
+            "is_active",
+            "created_at"
+        ]
 
 
 # =========================================================
@@ -114,44 +184,70 @@ class SilverCartSerializer(serializers.ModelSerializer):
 
 class SilverOrderItemSerializer(serializers.ModelSerializer):
 
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    product_image = serializers.ImageField(source="product.image", read_only=True)
+
     class Meta:
         model = SilverOrderItem
-        fields = "__all__"
+        fields = [
+            "id",
+            "product",
+            "product_name",
+            "product_image",
+            "quantity",
+            "price_at_time",
+            "weight_at_time"
+        ]
 
 
 # =========================================================
-# ORDER
+# ORDER (CHECKOUT)
 # =========================================================
 
 class SilverOrderSerializer(serializers.ModelSerializer):
 
     items = SilverOrderItemSerializer(many=True, read_only=True)
 
+    payment_method_display = serializers.CharField(source="get_payment_method_display", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    delivery_type_display = serializers.CharField(source="get_delivery_type_display", read_only=True)
+
     class Meta:
         model = SilverOrder
-        fields = "__all__"
-
-
-# =========================================================
-# PRICE ALERT
-# =========================================================
-
-class SilverPriceAlertSerializer(serializers.ModelSerializer):
-
-    alert_type_display = serializers.CharField(
-        source="get_alert_type_display",
-        read_only=True
-    )
-
-    class Meta:
-        model = SilverPriceAlert
         fields = [
             "id",
-            "target_price",
-            "alert_type",
-            "alert_type_display",
-            "is_active",
+            "province",
+            "city",
+            "address",
+            "postal_code",
+            "plaque",
+            "unit",
+            "payment_method",
+            "payment_method_display",
+            "delivery_type",
+            "delivery_type_display",
+            "status",
+            "status_display",
+            "total_silver_amount",
+            "total_toman_amount",
+            "tracking_code",
             "created_at",
+            "items"
+        ]
+
+
+# =========================================================
+# PRICE HISTORY (CHART)
+# =========================================================
+
+class SilverPriceHistorySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = SilverPriceHistory
+        fields = [
+            "id",
+            "price",
+            "created_at"
         ]
 
 
@@ -163,30 +259,70 @@ class SilverReferralEarningSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SilverReferralEarning
-        fields = "__all__"
+        fields = [
+            "id",
+            "amount",
+            "source_type",
+            "created_at"
+        ]
 
 
 # =========================================================
-# PRICE HISTORY
+# RECENT TRANSACTIONS
 # =========================================================
 
-class SilverPriceHistorySerializer(serializers.ModelSerializer):
+class SilverRecentTransactionSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    amount = serializers.DecimalField(max_digits=20, decimal_places=0)
+    status = serializers.CharField()
+    type = serializers.CharField()
+    created_at = serializers.DateTimeField()
 
-    class Meta:
-        model = SilverPriceHistory
-        fields = "__all__"
+
+# =========================================================
+# RECENT DELIVERIES
+# =========================================================
+
+class SilverRecentDeliverySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    delivery_type = serializers.CharField()
+    status = serializers.CharField()
+    total_amount = serializers.DecimalField(max_digits=20, decimal_places=0)
+    created_at = serializers.DateTimeField()
+
+
+# =========================================================
+# DEPOSIT
+# =========================================================
+
+class SilverDepositSerializer(serializers.Serializer):
+
+    METHOD_CHOICES = (
+        ("RECEIPT", "رسید"),
+        ("GATEWAY", "درگاه")
+    )
+
+    amount = serializers.DecimalField(max_digits=20, decimal_places=0)
+    method = serializers.ChoiceField(choices=METHOD_CHOICES)
+    receipt = serializers.ImageField(required=False)
 
 
 # =========================================================
 # BUY SILVER
 # =========================================================
+
 class BuySilverSerializer(serializers.Serializer):
-    toman = serializers.DecimalField(max_digits=20, decimal_places=2, required=False)
-    weight = serializers.DecimalField(max_digits=20, decimal_places=6, required=False)
+
     payment_method = serializers.ChoiceField(
-        choices=["WALLET", "GATEWAY"],
-        required=True
+        choices=[
+            ("WALLET", "کیف پول"),
+            ("GATEWAY", "درگاه")
+        ]
     )
+
+    toman = serializers.DecimalField(max_digits=20, decimal_places=2, required=False, allow_null=True)
+    weight = serializers.DecimalField(max_digits=20, decimal_places=8, required=False, allow_null=True)
 
     def validate(self, attrs):
         if not attrs.get("toman") and not attrs.get("weight"):
@@ -197,32 +333,44 @@ class BuySilverSerializer(serializers.Serializer):
 # =========================================================
 # SELL SILVER
 # =========================================================
+
 class SellSilverSerializer(serializers.Serializer):
-    toman = serializers.DecimalField(max_digits=20, decimal_places=2, required=False)
-    weight = serializers.DecimalField(max_digits=20, decimal_places=6, required=False)
+
+    toman = serializers.DecimalField(max_digits=20, decimal_places=2, required=False, allow_null=True)
+    weight = serializers.DecimalField(max_digits=20, decimal_places=8, required=False, allow_null=True)
 
     def validate(self, attrs):
         if not attrs.get("toman") and not attrs.get("weight"):
             raise serializers.ValidationError("مبلغ یا وزن الزامی است")
         return attrs
+
+
 # =========================================================
-# DEPOSIT / WITHDRAW
+# WITHDRAW
 # =========================================================
 
-class DepositSilverSerializer(serializers.Serializer):
+class SilverWithdrawSerializer(serializers.Serializer):
+
+    TARGET_CHOICES = (
+        ("BANK", "بانک"),
+        ("SILVER", "تبدیل به نقره")
+    )
+
     amount = serializers.DecimalField(max_digits=20, decimal_places=0)
-
-
-class WithdrawSilverSerializer(serializers.Serializer):
-    amount = serializers.DecimalField(max_digits=20, decimal_places=0)
+    target = serializers.ChoiceField(choices=TARGET_CHOICES)
+    card_id = serializers.IntegerField(required=False)
 
 
 # =========================================================
-# CHECKOUT
+# USER BALANCE (DASHBOARD)
 # =========================================================
 
-class CheckoutSilverSerializer(serializers.Serializer):
-    confirm = serializers.BooleanField()
+class SilverUserBalanceSerializer(serializers.Serializer):
+
+    silver_balance_gr = serializers.DecimalField(max_digits=20, decimal_places=5)
+    toman_balance = serializers.DecimalField(max_digits=20, decimal_places=0)
+    current_silver_price = serializers.DecimalField(max_digits=20, decimal_places=0)
+    total_assets = serializers.DecimalField(max_digits=20, decimal_places=0)
 
 
 # =========================================================
@@ -230,27 +378,93 @@ class CheckoutSilverSerializer(serializers.Serializer):
 # =========================================================
 
 class SilverChartSerializer(serializers.Serializer):
-    price = serializers.DecimalField(max_digits=20, decimal_places=0)
-    created_at = serializers.DateTimeField()
+
+    labels = serializers.ListField(child=serializers.CharField())
+    prices = serializers.ListField(child=serializers.DecimalField(max_digits=20, decimal_places=0))
+    highest_price = serializers.DecimalField(max_digits=20, decimal_places=0)
+    lowest_price = serializers.DecimalField(max_digits=20, decimal_places=0)
+    change_percent = serializers.DecimalField(max_digits=10, decimal_places=2)
+    filter_type = serializers.CharField()
 
 
-# =========================================================
-# REFERRAL EARNING
-# =========================================================
 
-class ReferralEarningSerializer(serializers.ModelSerializer):
 
-    user_mobile = serializers.CharField(
-        source="user.mobile",
-        read_only=True
-    )
+class UserAddressSerializer(serializers.ModelSerializer):
 
     class Meta:
-        model = ReferralEarning
+        model = UserAddress
         fields = [
             "id",
-            "user_mobile",
-            "amount",
-            "source_type",
-            "created_at"
+            "province",
+            "city",
+            "address",
+            "postal_code",
+            "plaque",
+            "unit",
+            "created_at",
         ]
+
+
+class SilverPhysicalOrderSerializer(serializers.Serializer):
+
+    product_id = serializers.IntegerField()
+    quantity = serializers.IntegerField(min_value=1)
+
+    payment_method = serializers.ChoiceField(
+        choices=[
+            ('TOMAN', 'کیف پول'),
+            ('GOLD', 'طلا')
+        ]
+    )
+
+    delivery_type = serializers.ChoiceField(
+        choices=[
+            ('HOME', 'ارسال'),
+            ('IN_PERSON', 'حضوری')
+        ]
+    )
+
+    # =========================
+    # ADDRESS
+    # =========================
+    address_id = serializers.IntegerField(required=False, allow_null=True)
+
+    province = serializers.CharField(required=False, allow_blank=True)
+    city = serializers.CharField(required=False, allow_blank=True)
+    address = serializers.CharField(required=False, allow_blank=True)
+
+    postal_code = serializers.CharField(required=False, allow_blank=True)
+    plaque = serializers.CharField(required=False, allow_blank=True)
+    unit = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, data):
+
+        address_id = data.get("address_id")
+
+        province = data.get("province")
+        city = data.get("city")
+        address = data.get("address")
+
+        # =========================
+        # OLD ADDRESS
+        # =========================
+        if address_id:
+
+            if any([province, city, address]):
+                raise serializers.ValidationError(
+                    "یا آدرس قبلی یا آدرس جدید، نه هر دو"
+                )
+
+            return data
+
+        # =========================
+        # NEW ADDRESS
+        # =========================
+        if not (province and city and address):
+            raise serializers.ValidationError(
+                "province, city, address الزامی است"
+            )
+
+        return data
+
+
