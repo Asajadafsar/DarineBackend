@@ -274,7 +274,14 @@ class SilverReferralEarningSerializer(serializers.ModelSerializer):
 class SilverRecentTransactionSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     title = serializers.CharField()
-    amount = serializers.DecimalField(max_digits=20, decimal_places=0)
+    amount = serializers.DecimalField(
+    max_digits=20,
+    decimal_places=0,
+    error_messages={
+        "required": "مبلغ الزامی است",
+        "invalid": "مبلغ نامعتبر است"
+    }
+)
     status = serializers.CharField()
     type = serializers.CharField()
     created_at = serializers.DateTimeField()
@@ -303,7 +310,14 @@ class SilverDepositSerializer(serializers.Serializer):
         ("GATEWAY", "درگاه")
     )
 
-    amount = serializers.DecimalField(max_digits=20, decimal_places=0)
+    amount = serializers.DecimalField(
+    max_digits=20,
+    decimal_places=0,
+    error_messages={
+        "required": "مبلغ الزامی است",
+        "invalid": "مبلغ نامعتبر است"
+    }
+)
     method = serializers.ChoiceField(choices=METHOD_CHOICES)
     receipt = serializers.ImageField(required=False)
 
@@ -318,15 +332,38 @@ class BuySilverSerializer(serializers.Serializer):
         choices=[
             ("WALLET", "کیف پول"),
             ("GATEWAY", "درگاه")
-        ]
+        ],
+        error_messages={
+            "required": "روش پرداخت الزامی است",
+            "invalid_choice": "روش پرداخت نامعتبر است"
+        }
     )
 
-    toman = serializers.DecimalField(max_digits=20, decimal_places=2, required=False, allow_null=True)
-    weight = serializers.DecimalField(max_digits=20, decimal_places=8, required=False, allow_null=True)
+    toman = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        error_messages={
+            "invalid": "مبلغ نامعتبر است"
+        }
+    )
+
+    weight = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=8,
+        required=False,
+        allow_null=True,
+        error_messages={
+            "invalid": "وزن نامعتبر است"
+        }
+    )
 
     def validate(self, attrs):
         if not attrs.get("toman") and not attrs.get("weight"):
-            raise serializers.ValidationError("مبلغ یا وزن الزامی است")
+            raise serializers.ValidationError({
+                "non_field_errors": ["مبلغ یا وزن الزامی است"]
+            })
         return attrs
 
 
@@ -336,12 +373,31 @@ class BuySilverSerializer(serializers.Serializer):
 
 class SellSilverSerializer(serializers.Serializer):
 
-    toman = serializers.DecimalField(max_digits=20, decimal_places=2, required=False, allow_null=True)
-    weight = serializers.DecimalField(max_digits=20, decimal_places=8, required=False, allow_null=True)
+    toman = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        error_messages={
+            "invalid": "مبلغ نامعتبر است"
+        }
+    )
+
+    weight = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=8,
+        required=False,
+        allow_null=True,
+        error_messages={
+            "invalid": "وزن نامعتبر است"
+        }
+    )
 
     def validate(self, attrs):
         if not attrs.get("toman") and not attrs.get("weight"):
-            raise serializers.ValidationError("مبلغ یا وزن الزامی است")
+            raise serializers.ValidationError({
+                "non_field_errors": ["مبلغ یا وزن الزامی است"]
+            })
         return attrs
 
 
@@ -353,13 +409,33 @@ class SilverWithdrawSerializer(serializers.Serializer):
 
     TARGET_CHOICES = (
         ("BANK", "بانک"),
-        ("SILVER", "تبدیل به نقره")
+        ("SILVER", "تبدیل به نقره"),
     )
 
-    amount = serializers.DecimalField(max_digits=20, decimal_places=0)
-    target = serializers.ChoiceField(choices=TARGET_CHOICES)
-    card_id = serializers.IntegerField(required=False)
+    amount = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=0,
+        error_messages={
+            "required": "مبلغ الزامی است",
+            "invalid": "مبلغ نامعتبر است"
+        }
+    )
 
+    target = serializers.ChoiceField(
+        choices=TARGET_CHOICES,
+        error_messages={
+            "required": "نوع برداشت الزامی است",
+            "invalid_choice": "نوع برداشت نامعتبر است"
+        }
+    )
+
+    card_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        error_messages={
+            "invalid": "شناسه کارت نامعتبر است"
+        }
+    )
 
 # =========================================================
 # USER BALANCE (DASHBOARD)
@@ -407,27 +483,54 @@ class UserAddressSerializer(serializers.ModelSerializer):
 
 class SilverPhysicalOrderSerializer(serializers.Serializer):
 
-    product_id = serializers.IntegerField()
-    quantity = serializers.IntegerField(min_value=1)
+    product_id = serializers.IntegerField(
+        error_messages={
+            "required": "شناسه محصول الزامی است",
+            "invalid": "شناسه محصول نامعتبر است"
+        }
+    )
+
+    quantity = serializers.IntegerField(
+        min_value=1,
+        error_messages={
+            "required": "تعداد الزامی است",
+            "invalid": "تعداد نامعتبر است",
+            "min_value": "حداقل تعداد 1 است"
+        }
+    )
 
     payment_method = serializers.ChoiceField(
         choices=[
             ('TOMAN', 'کیف پول'),
-            ('GOLD', 'طلا')
-        ]
+            ('SILVER', 'نقره')
+        ],
+        error_messages={
+            "required": "روش پرداخت الزامی است",
+            "invalid_choice": "روش پرداخت نامعتبر است"
+        }
     )
 
     delivery_type = serializers.ChoiceField(
         choices=[
             ('HOME', 'ارسال'),
             ('IN_PERSON', 'حضوری')
-        ]
+        ],
+        error_messages={
+            "required": "نوع ارسال الزامی است",
+            "invalid_choice": "نوع ارسال نامعتبر است"
+        }
     )
 
     # =========================
     # ADDRESS
     # =========================
-    address_id = serializers.IntegerField(required=False, allow_null=True)
+    address_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        error_messages={
+            "invalid": "شناسه آدرس نامعتبر است"
+        }
+    )
 
     province = serializers.CharField(required=False, allow_blank=True)
     city = serializers.CharField(required=False, allow_blank=True)
@@ -440,30 +543,26 @@ class SilverPhysicalOrderSerializer(serializers.Serializer):
     def validate(self, data):
 
         address_id = data.get("address_id")
-
         province = data.get("province")
         city = data.get("city")
         address = data.get("address")
 
         # =========================
-        # OLD ADDRESS
+        # ADDRESS CONFLICT
         # =========================
-        if address_id:
-
-            if any([province, city, address]):
-                raise serializers.ValidationError(
-                    "یا آدرس قبلی یا آدرس جدید، نه هر دو"
-                )
-
-            return data
+        if address_id and any([province, city, address]):
+            raise serializers.ValidationError({
+                "non_field_errors": ["یا آدرس قبلی یا آدرس جدید، نه هر دو"]
+            })
 
         # =========================
-        # NEW ADDRESS
+        # NEW ADDRESS REQUIRED
         # =========================
-        if not (province and city and address):
-            raise serializers.ValidationError(
-                "province, city, address الزامی است"
-            )
+        if not address_id:
+            if not (province and city and address):
+                raise serializers.ValidationError({
+                    "non_field_errors": ["province, city, address الزامی است"]
+                })
 
         return data
 
