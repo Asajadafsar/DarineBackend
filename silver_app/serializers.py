@@ -156,7 +156,12 @@ class SilverFinancialTransactionSerializer(serializers.ModelSerializer):
 
 class SilverProductSerializer(serializers.ModelSerializer):
 
-    category_name = serializers.CharField(source="category.name", read_only=True)
+    category_name = serializers.CharField(
+        source="category.name",
+        read_only=True
+    )
+
+    total_price = serializers.SerializerMethodField()
 
     class Meta:
         model = SilverProduct
@@ -170,6 +175,7 @@ class SilverProductSerializer(serializers.ModelSerializer):
             "total_weight_with_fees",
             "buy_price",
             "sell_price",
+            "total_price",
             "inventory_count",
             "image",
             "description",
@@ -177,6 +183,15 @@ class SilverProductSerializer(serializers.ModelSerializer):
             "created_at"
         ]
 
+    def get_total_price(self, obj):
+
+        if obj.buy_price and obj.total_weight_with_fees:
+            return int(obj.buy_price * obj.total_weight_with_fees)
+
+        if obj.buy_price:
+            return int(obj.buy_price)
+
+        return 0
 
 # =========================================================
 # ORDER ITEM
@@ -483,54 +498,29 @@ class UserAddressSerializer(serializers.ModelSerializer):
 
 class SilverPhysicalOrderSerializer(serializers.Serializer):
 
-    product_id = serializers.IntegerField(
-        error_messages={
-            "required": "شناسه محصول الزامی است",
-            "invalid": "شناسه محصول نامعتبر است"
-        }
-    )
-
-    quantity = serializers.IntegerField(
-        min_value=1,
-        error_messages={
-            "required": "تعداد الزامی است",
-            "invalid": "تعداد نامعتبر است",
-            "min_value": "حداقل تعداد 1 است"
-        }
+    products = serializers.ListField(
+        child=serializers.DictField(),
+        allow_empty=False
     )
 
     payment_method = serializers.ChoiceField(
         choices=[
             ('TOMAN', 'کیف پول'),
             ('SILVER', 'نقره')
-        ],
-        error_messages={
-            "required": "روش پرداخت الزامی است",
-            "invalid_choice": "روش پرداخت نامعتبر است"
-        }
+        ]
     )
 
     delivery_type = serializers.ChoiceField(
         choices=[
             ('HOME', 'ارسال'),
             ('IN_PERSON', 'حضوری')
-        ],
-        error_messages={
-            "required": "نوع ارسال الزامی است",
-            "invalid_choice": "نوع ارسال نامعتبر است"
-        }
+        ]
     )
 
     # =========================
     # ADDRESS
     # =========================
-    address_id = serializers.IntegerField(
-        required=False,
-        allow_null=True,
-        error_messages={
-            "invalid": "شناسه آدرس نامعتبر است"
-        }
-    )
+    address_id = serializers.IntegerField(required=False, allow_null=True)
 
     province = serializers.CharField(required=False, allow_blank=True)
     city = serializers.CharField(required=False, allow_blank=True)
@@ -542,22 +532,37 @@ class SilverPhysicalOrderSerializer(serializers.Serializer):
 
     def validate(self, data):
 
+        products = data.get("products")
+
+        if not products:
+            raise serializers.ValidationError({
+                "non_field_errors": ["سبد خرید خالی است"]
+            })
+
+        # validate each product item
+        for item in products:
+
+            if "product_id" not in item:
+                raise serializers.ValidationError({
+                    "non_field_errors": ["product_id الزامی است"]
+                })
+
+            if "quantity" not in item or int(item["quantity"]) < 1:
+                raise serializers.ValidationError({
+                    "non_field_errors": ["quantity نامعتبر است"]
+                })
+
         address_id = data.get("address_id")
         province = data.get("province")
         city = data.get("city")
         address = data.get("address")
 
-        # =========================
-        # ADDRESS CONFLICT
-        # =========================
+        # address logic
         if address_id and any([province, city, address]):
             raise serializers.ValidationError({
-                "non_field_errors": ["یا آدرس قبلی یا آدرس جدید، نه هر دو"]
+                "non_field_errors": ["یا آدرس قبلی یا جدید، نه هر دو"]
             })
 
-        # =========================
-        # NEW ADDRESS REQUIRED
-        # =========================
         if not address_id:
             if not (province and city and address):
                 raise serializers.ValidationError({
@@ -565,5 +570,3 @@ class SilverPhysicalOrderSerializer(serializers.Serializer):
                 })
 
         return data
-
-

@@ -2,9 +2,11 @@ from django.urls import path
 
 from .views import (
     GoldDashboardAPIView,
-    GoldOrderAPIView,
+    GoldLimitOrderCreateAPIView,
+    GoldLimitOrderListAPIView,
     LatestPriceAPIView,
     PhysicalOrderAPIView,
+    UserAddressCreateAPIView,
     UserBalanceAPIView,
     GoldChartAPIView,
     BuyGoldAPIView,
@@ -72,8 +74,12 @@ urlpatterns = [
         'products/',
         ProductListAPIView.as_view()
     ),
-    path("gold-limit-order/", GoldOrderAPIView.as_view()),
+    path("gold-limit-order/", GoldLimitOrderCreateAPIView.as_view()),
     path("prices/", LatestPriceAPIView.as_view()),
+     path(
+        "gold-limit-orders/",
+        GoldLimitOrderListAPIView.as_view()
+    ),
 
 
 
@@ -115,7 +121,10 @@ urlpatterns = [
         'addresses/',
         UserAddressesAPIView.as_view()
     ),
-
+    path(
+        'address/',
+        UserAddressCreateAPIView.as_view()
+    ),
     # REPORTS
     path(
         'reports/',
@@ -132,12 +141,13 @@ urlpatterns = [
         RecentDeliveriesAPIView.as_view()
     ),
 
-    # ALERTS
-    path(
-        'price-alerts/',
-        PriceAlertAPIView.as_view()
-    ),
 
+
+path(
+        "price-alert/",
+        PriceAlertAPIView.as_view(),
+        name="price-alert"
+    ),
     path(
         'price-alerts/<int:pk>/',
         DeletePriceAlertAPIView.as_view()

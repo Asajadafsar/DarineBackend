@@ -52,6 +52,7 @@ from .views import (
     # REFERRAL
     # =========================
     SilverReferralDashboardAPIView,
+    SilverUserAddressCreateAPIView,
 
 )
 
@@ -87,6 +88,7 @@ urlpatterns = [
     path("order/", SilverPhysicalOrderAPIView.as_view(), name="silver-order"),
     path("addresses/", SilverUserAddressListAPIView.as_view(), name="silver-addresses"),
     path("orders/", SilverOrderHistoryAPIView.as_view(), name="silver-orders"),
+    path("address/", SilverUserAddressCreateAPIView.as_view(), name="silver-address-create"),
 
     # =====================================================
     # REPORTS

@@ -1,6 +1,7 @@
 # gold_app/views.py
 
 from decimal import Decimal
+import jdatetime
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.db import transaction
 from django.db.models import Q, Sum
@@ -43,6 +44,7 @@ from .serializers import (
     AutoSavingPlanSerializer,
     GiftCardOrderSerializer,
     GiftCardSerializer,
+    GoldOrderListSerializer,
     GoldOrderSerializer,
     PhysicalOrderSerializer,
     PriceQuerySerializer,
@@ -81,14 +83,22 @@ def success_response(
     status_code=status.HTTP_200_OK
 ):
 
+    # فقط اگر None بود تصمیم بگیر
+    if data is None:
+        data = []
+
     return Response(
         {
             "success": True,
             "message": message,
-            "data": data or {}
+            "data": data
         },
         status=status_code
     )
+
+
+
+
 # =========================================================
 # ERROR RESPONSE
 # =========================================================
@@ -767,6 +777,10 @@ class ProductListAPIView(APIView):
 
 
 
+# =========================================================
+# PHYSICAL ORDER (GOLD CHECKOUT)
+# =========================================================
+
 class PhysicalOrderAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -781,32 +795,47 @@ class PhysicalOrderAPIView(APIView):
 
         user = request.user
 
-        # =========================
-        # PRODUCT CHECK
-        # =========================
-        try:
-            product = Product.objects.get(
-                id=serializer.validated_data["product_id"],
-                is_active=True
-            )
-        except Product.DoesNotExist:
-            return error_response(message="محصول یافت نشد")
-
-        quantity = serializer.validated_data["quantity"]
-
-        if product.inventory_count < quantity:
-            return error_response(message="موجودی کافی نیست")
-
-        # =========================
-        # CALCULATION
-        # =========================
-        total_gold = product.total_weight_with_fees * quantity
-        total_toman = product.buy_price * quantity
-
-        payment_method = serializer.validated_data["payment_method"]
+        products_data = serializer.validated_data["products"]
 
         wallet, _ = Wallet.objects.get_or_create(user=user)
         inventory, _ = GoldInventory.objects.get_or_create(user=user)
+
+        total_gold = 0
+        total_toman = 0
+        order_items = []
+
+        # =========================
+        # PROCESS PRODUCTS
+        # =========================
+        for item in products_data:
+
+            product = Product.objects.filter(
+                id=item["product_id"],
+                is_active=True
+            ).first()
+
+            if not product:
+                return error_response(message=f"محصول {item['product_id']} یافت نشد")
+
+            quantity = item["quantity"]
+
+            if product.inventory_count < quantity:
+                return error_response(message=f"موجودی {product.name} کافی نیست")
+
+            item_gold = product.total_weight_with_fees * quantity
+            item_toman = product.buy_price * quantity
+
+            total_gold += item_gold
+            total_toman += item_toman
+
+            order_items.append({
+                "product": product,
+                "quantity": quantity,
+                "price_at_time": product.buy_price,
+                "weight_at_time": product.total_weight_with_fees
+            })
+
+        payment_method = serializer.validated_data["payment_method"]
 
         # =========================
         # PAYMENT
@@ -817,84 +846,50 @@ class PhysicalOrderAPIView(APIView):
                 return error_response(message="موجودی کیف پول کافی نیست")
 
             wallet.balance -= total_toman
-            wallet.save()
+            wallet.save(update_fields=["balance"])
 
-        else:
+        elif payment_method == "GOLD":
 
             if inventory.balance < total_gold:
                 return error_response(message="موجودی طلا کافی نیست")
 
             inventory.balance -= total_gold
-            inventory.save()
+            inventory.save(update_fields=["balance"])
+
+        else:
+            return error_response(message="روش پرداخت نامعتبر است")
 
         # =========================
-        # ADDRESS HANDLING (FIXED)
+        # ADDRESS
         # =========================
-        address = None
-
         address_id = serializer.validated_data.get("address_id")
 
         if address_id:
-
-            address = UserAddress.objects.filter(
-                id=address_id,
-                user=user
-            ).first()
-
+            address = UserAddress.objects.filter(id=address_id, user=user).first()
             if not address:
-                return error_response(
-                    message="آدرس یافت نشد",
-                    data={
-                        "address_id": address_id,
-                        "user_id": user.id
-                    }
-                )
-
-        # =========================
-        # SET ADDRESS DATA
-        # =========================
-        if address:
-
-            province = address.province
-            city = address.city
-            full_address = address.address
-            postal_code = address.postal_code
-            plaque = address.plaque
-            unit = address.unit
-
+                return error_response(message="آدرس یافت نشد")
         else:
-
-            province = serializer.validated_data["province"]
-            city = serializer.validated_data["city"]
-            full_address = serializer.validated_data["address"]
-            postal_code = serializer.validated_data.get("postal_code")
-            plaque = serializer.validated_data.get("plaque")
-            unit = serializer.validated_data.get("unit")
-
-            # =========================
-            # AUTO SAVE NEW ADDRESS
-            # =========================
             address = UserAddress.objects.create(
                 user=user,
-                province=province,
-                city=city,
-                address=full_address,
-                postal_code=postal_code,
-                plaque=plaque,
-                unit=unit,
+                province=serializer.validated_data["province"],
+                city=serializer.validated_data["city"],
+                address=serializer.validated_data["address"],
+                postal_code=serializer.validated_data.get("postal_code"),
+                plaque=serializer.validated_data.get("plaque"),
+                unit=serializer.validated_data.get("unit"),
             )
 
         # =========================
-        # CREATE ORDER
+        # ORDER CREATE
         # =========================
         order = Order.objects.create(
             user=user,
-            province=province,
-            city=city,
-            address=full_address,
-            postal_code=postal_code,
-            plaque=plaque,
-            unit=unit,
+            province=address.province,
+            city=address.city,
+            address=address.address,
+            postal_code=address.postal_code,
+            plaque=address.plaque,
+            unit=address.unit,
             payment_method=payment_method,
             delivery_type=serializer.validated_data["delivery_type"],
             total_gold_amount=total_gold,
@@ -903,28 +898,34 @@ class PhysicalOrderAPIView(APIView):
             status="PENDING"
         )
 
-        OrderItem.objects.create(
-            order=order,
-            product=product,
-            quantity=quantity,
-            price_at_time=product.buy_price,
-            weight_at_time=product.total_weight_with_fees
-        )
+        # =========================
+        # ORDER ITEMS
+        # =========================
+        for item in order_items:
 
-        product.inventory_count -= quantity
-        product.save()
+            product = item["product"]
+
+            OrderItem.objects.create(
+                order=order,
+                product=product,
+                quantity=item["quantity"],
+                price_at_time=item["price_at_time"],
+                weight_at_time=item["weight_at_time"]
+            )
+
+            product.inventory_count -= item["quantity"]
+            product.save(update_fields=["inventory_count"])
 
         return success_response(
-            message="سفارش با موفقیت ثبت شد",
+            message="سفارش طلا ثبت شد",
             status_code=201,
             data={
                 "order_id": order.id,
                 "tracking_code": order.tracking_code,
-                "total_price": int(total_toman),
-                "total_gold": float(total_gold)
+                "total_gold": float(total_gold),
+                "total_price": int(total_toman)
             }
         )
-    
 
 class UserAddressListAPIView(APIView):
 
@@ -943,7 +944,34 @@ class UserAddressListAPIView(APIView):
             data=serializer.data
         )
 
+class UserAddressCreateAPIView(APIView):
 
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+
+        serializer = UserAddressSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return error_response(data=serializer.errors)
+
+        address = UserAddress.objects.create(
+            user=request.user,
+            province=serializer.validated_data["province"],
+            city=serializer.validated_data["city"],
+            address=serializer.validated_data["address"],
+            postal_code=serializer.validated_data.get("postal_code"),
+            plaque=serializer.validated_data.get("plaque"),
+            unit=serializer.validated_data.get("unit"),
+        )
+
+        return success_response(
+            message="آدرس ثبت شد",
+            status_code=201,
+            data={
+                "address_id": address.id
+            }
+        )
 
 # =========================================================
 # ORDER HISTORY
@@ -982,7 +1010,118 @@ class PriceAlertAPIView(APIView):
 
         queryset = PriceAlert.objects.filter(
             user=request.user
-        ).order_by('-created_at')
+        )
+
+        # ==========================================
+        # STATUS FILTER
+        # active / inactive / completed
+        # ==========================================
+
+        status_filter = request.query_params.get(
+            "status"
+        )
+
+        if status_filter:
+
+            if status_filter == "ACTIVE":
+
+                queryset = queryset.filter(
+                    is_active=True
+                )
+
+            elif status_filter == "INACTIVE":
+
+                queryset = queryset.filter(
+                    is_active=False
+                )
+
+            elif status_filter == "COMPLETED":
+
+                queryset = queryset.filter(
+                    is_triggered=True
+                )
+
+        # ==========================================
+        # DATE FILTER
+        # 1405/03/13
+        # 2026-06-03
+        # ==========================================
+
+        start_date = request.query_params.get(
+            "start_date"
+        )
+
+        end_date = request.query_params.get(
+            "end_date"
+        )
+
+        try:
+
+            if start_date:
+
+                if "/" in start_date:
+
+                    y, m, d = map(
+                        int,
+                        start_date.split("/")
+                    )
+
+                    start_date = (
+                        jdatetime.date(
+                            y,
+                            m,
+                            d
+                        ).togregorian()
+                    )
+
+                else:
+
+                    start_date = datetime.strptime(
+                        start_date,
+                        "%Y-%m-%d"
+                    ).date()
+
+                queryset = queryset.filter(
+                    created_at__date__gte=start_date
+                )
+
+            if end_date:
+
+                if "/" in end_date:
+
+                    y, m, d = map(
+                        int,
+                        end_date.split("/")
+                    )
+
+                    end_date = (
+                        jdatetime.date(
+                            y,
+                            m,
+                            d
+                        ).togregorian()
+                    )
+
+                else:
+
+                    end_date = datetime.strptime(
+                        end_date,
+                        "%Y-%m-%d"
+                    ).date()
+
+                queryset = queryset.filter(
+                    created_at__date__lte=end_date
+                )
+
+        except Exception:
+
+            return error_response(
+                "فرمت تاریخ اشتباه است (1405/03/13 یا 2026-06-03)"
+            )
+
+        queryset = queryset.order_by(
+            "-created_at"
+        )
 
         serializer = PriceAlertSerializer(
             queryset,
@@ -990,7 +1129,7 @@ class PriceAlertAPIView(APIView):
         )
 
         return success_response(
-            message='هشدارها دریافت شد',
+            message="هشدارها دریافت شد",
             data=serializer.data
         )
 
@@ -1003,7 +1142,7 @@ class PriceAlertAPIView(APIView):
         if not serializer.is_valid():
 
             return error_response(
-                message='اطلاعات نامعتبر است',
+                message="اطلاعات نامعتبر است",
                 data=serializer.errors
             )
 
@@ -1012,10 +1151,11 @@ class PriceAlertAPIView(APIView):
         )
 
         return success_response(
-            message='هشدار ثبت شد',
+            message="هشدار ثبت شد",
             data=serializer.data,
             status_code=201
         )
+
 
 
 # =========================================================
@@ -1057,48 +1197,67 @@ class ReportsAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    # =========================================
+    # DATE PARSER (JALALI + GREGORIAN)
+    # =========================================
+    def parse_date(self, value):
+
+        if not value:
+            return None
+
+        try:
+            if "/" in value:
+
+                y, m, d = map(int, value.split("/"))
+
+                return jdatetime.date(y, m, d).togregorian()
+
+            return datetime.strptime(value, "%Y-%m-%d").date()
+
+        except Exception:
+            return None
+
+    # =========================================
     def get(self, request):
 
-        report_type = request.GET.get(
-            'type'
+        report_type = request.GET.get("type")
+        status_filter = request.GET.get("status")
+        method_filter = request.GET.get("method")
+
+        start_date = self.parse_date(
+            request.GET.get("start_date")
         )
 
-        status_filter = request.GET.get(
-            'status'
-        )
-
-        start_date = request.GET.get(
-            'start_date'
-        )
-
-        end_date = request.GET.get(
-            'end_date'
+        end_date = self.parse_date(
+            request.GET.get("end_date")
         )
 
         # =====================================================
-        # GOLD REPORT
+        # GOLD (BUY / SELL)
         # =====================================================
 
-        if report_type == 'gold':
+        if report_type == "gold":
 
             queryset = GoldTransaction.objects.filter(
                 user=request.user
-            ).order_by('-created_at')
+            ).order_by("-created_at")
+
+            if method_filter:
+                queryset = queryset.filter(
+                    type=method_filter.upper()
+                )
 
             if status_filter:
-
                 queryset = queryset.filter(
                     status=status_filter
                 )
 
             if start_date:
-
                 queryset = queryset.filter(
                     created_at__date__gte=start_date
                 )
 
             if end_date:
-
                 queryset = queryset.filter(
                     created_at__date__lte=end_date
                 )
@@ -1109,20 +1268,26 @@ class ReportsAPIView(APIView):
             )
 
             return success_response(
-                message='گزارش معاملات طلا',
+                message="گزارش معاملات طلا",
                 data=serializer.data
             )
 
         # =====================================================
-        # DEPOSIT REPORT
+        # DEPOSIT
         # =====================================================
 
-        elif report_type == 'deposit':
+        elif report_type == "deposit":
 
             queryset = FinancialTransaction.objects.filter(
                 user=request.user,
-                type='DEPOSIT'
-            ).order_by('-created_at')
+                type="DEPOSIT"
+            ).order_by("-created_at")
+
+            if method_filter:
+
+                queryset = queryset.filter(
+                    method=method_filter.upper()
+                )
 
             if status_filter:
 
@@ -1148,20 +1313,26 @@ class ReportsAPIView(APIView):
             )
 
             return success_response(
-                message='گزارش واریزها',
+                message="گزارش واریزها",
                 data=serializer.data
             )
 
         # =====================================================
-        # WITHDRAW REPORT
+        # WITHDRAW
         # =====================================================
 
-        elif report_type == 'withdraw':
+        elif report_type == "withdraw":
 
             queryset = FinancialTransaction.objects.filter(
                 user=request.user,
-                type='WITHDRAW'
-            ).order_by('-created_at')
+                type="WITHDRAW"
+            ).order_by("-created_at")
+
+            if method_filter:
+
+                queryset = queryset.filter(
+                    method=method_filter.upper()
+                )
 
             if status_filter:
 
@@ -1187,19 +1358,25 @@ class ReportsAPIView(APIView):
             )
 
             return success_response(
-                message='گزارش برداشت‌ها',
+                message="گزارش برداشت‌ها",
                 data=serializer.data
             )
 
         # =====================================================
-        # ORDERS REPORT
+        # ORDERS (BUY / SELL)
         # =====================================================
 
-        elif report_type == 'orders':
+        elif report_type == "orders":
 
             queryset = Order.objects.filter(
                 user=request.user
-            ).order_by('-created_at')
+            ).order_by("-created_at")
+
+            if method_filter:
+
+                queryset = queryset.filter(
+                    payment_method=method_filter.upper()
+                )
 
             if status_filter:
 
@@ -1225,13 +1402,15 @@ class ReportsAPIView(APIView):
             )
 
             return success_response(
-                message='گزارش سفارشات',
+                message="گزارش سفارشات",
                 data=serializer.data
             )
 
         return error_response(
-            message='نوع گزارش نامعتبر است'
+            message="نوع گزارش نامعتبر است"
         )
+
+
 
 # =========================================================
 # RECENT TRANSACTIONS
@@ -1333,7 +1512,7 @@ class ReferralDashboardAPIView(APIView):
 # AUTO SAVING PLAN
 # =========================================================
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from django.utils import timezone
 
 
@@ -1770,7 +1949,115 @@ class GiftCardListAPIView(APIView):
             |
             Q(activated_by=request.user)
 
-        ).order_by('-created_at')
+        )
+
+        # =====================================
+        # STATUS
+        # =====================================
+
+        status = request.query_params.get(
+            "status"
+        )
+
+        if status:
+
+            queryset = queryset.filter(
+                status=status.upper()
+            )
+
+        # =====================================
+        # IS USED
+        # =====================================
+
+        is_used = request.query_params.get(
+            "is_used"
+        )
+
+        if is_used is not None:
+
+            queryset = queryset.filter(
+                is_used=is_used.lower() == "true"
+            )
+
+        # =====================================
+        # DATE FILTER
+        # =====================================
+
+        start_date = request.query_params.get(
+            "start_date"
+        )
+
+        end_date = request.query_params.get(
+            "end_date"
+        )
+
+        try:
+
+            if start_date:
+
+                if "/" in start_date:
+
+                    y, m, d = map(
+                        int,
+                        start_date.split("/")
+                    )
+
+                    start_date = (
+                        jdatetime.date(
+                            y,
+                            m,
+                            d
+                        ).togregorian()
+                    )
+
+                else:
+
+                    start_date = datetime.strptime(
+                        start_date,
+                        "%Y-%m-%d"
+                    ).date()
+
+                queryset = queryset.filter(
+                    created_at__date__gte=start_date
+                )
+
+            if end_date:
+
+                if "/" in end_date:
+
+                    y, m, d = map(
+                        int,
+                        end_date.split("/")
+                    )
+
+                    end_date = (
+                        jdatetime.date(
+                            y,
+                            m,
+                            d
+                        ).togregorian()
+                    )
+
+                else:
+
+                    end_date = datetime.strptime(
+                        end_date,
+                        "%Y-%m-%d"
+                    ).date()
+
+                queryset = queryset.filter(
+                    created_at__date__lte=end_date
+                )
+
+        except Exception:
+
+            return error_response(
+                message="فرمت تاریخ اشتباه است (1405/03/13 یا 2026-06-03)"
+            )
+
+        queryset = queryset.order_by(
+            "-created_at"
+        )
 
         serializer = GiftCardSerializer(
             queryset,
@@ -1778,9 +2065,10 @@ class GiftCardListAPIView(APIView):
         )
 
         return success_response(
-            message='لیست کارت هدیه',
+            message="لیست کارت هدیه",
             data=serializer.data
         )
+
 
 # =========================================================
 # USER ADDRESSES
@@ -1857,17 +2145,19 @@ class UserAddressesAPIView(APIView):
             data=data
         )
 
-
-class GoldOrderAPIView(APIView):
+class GoldLimitOrderCreateAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request):
 
-        serializer = GoldOrderSerializer(data=request.data)
+        serializer = GoldOrderSerializer(
+            data=request.data
+        )
 
         if not serializer.is_valid():
+
             return error_response(
                 message="اطلاعات نامعتبر است",
                 data=serializer.errors
@@ -1876,78 +2166,78 @@ class GoldOrderAPIView(APIView):
         user = request.user
 
         order_type = serializer.validated_data["order_type"]
-        target_price = Decimal(serializer.validated_data["target_price"])
 
-        amount_toman = serializer.validated_data.get("amount_toman")
-        gold_weight = serializer.validated_data.get("gold_weight")
+        target_price = Decimal(
+            serializer.validated_data["target_price"]
+        )
 
-        fee_rate = Decimal("0.0099")  # 0.99%
+        amount_toman = serializer.validated_data.get(
+            "amount_toman"
+        )
 
-        # ==============================
-        # BUY ORDER (خرید در قیمت پایین)
-        # ==============================
+        gold_weight = serializer.validated_data.get(
+            "gold_weight"
+        )
+
+        fee_rate = Decimal("0.0099")
+
         if order_type == "BUY":
 
-            if amount_toman:
+            amount_toman = Decimal(amount_toman)
 
-                amount_toman = Decimal(amount_toman)
+            fee = amount_toman * fee_rate
 
-                fee = amount_toman * fee_rate
-                net_amount = amount_toman - fee
+            net_amount = amount_toman - fee
 
-                estimated_weight = net_amount / target_price
+            estimated_weight = (
+                net_amount / target_price
+            )
 
-            else:
-
-                estimated_weight = Decimal(gold_weight)
-
-        # ==============================
-        # SELL ORDER (فروش در قیمت بالا)
-        # ==============================
         else:
 
-            if gold_weight:
+            gold_weight = Decimal(gold_weight)
 
-                estimated_weight = Decimal(gold_weight)
-                gross_amount = estimated_weight * target_price
+            estimated_weight = gold_weight
 
-                fee = gross_amount * fee_rate
-                net_amount = gross_amount - fee
-
-            else:
-
-                amount_toman = Decimal(amount_toman)
-
-                fee = amount_toman * fee_rate
-                net_amount = amount_toman - fee
-
-                estimated_weight = amount_toman / target_price
-
-        # ==============================
-        # CREATE ORDER (PENDING)
-        # ==============================
         order = GoldOrder.objects.create(
             user=user,
             order_type=order_type,
             target_price=target_price,
-            amount_toman=amount_toman if amount_toman else None,
-            gold_weight=gold_weight if gold_weight else None,
+            amount_toman=amount_toman,
+            gold_weight=gold_weight,
             estimated_weight=estimated_weight,
             status="PENDING"
         )
 
         return success_response(
-            message="سفارش با موفقیت ثبت شد (در انتظار اجرا)",
+            message="سفارش با موفقیت ثبت شد",
             status_code=201,
             data={
                 "order_id": order.id,
-                "type": order_type,
-                "target_price": str(target_price),
-                "estimated_weight": str(round(estimated_weight, 4))
+                "status": order.status,
             }
         )
-    
 
+
+class GoldLimitOrderListAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        orders = GoldOrder.objects.filter(
+            user=request.user
+        ).order_by("-created_at")
+
+        serializer = GoldOrderListSerializer(
+            orders,
+            many=True
+        )
+
+        return success_response(
+            message="لیست سفارشات",
+            data=serializer.data
+        )
 
 
 

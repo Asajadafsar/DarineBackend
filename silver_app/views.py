@@ -86,14 +86,21 @@ def success_response(
     status_code=status.HTTP_200_OK
 ):
 
+    # فقط اگر None بود تصمیم بگیر
+    if data is None:
+        data = []
+
     return Response(
         {
             "success": True,
             "message": message,
-            "data": data or {}
+            "data": data
         },
         status=status_code
     )
+
+
+
 
 
 # =========================================================
@@ -705,7 +712,6 @@ class SilverProductListAPIView(APIView):
 # =========================================================
 # PHYSICAL ORDER (SILVER CHECKOUT)
 # =========================================================
-
 class SilverPhysicalOrderAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -720,42 +726,55 @@ class SilverPhysicalOrderAPIView(APIView):
 
         user = request.user
 
-        try:
-            product = SilverProduct.objects.get(
-                id=serializer.validated_data["product_id"],
-                is_active=True
-            )
-        except SilverProduct.DoesNotExist:
-            return error_response(message="محصول یافت نشد")
-
-        quantity = serializer.validated_data["quantity"]
-
-        if product.inventory_count < quantity:
-            return error_response(message="موجودی کافی نیست")
-
-        total_silver = product.total_weight_with_fees * quantity
-        total_toman = product.buy_price * quantity
-
-        payment_method = serializer.validated_data["payment_method"]
+        products_data = serializer.validated_data["products"]
 
         wallet, _ = SilverWallet.objects.get_or_create(user=user)
         inventory, _ = SilverInventory.objects.get_or_create(user=user)
 
-        print("========== CHECKOUT DEBUG ==========")
-        print("user:", user.id)
-        print("wallet:", wallet.balance)
-        print("inventory:", inventory.balance)
-        print("payment_method:", payment_method)
-        print("total_toman:", total_toman)
-        print("total_silver:", total_silver)
-        print("====================================")
+        total_silver = 0
+        total_toman = 0
+        order_items_data = []
 
+        # =========================
+        # LOOP PRODUCTS
+        # =========================
+        for item in products_data:
+
+            try:
+                product = SilverProduct.objects.get(
+                    id=item["product_id"],
+                    is_active=True
+                )
+            except SilverProduct.DoesNotExist:
+                return error_response(message=f"محصول {item['product_id']} یافت نشد")
+
+            quantity = item["quantity"]
+
+            if product.inventory_count < quantity:
+                return error_response(message=f"موجودی کافی برای {product.name} نیست")
+
+            item_silver = product.total_weight_with_fees * quantity
+            item_toman = product.buy_price * quantity
+
+            total_silver += item_silver
+            total_toman += item_toman
+
+            order_items_data.append({
+                "product": product,
+                "quantity": quantity,
+                "price_at_time": product.buy_price,
+                "weight_at_time": product.total_weight_with_fees
+            })
+
+        payment_method = serializer.validated_data["payment_method"]
+
+        # =========================
+        # PAYMENT
+        # =========================
         if payment_method == "TOMAN":
 
             if wallet.balance < total_toman:
-                return error_response(
-                    message=f"موجودی کیف پول کافی نیست. موجودی: {wallet.balance} - مبلغ سفارش: {total_toman}"
-                )
+                return error_response(message="موجودی کیف پول کافی نیست")
 
             wallet.balance -= total_toman
             wallet.save(update_fields=["balance"])
@@ -763,9 +782,7 @@ class SilverPhysicalOrderAPIView(APIView):
         elif payment_method == "SILVER":
 
             if inventory.balance < total_silver:
-                return error_response(
-                    message=f"موجودی نقره کافی نیست. موجودی: {inventory.balance} - مبلغ سفارش: {total_silver}"
-                )
+                return error_response(message="موجودی نقره کافی نیست")
 
             inventory.balance -= total_silver
             inventory.save(update_fields=["balance"])
@@ -773,57 +790,37 @@ class SilverPhysicalOrderAPIView(APIView):
         else:
             return error_response(message="روش پرداخت نامعتبر است")
 
-        address = None
-
+        # =========================
+        # ADDRESS
+        # =========================
         address_id = serializer.validated_data.get("address_id")
 
         if address_id:
-
-            address = UserAddress.objects.filter(
-                id=address_id,
-                user=user
-            ).first()
-
+            address = UserAddress.objects.filter(id=address_id, user=user).first()
             if not address:
                 return error_response(message="آدرس یافت نشد")
-
-        if address:
-
-            province = address.province
-            city = address.city
-            full_address = address.address
-            postal_code = address.postal_code
-            plaque = address.plaque
-            unit = address.unit
-
         else:
-
-            province = serializer.validated_data["province"]
-            city = serializer.validated_data["city"]
-            full_address = serializer.validated_data["address"]
-
-            postal_code = serializer.validated_data.get("postal_code")
-            plaque = serializer.validated_data.get("plaque")
-            unit = serializer.validated_data.get("unit")
-
-            UserAddress.objects.create(
+            address = UserAddress.objects.create(
                 user=user,
-                province=province,
-                city=city,
-                address=full_address,
-                postal_code=postal_code,
-                plaque=plaque,
-                unit=unit
+                province=serializer.validated_data["province"],
+                city=serializer.validated_data["city"],
+                address=serializer.validated_data["address"],
+                postal_code=serializer.validated_data.get("postal_code"),
+                plaque=serializer.validated_data.get("plaque"),
+                unit=serializer.validated_data.get("unit"),
             )
 
+        # =========================
+        # ORDER
+        # =========================
         order = SilverOrder.objects.create(
             user=user,
-            province=province,
-            city=city,
-            address=full_address,
-            postal_code=postal_code,
-            plaque=plaque,
-            unit=unit,
+            province=address.province,
+            city=address.city,
+            address=address.address,
+            postal_code=address.postal_code,
+            plaque=address.plaque,
+            unit=address.unit,
             payment_method=payment_method,
             delivery_type=serializer.validated_data["delivery_type"],
             total_silver_amount=total_silver,
@@ -832,29 +829,34 @@ class SilverPhysicalOrderAPIView(APIView):
             status="PENDING"
         )
 
-        SilverOrderItem.objects.create(
-            order=order,
-            product=product,
-            quantity=quantity,
-            price_at_time=product.buy_price,
-            weight_at_time=product.total_weight_with_fees
-        )
+        # =========================
+        # ORDER ITEMS CREATE
+        # =========================
+        for item in order_items_data:
 
-        product.inventory_count -= quantity
-        product.save(update_fields=["inventory_count"])
+            product = item["product"]
+
+            SilverOrderItem.objects.create(
+                order=order,
+                product=product,
+                quantity=item["quantity"],
+                price_at_time=item["price_at_time"],
+                weight_at_time=item["weight_at_time"]
+            )
+
+            product.inventory_count -= item["quantity"]
+            product.save(update_fields=["inventory_count"])
 
         return success_response(
-            message="سفارش نقره ثبت شد",
+            message="سفارش با موفقیت ثبت شد",
             status_code=201,
             data={
                 "order_id": order.id,
                 "tracking_code": order.tracking_code,
-                "payment_method": payment_method,
-                "total_price": int(total_toman),
-                "total_silver": float(total_silver)
+                "total_silver": float(total_silver),
+                "total_toman": int(total_toman)
             }
         )
-    
 
 
 # =========================================================
@@ -878,7 +880,34 @@ class SilverUserAddressListAPIView(APIView):
             data=serializer.data
         )
 
+class SilverUserAddressCreateAPIView(APIView):
 
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+
+        serializer = UserAddressSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return error_response(data=serializer.errors)
+
+        address = UserAddress.objects.create(
+            user=request.user,
+            province=serializer.validated_data["province"],
+            city=serializer.validated_data["city"],
+            address=serializer.validated_data["address"],
+            postal_code=serializer.validated_data.get("postal_code"),
+            plaque=serializer.validated_data.get("plaque"),
+            unit=serializer.validated_data.get("unit"),
+        )
+
+        return success_response(
+            message="آدرس ثبت شد",
+            status_code=201,
+            data={
+                "address_id": address.id
+            }
+        )
 # =========================================================
 # ORDER HISTORY
 # =========================================================

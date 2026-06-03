@@ -7,6 +7,7 @@ from accounts.models import BankCard, ReferralEarning
 
 from .models import (
     GoldInventory,
+    GoldOrder,
     GoldTransaction,
     UserAddress,
     Wallet,
@@ -197,35 +198,44 @@ class FinancialTransactionSerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
 
     category_name = serializers.CharField(
-        source='category.name',
+        source="category.name",
         read_only=True
     )
+
+    total_price = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
         fields = [
-            'id',
-            'name',
-            'category',
-            'category_name',
-            'weight',
-            'total_weight_with_fees',
-            'delivery_type',
-            'buy_price',
-            'sell_price',
-            'inventory_count',
-            'image',
-            'description',
-            'is_active',
-            'created_at'
+            "id",
+            "name",
+            "category",
+            "category_name",
+            "delivery_type",
+            "weight",
+            "total_weight_with_fees",
+            "buy_price",
+            "sell_price",
+            "total_price",
+            "inventory_count",
+            "image",
+            "description",
+            "is_active",
+            "created_at"
         ]
 
     def get_total_price(self, obj):
+
+        if obj.buy_price and obj.total_weight_with_fees:
+            return int(obj.buy_price * obj.total_weight_with_fees)
 
         if obj.buy_price:
             return int(obj.buy_price)
 
         return 0
+
+
+
 
 
 # =========================================================
@@ -234,78 +244,66 @@ class ProductSerializer(serializers.ModelSerializer):
 
 class OrderItemSerializer(serializers.ModelSerializer):
 
-    product_name = serializers.CharField(
-        source='product.name',
-        read_only=True
-    )
-
-    product_image = serializers.ImageField(
-        source='product.image',
-        read_only=True
-    )
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    product_image = serializers.ImageField(source="product.image", read_only=True)
 
     class Meta:
         model = OrderItem
         fields = [
-            'id',
-            'product',
-            'product_name',
-            'product_image',
-            'quantity',
-            'price_at_time',
-            'weight_at_time'
+            "id",
+            "product",
+            "product_name",
+            "product_image",
+            "quantity",
+            "price_at_time",
+            "weight_at_time"
         ]
 
-
+    
 # =========================================================
 # ORDER
 # =========================================================
 
 class OrderSerializer(serializers.ModelSerializer):
 
-    items = OrderItemSerializer(
-        many=True,
-        read_only=True
-    )
+    items = OrderItemSerializer(many=True, read_only=True)
 
     payment_method_display = serializers.CharField(
-        source='get_payment_method_display',
+        source="get_payment_method_display",
         read_only=True
     )
 
     status_display = serializers.CharField(
-        source='get_status_display',
+        source="get_status_display",
         read_only=True
     )
 
     delivery_type_display = serializers.CharField(
-        source='get_delivery_type_display',
+        source="get_delivery_type_display",
         read_only=True
     )
 
     class Meta:
         model = Order
         fields = [
-            'id',
-            'address',
-            'province',
-            'city',
-            'postal_code',
-            'plaque',
-            'unit',
-            'payment_method',
-            'payment_method_display',
-            'delivery_type',
-            'delivery_type_display',
-            'status',
-            'status_display',
-            'total_gold_amount',
-            'total_toman_amount',
-            'tracking_code',
-            'description',
-            'created_at',
-            'updated_at',
-            'items'
+            "id",
+            "province",
+            "city",
+            "address",
+            "postal_code",
+            "plaque",
+            "unit",
+            "payment_method",
+            "payment_method_display",
+            "delivery_type",
+            "delivery_type_display",
+            "status",
+            "status_display",
+            "total_gold_amount",
+            "total_toman_amount",
+            "tracking_code",
+            "created_at",
+            "items"
         ]
 
 
@@ -902,11 +900,12 @@ class WithdrawSerializer(serializers.Serializer):
 # =========================================================
 # CHECKOUT
 # =========================================================
-
 class PhysicalOrderSerializer(serializers.Serializer):
 
-    product_id = serializers.IntegerField()
-    quantity = serializers.IntegerField(min_value=1)
+    products = serializers.ListField(
+        child=serializers.DictField(),
+        allow_empty=False
+    )
 
     payment_method = serializers.ChoiceField(
         choices=[
@@ -937,34 +936,42 @@ class PhysicalOrderSerializer(serializers.Serializer):
 
     def validate(self, data):
 
-        address_id = data.get("address_id")
+        products = data.get("products")
 
+        if not products:
+            raise serializers.ValidationError({
+                "non_field_errors": ["سبد خرید خالی است"]
+            })
+
+        for item in products:
+
+            if "product_id" not in item:
+                raise serializers.ValidationError({
+                    "non_field_errors": ["product_id الزامی است"]
+                })
+
+            if "quantity" not in item or int(item["quantity"]) < 1:
+                raise serializers.ValidationError({
+                    "non_field_errors": ["quantity نامعتبر است"]
+                })
+
+        address_id = data.get("address_id")
         province = data.get("province")
         city = data.get("city")
         address = data.get("address")
 
-        # =========================
-        # OLD ADDRESS
-        # =========================
-        if address_id:
+        if address_id and any([province, city, address]):
+            raise serializers.ValidationError({
+                "non_field_errors": ["یا آدرس قبلی یا جدید، نه هر دو"]
+            })
 
-            if any([province, city, address]):
-                raise serializers.ValidationError(
-                    "یا آدرس قبلی یا آدرس جدید، نه هر دو"
-                )
-
-            return data
-
-        # =========================
-        # NEW ADDRESS
-        # =========================
-        if not (province and city and address):
-            raise serializers.ValidationError(
-                "province, city, address الزامی است"
-            )
+        if not address_id:
+            if not (province and city and address):
+                raise serializers.ValidationError({
+                    "non_field_errors": ["province, city, address الزامی است"]
+                })
 
         return data
-
 
 
 class UserAddressSerializer(serializers.ModelSerializer):
@@ -981,7 +988,6 @@ class UserAddressSerializer(serializers.ModelSerializer):
             "unit",
             "created_at",
         ]
-
 
 
 # =========================================================
@@ -1015,11 +1021,17 @@ class GoldChartFilterSerializer(
 
 
 
+
 class GoldOrderSerializer(serializers.Serializer):
 
-    order_type = serializers.ChoiceField(choices=["BUY", "SELL"])
+    order_type = serializers.ChoiceField(
+        choices=["BUY", "SELL"]
+    )
 
-    target_price = serializers.DecimalField(max_digits=20, decimal_places=0)
+    target_price = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=0
+    )
 
     amount_toman = serializers.DecimalField(
         max_digits=20,
@@ -1040,20 +1052,35 @@ class GoldOrderSerializer(serializers.Serializer):
         if order_type == "BUY":
 
             if not data.get("amount_toman"):
-                raise serializers.ValidationError("مبلغ تومان الزامی است")
+                raise serializers.ValidationError(
+                    "مبلغ تومان الزامی است"
+                )
 
-            # تبدیل مبلغ به وزن
-            data["estimated_weight"] = data["amount_toman"] / data["target_price"]
-
-        else:
+        elif order_type == "SELL":
 
             if not data.get("gold_weight"):
-                raise serializers.ValidationError("وزن طلا الزامی است")
-
-            data["estimated_weight"] = data["gold_weight"]
+                raise serializers.ValidationError(
+                    "وزن طلا الزامی است"
+                )
 
         return data
-    
+
+
+class GoldOrderListSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = GoldOrder
+
+        fields = (
+            "id",
+            "order_type",
+            "target_price",
+            "amount_toman",
+            "gold_weight",
+            "estimated_weight",
+            "status",
+            "created_at",
+        )
 
 
 

@@ -12,7 +12,7 @@ from drf_spectacular.utils import extend_schema
 
 from django.contrib.auth import authenticate
 from django.utils import timezone
-from datetime import date
+from datetime import date, datetime
 
 from .models import User, OTPRequest, BankCard
 
@@ -176,23 +176,35 @@ class RegisterStepThree(APIView):
         if password != confirm_password:
             return error_response("تکرار رمز عبور صحیح نیست")
 
-        # =========================
-        # 🔥 CONVERT BIRTH DATE
-        # =========================
+        # ==========================================
+        # BIRTH DATE (SMART PARSER)
+        # ==========================================
         birth_date_input = request.data.get("birth_date")
         birth_date_gregorian = None
 
         if birth_date_input:
 
             try:
-                # فرض: ورودی شمسی "1402/10/01"
-                y, m, d = map(int, birth_date_input.split("/"))
+                # =========================
+                # CASE 1: JALALI (1402/10/01)
+                # =========================
+                if "/" in birth_date_input and len(birth_date_input.split("/")[0]) == 4:
+                    y, m, d = map(int, birth_date_input.split("/"))
+                    birth_date_gregorian = jdatetime.date(y, m, d).togregorian()
 
-                jalali_date = jdatetime.date(y, m, d)
-                birth_date_gregorian = jalali_date.togregorian()
+                # =========================
+                # CASE 2: GREGORIAN (2007-04-30)
+                # =========================
+                else:
+                    birth_date_gregorian = datetime.strptime(
+                        birth_date_input,
+                        "%Y-%m-%d"
+                    ).date()
 
             except Exception:
-                return error_response("فرمت تاریخ صحیح نیست (مثال: 1402/10/01)")
+                return error_response(
+                    "فرمت تاریخ اشتباه است (1402/10/01 یا 2007-04-30)"
+                )
 
         try:
 
@@ -205,7 +217,7 @@ class RegisterStepThree(APIView):
 
                 national_code=request.data.get("national_code"),
 
-                birth_date=birth_date_gregorian,  # ✅ ذخیره میلادی
+                birth_date=birth_date_gregorian,
 
                 role="customer",
                 auth_status="pending"
@@ -224,8 +236,8 @@ class RegisterStepThree(APIView):
 
         except Exception as e:
             return error_response(str(e))
-
-
+        
+    
 # ==========================================
 # LOGIN PASSWORD
 # ==========================================
