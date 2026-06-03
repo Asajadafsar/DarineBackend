@@ -10,6 +10,8 @@ from .views import (
     # DASHBOARD & BALANCE
     # =========================
     SilverDashboardAPIView,
+    SilverDepositInfoAPIView,
+    SilverProductCategoryListAPIView,
     SilverUserBalanceAPIView,
 
     # =========================
@@ -86,6 +88,11 @@ urlpatterns = [
     # =====================================================
     path("products/", SilverProductListAPIView.as_view(), name="silver-products"),
     path("order/", SilverPhysicalOrderAPIView.as_view(), name="silver-order"),
+    path(
+    "product/categories/",
+    SilverProductCategoryListAPIView.as_view()
+),
+    path("deposit/info/", SilverDepositInfoAPIView.as_view()),
     path("addresses/", SilverUserAddressListAPIView.as_view(), name="silver-addresses"),
     path("orders/", SilverOrderHistoryAPIView.as_view(), name="silver-orders"),
     path("address/", SilverUserAddressCreateAPIView.as_view(), name="silver-address-create"),

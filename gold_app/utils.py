@@ -474,9 +474,6 @@ def format_money(amount):
 
 
 
-
-
-#GET API LIST
 import requests
 import logging
 import re
@@ -494,13 +491,19 @@ PRICE_URLS = {
     "geram24": "https://prices.wallgold.ir/indicator/summary-table-data/geram24",
 }
 
+# 👇 گروه‌بندی جدید
+PRICE_GROUPS = {
+    "gold": ["gerami", "rob", "ons", "nim", "geram18", "geram24"],
+    "coin": ["sekeb", "sekee"],
+    "parsian": [],  # اگر API اضافه شد اینجا پر کن
+}
+
 
 def clean_number(value):
-    """حذف کاما و تبدیل به عدد"""
     if value is None:
         return 0
 
-    value = re.sub(r"<.*?>", "", str(value))  # حذف span
+    value = re.sub(r"<.*?>", "", str(value))
     value = value.replace(",", "").strip()
 
     try:
@@ -512,6 +515,7 @@ def clean_number(value):
 def clean_percent(value):
     value = re.sub(r"<.*?>", "", str(value))
     value = value.replace("%", "").strip()
+
     try:
         return float(value)
     except:
@@ -539,23 +543,33 @@ def get_latest_price(key: str):
 
         last = rows[0]
 
-        buy = clean_number(last[0])
-        sell = clean_number(last[1])
-        high = clean_number(last[2])
-        low = clean_number(last[3])
-        change = clean_number(last[4])
-        percent = clean_percent(last[5])
-
         return {
-            "typeGold": key,
-            "currentRate": sell,
-            "minPriceDay": low,
-            "maxPriceDay": high,
-            "dayChange": change,
-            "monthChange": percent,
-            "weeklyChart": rows[:7],  # یا اگر خواستی جدا حرفه‌ای می‌کنیم
+            "type": key,
+            "currentRate": clean_number(last[1]),
+            "minPriceDay": clean_number(last[3]),
+            "maxPriceDay": clean_number(last[2]),
+            "dayChange": clean_number(last[4]),
+            "percentChange": clean_percent(last[5]),
+            "weeklyChart": rows[:7],
         }
 
     except Exception as e:
         logger.error(f"Price error: {str(e)}")
         return None
+
+
+def get_group_prices(group_name: str):
+
+    keys = PRICE_GROUPS.get(group_name)
+
+    if keys is None:
+        return None
+
+    result = []
+
+    for key in keys:
+        data = get_latest_price(key)
+        if data:
+            result.append(data)
+
+    return result

@@ -570,3 +570,14 @@ class SilverPhysicalOrderSerializer(serializers.Serializer):
                 })
 
         return data
+    
+
+class SilverProductCategorySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = SilverProductCategory
+        fields = [
+            "id",
+            "name",
+            "slug",
+        ]

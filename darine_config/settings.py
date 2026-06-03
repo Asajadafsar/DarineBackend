@@ -9,8 +9,7 @@ SECRET_KEY = os.environ.get(
     'django-insecure-temp-key-for-dev'
 )
 
-DEBUG = True
-
+DEBUG = os.environ.get("DEBUG", "False") == "True"
 ALLOWED_HOSTS = [
     '127.0.0.1',
     'localhost',
@@ -43,6 +42,7 @@ INSTALLED_APPS = [
     'accounts',
     'gold_app',
     'silver_app',
+    'admin_panel',
 ]
 
 # =========================================================
@@ -143,6 +143,7 @@ REST_FRAMEWORK = {
     ),
 
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # 'EXCEPTION_HANDLER': 'accounts.exceptions.custom_exception_handler',
 }
 
 # =========================================================

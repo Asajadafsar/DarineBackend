@@ -2,12 +2,14 @@
 # SILVER APP VIEWS
 # =========================================================
 
+from datetime import datetime
 from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
+import jdatetime
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -22,6 +24,7 @@ from accounts.utils import apply_referral_bonus
 # SILVER MODELS
 # =========================
 from .models import (
+    SilverBankInfo,
     SilverWallet,
     SilverInventory,
     SilverTransaction,
@@ -42,6 +45,7 @@ from .models import (
 # =========================
 from .serializers import (
     SilverPhysicalOrderSerializer,
+    SilverProductCategorySerializer,
     SilverWalletSerializer,
     SilverInventorySerializer,
     SilverTransactionSerializer,
@@ -712,6 +716,10 @@ class SilverProductListAPIView(APIView):
 # =========================================================
 # PHYSICAL ORDER (SILVER CHECKOUT)
 # =========================================================
+# =========================================================
+# PHYSICAL ORDER (SILVER CHECKOUT)
+# =========================================================
+
 class SilverPhysicalOrderAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -719,144 +727,281 @@ class SilverPhysicalOrderAPIView(APIView):
     @transaction.atomic
     def post(self, request):
 
-        serializer = SilverPhysicalOrderSerializer(data=request.data)
+        serializer = SilverPhysicalOrderSerializer(
+            data=request.data
+        )
 
         if not serializer.is_valid():
-            return error_response(data=serializer.errors)
+            return error_response(
+                data=serializer.errors
+            )
 
         user = request.user
 
-        products_data = serializer.validated_data["products"]
+        products_data = serializer.validated_data[
+            "products"
+        ]
 
-        wallet, _ = SilverWallet.objects.get_or_create(user=user)
-        inventory, _ = SilverInventory.objects.get_or_create(user=user)
+        wallet, _ = SilverWallet.objects.get_or_create(
+            user=user
+        )
+
+        inventory, _ = SilverInventory.objects.get_or_create(
+            user=user
+        )
 
         total_silver = 0
         total_toman = 0
-        order_items_data = []
+        order_items = []
 
         # =========================
-        # LOOP PRODUCTS
+        # PROCESS PRODUCTS
         # =========================
+
         for item in products_data:
 
-            try:
-                product = SilverProduct.objects.get(
-                    id=item["product_id"],
-                    is_active=True
+            product = SilverProduct.objects.filter(
+                id=item["product_id"],
+                is_active=True
+            ).first()
+
+            if not product:
+
+                return error_response(
+                    message=f"محصول {item['product_id']} یافت نشد"
                 )
-            except SilverProduct.DoesNotExist:
-                return error_response(message=f"محصول {item['product_id']} یافت نشد")
 
             quantity = item["quantity"]
 
             if product.inventory_count < quantity:
-                return error_response(message=f"موجودی کافی برای {product.name} نیست")
 
-            item_silver = product.total_weight_with_fees * quantity
-            item_toman = product.buy_price * quantity
+                return error_response(
+                    message=f"موجودی {product.name} کافی نیست"
+                )
+
+            item_silver = (
+                product.total_weight_with_fees * quantity
+            )
+
+            item_toman = (
+                product.buy_price * quantity
+            )
 
             total_silver += item_silver
             total_toman += item_toman
 
-            order_items_data.append({
+            order_items.append({
+
                 "product": product,
+
                 "quantity": quantity,
+
                 "price_at_time": product.buy_price,
+
                 "weight_at_time": product.total_weight_with_fees
             })
 
-        payment_method = serializer.validated_data["payment_method"]
+        payment_method = serializer.validated_data[
+            "payment_method"
+        ]
 
         # =========================
         # PAYMENT
         # =========================
+
         if payment_method == "TOMAN":
 
             if wallet.balance < total_toman:
-                return error_response(message="موجودی کیف پول کافی نیست")
+
+                return error_response(
+                    message="موجودی کیف پول کافی نیست"
+                )
 
             wallet.balance -= total_toman
-            wallet.save(update_fields=["balance"])
+
+            wallet.save(
+                update_fields=["balance"]
+            )
 
         elif payment_method == "SILVER":
 
             if inventory.balance < total_silver:
-                return error_response(message="موجودی نقره کافی نیست")
+
+                return error_response(
+                    message="موجودی نقره کافی نیست"
+                )
 
             inventory.balance -= total_silver
-            inventory.save(update_fields=["balance"])
+
+            inventory.save(
+                update_fields=["balance"]
+            )
 
         else:
-            return error_response(message="روش پرداخت نامعتبر است")
+
+            return error_response(
+                message="روش پرداخت نامعتبر است"
+            )
 
         # =========================
         # ADDRESS
         # =========================
-        address_id = serializer.validated_data.get("address_id")
+
+        address_id = serializer.validated_data.get(
+            "address_id"
+        )
 
         if address_id:
-            address = UserAddress.objects.filter(id=address_id, user=user).first()
+
+            address = UserAddress.objects.filter(
+                id=address_id,
+                user=user
+            ).first()
+
             if not address:
-                return error_response(message="آدرس یافت نشد")
+
+                return error_response(
+                    message="آدرس یافت نشد"
+                )
+
         else:
+
             address = UserAddress.objects.create(
+
                 user=user,
-                province=serializer.validated_data["province"],
-                city=serializer.validated_data["city"],
-                address=serializer.validated_data["address"],
-                postal_code=serializer.validated_data.get("postal_code"),
-                plaque=serializer.validated_data.get("plaque"),
-                unit=serializer.validated_data.get("unit"),
+
+                province=serializer.validated_data[
+                    "province"
+                ],
+
+                city=serializer.validated_data[
+                    "city"
+                ],
+
+                address=serializer.validated_data[
+                    "address"
+                ],
+
+                postal_code=serializer.validated_data.get(
+                    "postal_code"
+                ),
+
+                plaque=serializer.validated_data.get(
+                    "plaque"
+                ),
+
+                unit=serializer.validated_data.get(
+                    "unit"
+                ),
             )
 
         # =========================
-        # ORDER
+        # ORDER CREATE
         # =========================
+
         order = SilverOrder.objects.create(
+
             user=user,
+
             province=address.province,
+
             city=address.city,
+
             address=address.address,
+
             postal_code=address.postal_code,
+
             plaque=address.plaque,
+
             unit=address.unit,
+
             payment_method=payment_method,
-            delivery_type=serializer.validated_data["delivery_type"],
+
+            delivery_type=serializer.validated_data[
+                "delivery_type"
+            ],
+
             total_silver_amount=total_silver,
+
             total_toman_amount=total_toman,
-            tracking_code=generate_tracking_code("SORD"),
+
+            tracking_code=generate_tracking_code(
+                "SORD"
+            ),
+
             status="PENDING"
         )
 
         # =========================
-        # ORDER ITEMS CREATE
+        # ORDER ITEMS
         # =========================
-        for item in order_items_data:
+
+        for item in order_items:
 
             product = item["product"]
 
             SilverOrderItem.objects.create(
+
                 order=order,
+
                 product=product,
+
                 quantity=item["quantity"],
+
                 price_at_time=item["price_at_time"],
+
                 weight_at_time=item["weight_at_time"]
             )
 
-            product.inventory_count -= item["quantity"]
-            product.save(update_fields=["inventory_count"])
+            product.inventory_count -= item[
+                "quantity"
+            ]
+
+            product.save(
+                update_fields=["inventory_count"]
+            )
 
         return success_response(
-            message="سفارش با موفقیت ثبت شد",
+
+            message="سفارش نقره ثبت شد",
+
             status_code=201,
+
             data={
+
                 "order_id": order.id,
+
                 "tracking_code": order.tracking_code,
+
                 "total_silver": float(total_silver),
-                "total_toman": int(total_toman)
+
+                "total_price": int(total_toman)
             }
         )
+
+# =========================================================
+# SILVER PRODUCT CATEGORIES
+# =========================================================
+
+class SilverProductCategoryListAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        queryset = SilverProductCategory.objects.all().order_by("name")
+
+        serializer = SilverProductCategorySerializer(
+            queryset,
+            many=True
+        )
+
+        return success_response(
+            message="دسته بندی محصولات نقره دریافت شد",
+            data=serializer.data
+        )
+
+
 
 
 # =========================================================
@@ -908,6 +1053,10 @@ class SilverUserAddressCreateAPIView(APIView):
                 "address_id": address.id
             }
         )
+
+
+
+
 # =========================================================
 # ORDER HISTORY
 # =========================================================
@@ -936,26 +1085,53 @@ class SilverOrderHistoryAPIView(APIView):
 # SILVER REPORTS
 # =========================================================
 
+# =========================================================
+# SILVER REPORTS (FIXED - SAME STRUCTURE AS GOLD)
+# =========================================================
+
 class SilverReportsAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    # ==========================================
+    # DATE PARSER
+    # ==========================================
+    def parse_date(self, value):
+
+        if not value:
+            return None
+
+        try:
+            if "/" in value:
+                y, m, d = map(int, value.split("/"))
+                return jdatetime.date(y, m, d).togregorian()
+
+            return datetime.strptime(value, "%Y-%m-%d").date()
+
+        except Exception:
+            return None
+
+    # ==========================================
     def get(self, request):
 
-        report_type = request.GET.get('type')
-        status_filter = request.GET.get('status')
-        start_date = request.GET.get('start_date')
-        end_date = request.GET.get('end_date')
+        report_type = request.GET.get("type")
+        status_filter = request.GET.get("status")
+        method_filter = request.GET.get("method")
+
+        start_date = self.parse_date(request.GET.get("start_date"))
+        end_date = self.parse_date(request.GET.get("end_date"))
 
         # =====================================================
-        # SILVER TRANSACTIONS REPORT
+        # SILVER TRANSACTIONS (BUY / SELL)
         # =====================================================
-
-        if report_type == 'silver':
+        if report_type == "silver":
 
             queryset = SilverTransaction.objects.filter(
                 user=request.user
-            ).order_by('-created_at')
+            ).order_by("-created_at")
+
+            if method_filter:
+                queryset = queryset.filter(type=method_filter.upper())
 
             if status_filter:
                 queryset = queryset.filter(status=status_filter)
@@ -969,20 +1145,22 @@ class SilverReportsAPIView(APIView):
             serializer = SilverTransactionSerializer(queryset, many=True)
 
             return success_response(
-                message='گزارش معاملات نقره',
+                message="گزارش معاملات نقره",
                 data=serializer.data
             )
 
         # =====================================================
-        # DEPOSIT REPORT
+        # DEPOSIT
         # =====================================================
-
-        elif report_type == 'deposit':
+        elif report_type == "deposit":
 
             queryset = SilverFinancialTransaction.objects.filter(
                 user=request.user,
-                type='DEPOSIT'
-            ).order_by('-created_at')
+                type="DEPOSIT"
+            ).order_by("-created_at")
+
+            if method_filter:
+                queryset = queryset.filter(method=method_filter.upper())
 
             if status_filter:
                 queryset = queryset.filter(status=status_filter)
@@ -996,20 +1174,22 @@ class SilverReportsAPIView(APIView):
             serializer = SilverFinancialTransactionSerializer(queryset, many=True)
 
             return success_response(
-                message='گزارش واریزها',
+                message="گزارش واریزهای نقره",
                 data=serializer.data
             )
 
         # =====================================================
-        # WITHDRAW REPORT
+        # WITHDRAW
         # =====================================================
-
-        elif report_type == 'withdraw':
+        elif report_type == "withdraw":
 
             queryset = SilverFinancialTransaction.objects.filter(
                 user=request.user,
-                type='WITHDRAW'
-            ).order_by('-created_at')
+                type="WITHDRAW"
+            ).order_by("-created_at")
+
+            if method_filter:
+                queryset = queryset.filter(method=method_filter.upper())
 
             if status_filter:
                 queryset = queryset.filter(status=status_filter)
@@ -1023,19 +1203,21 @@ class SilverReportsAPIView(APIView):
             serializer = SilverFinancialTransactionSerializer(queryset, many=True)
 
             return success_response(
-                message='گزارش برداشت‌ها',
+                message="گزارش برداشت‌های نقره",
                 data=serializer.data
             )
 
         # =====================================================
-        # ORDERS REPORT
+        # ORDERS
         # =====================================================
-
-        elif report_type == 'orders':
+        elif report_type == "orders":
 
             queryset = SilverOrder.objects.filter(
                 user=request.user
-            ).order_by('-created_at')
+            ).order_by("-created_at")
+
+            if method_filter:
+                queryset = queryset.filter(payment_method=method_filter.upper())
 
             if status_filter:
                 queryset = queryset.filter(status=status_filter)
@@ -1044,19 +1226,18 @@ class SilverReportsAPIView(APIView):
                 queryset = queryset.filter(created_at__date__gte=start_date)
 
             if end_date:
-                queryset = queryset.filter(created_at__date__lte=end_date)
+                queryset = queryset.filter(created_at__date__lte=start_date)
 
             serializer = SilverOrderSerializer(queryset, many=True)
 
             return success_response(
-                message='گزارش سفارشات',
+                message="گزارش سفارشات نقره",
                 data=serializer.data
             )
 
         return error_response(
-            message='نوع گزارش نامعتبر است'
+            message="نوع گزارش نامعتبر است"
         )
-
 
 # =========================================================
 # RECENT TRANSACTIONS (SILVER)
@@ -1070,18 +1251,92 @@ class SilverRecentTransactionsAPIView(APIView):
 
         queryset = SilverFinancialTransaction.objects.filter(
             user=request.user
-        ).order_by('-created_at')[:10]
+        )
 
-        serializer = SilverFinancialTransactionSerializer(
-            queryset,
+        transaction_type = request.GET.get("type")
+        status = request.GET.get("status")
+        start_date = request.GET.get("start_date")
+        end_date = request.GET.get("end_date")
+
+        # =====================
+        # TYPE
+        # =====================
+
+        if transaction_type:
+            queryset = queryset.filter(
+                type=transaction_type
+            )
+
+        # =====================
+        # STATUS
+        # =====================
+
+        if status:
+            queryset = queryset.filter(
+                status=status
+            )
+
+        # =====================
+        # DATE
+        # =====================
+
+        if start_date:
+            queryset = queryset.filter(
+                created_at__date__gte=start_date
+            )
+
+        if end_date:
+            queryset = queryset.filter(
+                created_at__date__lte=end_date
+            )
+
+        queryset = queryset.order_by(
+            "-created_at"
+        )[:50]
+
+        data = []
+
+        for item in queryset:
+
+            if item.type == "DEPOSIT":
+
+                if item.method == "ONLINE":
+                    title = "واریز مستقیم"
+
+                elif item.method == "BANK":
+                    title = "واریز"
+
+                else:
+                    title = "واریز"
+
+            else:
+
+                if item.method == "BANK":
+                    title = "برداشت"
+
+                else:
+                    title = "برداشت"
+
+            data.append({
+                "id": item.id,
+                "title": title,
+                "amount": item.amount,
+                "status": item.status,
+                "type": item.type,
+                "method": item.method,
+                "created_at": item.created_at,
+            })
+
+        serializer = SilverRecentTransactionSerializer(
+            data,
             many=True
         )
 
         return success_response(
-            message='تراکنش ها دریافت شد',
+            message="تراکنش ها دریافت شد",
             data=serializer.data
         )
-
+    
 
 # =========================================================
 # RECENT DELIVERIES (SILVER)
@@ -1106,6 +1361,27 @@ class SilverRecentDeliveriesAPIView(APIView):
             message='تحویل ها دریافت شد',
             data=serializer.data
         )
+
+class SilverDepositInfoAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        bank = SilverBankInfo.objects.filter(is_active=True).first()
+
+        if not bank:
+            return error_response(message="اطلاعات بانکی نقره ثبت نشده")
+
+        return success_response(
+            message="اطلاعات واریز نقره",
+            data={
+                "card_number": bank.card_number,
+                "full_name": bank.full_name,
+                "sheba": bank.sheba,
+            }
+        )
+    
 
 
 # =========================================================

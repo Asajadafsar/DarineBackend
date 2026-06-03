@@ -567,6 +567,19 @@ class SilverPriceHistory(models.Model):
 
 
 
+class SilverBankInfo(models.Model):
+
+    card_number = models.CharField(max_length=30)
+    full_name = models.CharField(max_length=255)
+    sheba = models.CharField(max_length=34)
+
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"SILVER - {self.card_number}"
+
 class UserAddress(models.Model):
 
     user = models.ForeignKey(

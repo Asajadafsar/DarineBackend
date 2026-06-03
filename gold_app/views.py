@@ -28,9 +28,11 @@ from .models import (
     AutoSavingPlan,
     GiftCard,
     GiftCardOrder,
+    GoldBankInfo,
     GoldInventory,
     GoldOrder,
     GoldTransaction,
+    ProductCategory,
     UserAddress,
     Wallet,
     FinancialTransaction,
@@ -48,12 +50,14 @@ from .serializers import (
     GoldOrderSerializer,
     PhysicalOrderSerializer,
     PriceQuerySerializer,
+    ProductCategorySerializer,
     ProductSerializer,
     OrderSerializer,
     PriceAlertSerializer,
     FinancialTransactionSerializer,
     GoldTransactionSerializer,
     BuyGoldSerializer,
+    RecentTransactionSerializer,
     ReferralEarningSerializer,
     SellGoldSerializer,
     DepositSerializer,
@@ -62,6 +66,7 @@ from .serializers import (
     )
 
 from .utils import (
+    get_group_prices,
     get_latest_price,
     get_live_gold_price,
     generate_tracking_code,
@@ -482,7 +487,12 @@ class SellGoldAPIView(APIView):
 # DEPOSIT WALLET
 # =========================================================
 
+
+
+
 from rest_framework.parsers import MultiPartParser, FormParser
+
+
 
 
 class DepositAPIView(APIView):
@@ -610,6 +620,9 @@ class DepositAPIView(APIView):
                 message=str(e),
                 status_code=500
             )
+
+
+
 # =========================================================
 # WITHDRAW
 # =========================================================
@@ -927,6 +940,29 @@ class PhysicalOrderAPIView(APIView):
             }
         )
 
+
+class ProductCategoryListAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        queryset = ProductCategory.objects.all().order_by("name")
+
+        serializer = ProductCategorySerializer(
+            queryset,
+            many=True
+        )
+
+        return success_response(
+            message="دسته بندی محصولات دریافت شد",
+            data=serializer.data
+        )
+
+
+
+
+
 class UserAddressListAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -972,6 +1008,9 @@ class UserAddressCreateAPIView(APIView):
                 "address_id": address.id
             }
         )
+
+
+
 
 # =========================================================
 # ORDER HISTORY
@@ -1416,6 +1455,8 @@ class ReportsAPIView(APIView):
 # RECENT TRANSACTIONS
 # =========================================================
 
+from datetime import datetime
+
 class RecentTransactionsAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -1424,17 +1465,92 @@ class RecentTransactionsAPIView(APIView):
 
         queryset = FinancialTransaction.objects.filter(
             user=request.user
-        ).order_by('-created_at')[:10]
+        )
 
-        serializer = FinancialTransactionSerializer(
-            queryset,
+        transaction_type = request.GET.get("type")
+        status = request.GET.get("status")
+        start_date = request.GET.get("start_date")
+        end_date = request.GET.get("end_date")
+
+        # =====================
+        # TYPE
+        # =====================
+
+        if transaction_type:
+            queryset = queryset.filter(
+                type=transaction_type
+            )
+
+        # =====================
+        # STATUS
+        # =====================
+
+        if status:
+            queryset = queryset.filter(
+                status=status
+            )
+
+        # =====================
+        # DATE FILTER
+        # =====================
+
+        if start_date:
+            queryset = queryset.filter(
+                created_at__date__gte=start_date
+            )
+
+        if end_date:
+            queryset = queryset.filter(
+                created_at__date__lte=end_date
+            )
+
+        queryset = queryset.order_by(
+            "-created_at"
+        )[:50]
+
+        data = []
+
+        for item in queryset:
+
+            if item.type == "DEPOSIT":
+
+                if item.method == "ONLINE":
+                    title = "واریز مستقیم"
+
+                elif item.method == "SILVER":
+                    title = "واریز از نقرینه"
+
+                else:
+                    title = "واریز"
+
+            else:
+
+                if item.method == "SILVER":
+                    title = "برداشت به نقرینه"
+
+                else:
+                    title = "برداشت"
+
+            data.append({
+                "id": item.id,
+                "title": title,
+                "amount": item.amount,
+                "status": item.status,
+                "type": item.type,
+                "method": item.method,
+                "created_at": item.created_at,
+            })
+
+        serializer = RecentTransactionSerializer(
+            data,
             many=True
         )
 
         return success_response(
-            message='تراکنش ها دریافت شد',
+            message="تراکنش ها دریافت شد",
             data=serializer.data
         )
+    
 
 
 # =========================================================
@@ -1634,64 +1750,40 @@ class GiftCardOrderAPIView(APIView):
     @transaction.atomic
     def post(self, request):
 
-        serializer = GiftCardOrderSerializer(
-            data=request.data
-        )
+        serializer = GiftCardOrderSerializer(data=request.data)
 
         if not serializer.is_valid():
-
             return error_response(
-                message='اطلاعات نامعتبر است',
+                message="اطلاعات نامعتبر است",
                 data=serializer.errors
             )
 
         user = request.user
 
-        wallet, _ = Wallet.objects.get_or_create(
-            user=user
-        )
+        # =========================
+        # WALLET
+        # =========================
+        wallet, _ = Wallet.objects.get_or_create(user=user)
 
         gold_price = get_live_gold_price()
 
         if not gold_price:
+            return error_response(message="خطا در دریافت قیمت طلا")
 
-            return error_response(
-                message='خطا در دریافت قیمت طلا'
-            )
+        weight_per_card = Decimal(serializer.validated_data["weight_per_card"])
+        quantity = serializer.validated_data["quantity"]
 
-        weight_per_card = Decimal(
-            str(
-                serializer.validated_data[
-                    'weight_per_card'
-                ]
-            )
-        )
-
-        quantity = serializer.validated_data[
-            'quantity'
-        ]
-
-        total_weight = (
-            weight_per_card * quantity
-        )
-
-        total_price = (
-            total_weight * gold_price
-        )
+        total_weight = weight_per_card * quantity
+        total_price = total_weight * Decimal(gold_price)
 
         if wallet.balance < total_price:
+            return error_response(message="موجودی کیف پول کافی نیست")
 
-            return error_response(
-                message='موجودی کیف پول کافی نیست'
-            )
+        # =========================
+        # ADDRESS HANDLING (FIXED)
+        # =========================
 
-        # =====================================
-        # ADDRESS
-        # =====================================
-
-        address_id = request.data.get(
-            'address_id'
-        )
+        address_id = serializer.validated_data.get("address_id")
 
         province = None
         city = None
@@ -1700,156 +1792,106 @@ class GiftCardOrderAPIView(APIView):
         plaque = None
         unit = None
 
-        # =====================================
-        # USE OLD ADDRESS
-        # =====================================
-
+        # ---- use saved address
         if address_id:
 
-            old_order = Order.objects.filter(
+            saved_address = UserAddress.objects.filter(
                 id=address_id,
                 user=user
             ).first()
 
-            old_gift = GiftCardOrder.objects.filter(
-                id=address_id,
-                user=user
-            ).first()
+            if not saved_address:
+                return error_response(message="آدرس یافت نشد")
 
-            source = old_order or old_gift
+            province = saved_address.province
+            city = saved_address.city
+            address = saved_address.address
+            postal_code = saved_address.postal_code
+            plaque = saved_address.plaque
+            unit = saved_address.unit
 
-            if not source:
-
-                return error_response(
-                    message='آدرس یافت نشد'
-                )
-
-            province = source.province
-            city = source.city
-            address = source.address
-            postal_code = source.postal_code
-            plaque = source.plaque
-            unit = source.unit
-
-        # =====================================
-        # NEW ADDRESS
-        # =====================================
-
+        # ---- new address
         else:
 
-            province = serializer.validated_data[
-                'province'
-            ]
+            province = serializer.validated_data.get("province")
+            city = serializer.validated_data.get("city")
+            address = serializer.validated_data.get("address")
 
-            city = serializer.validated_data[
-                'city'
-            ]
+            if not province or not city or not address:
+                return error_response(
+                    message="اطلاعات آدرس ناقص است"
+                )
 
-            address = serializer.validated_data[
-                'address'
-            ]
+            postal_code = serializer.validated_data.get("postal_code")
+            plaque = serializer.validated_data.get("plaque")
+            unit = serializer.validated_data.get("unit")
 
-            postal_code = serializer.validated_data.get(
-                'postal_code'
+            # ذخیره آدرس برای استفاده بعدی
+            UserAddress.objects.create(
+                user=user,
+                province=province,
+                city=city,
+                address=address,
+                postal_code=postal_code,
+                plaque=plaque,
+                unit=unit
             )
 
-            plaque = serializer.validated_data.get(
-                'plaque'
-            )
-
-            unit = serializer.validated_data.get(
-                'unit'
-            )
-
-        # =====================================
-        # WALLET
-        # =====================================
-
+        # =========================
+        # WALLET DECREASE
+        # =========================
         wallet.balance -= total_price
-        wallet.save()
+        wallet.save(update_fields=["balance"])
 
-        # =====================================
+        # =========================
         # CREATE ORDER
-        # =====================================
-
+        # =========================
         order = GiftCardOrder.objects.create(
-
             user=user,
-
             weight_per_card=weight_per_card,
-
             quantity=quantity,
-
             total_price=total_price,
-
             province=province,
-
             city=city,
-
             address=address,
-
             postal_code=postal_code,
-
             plaque=plaque,
-
             unit=unit,
-
-            status='PENDING',
-
-            tracking_code=generate_tracking_code(
-                'GFT'
-            )
+            status="PENDING",
+            tracking_code=generate_tracking_code("GFT")
         )
 
-        # =====================================
+        # =========================
         # CREATE CARDS
-        # =====================================
+        # =========================
+        cards = []
 
-        created_cards = []
-
-        for i in range(quantity):
-
-            serial = generate_tracking_code(
-                'CARD'
-            )
+        for _ in range(quantity):
 
             card = GiftCard.objects.create(
-
-                serial_number=serial,
-
+                serial_number=generate_tracking_code("CARD"),
                 weight=weight_per_card,
-
                 created_by=user,
-
-                status='ACTIVE',
-
+                status="ACTIVE",
                 is_used=False
             )
 
-            created_cards.append({
-
+            cards.append({
                 "serial_number": card.serial_number,
-
-                "weight": card.weight
+                "weight": float(card.weight)
             })
 
         return success_response(
-
-            message='سفارش کارت هدیه ثبت شد',
-
+            message="سفارش کارت هدیه ثبت شد",
             status_code=201,
-
             data={
-
                 "order_id": order.id,
-
                 "tracking_code": order.tracking_code,
-
-                "total_price": total_price,
-
-                "cards": created_cards
+                "total_price": float(total_price),
+                "cards": cards
             }
         )
+    
 
 class GiftCardOrderListAPIView(APIView):
 
@@ -1952,7 +1994,8 @@ class GiftCardListAPIView(APIView):
         )
 
         # =====================================
-        # STATUS
+        # STATUS FILTER
+        # ACTIVE | INACTIVE
         # =====================================
 
         status = request.query_params.get(
@@ -1961,23 +2004,19 @@ class GiftCardListAPIView(APIView):
 
         if status:
 
-            queryset = queryset.filter(
-                status=status.upper()
-            )
+            status = status.upper()
 
-        # =====================================
-        # IS USED
-        # =====================================
+            if status == "ACTIVE":
 
-        is_used = request.query_params.get(
-            "is_used"
-        )
+                queryset = queryset.filter(
+                    status="ACTIVE"
+                )
 
-        if is_used is not None:
+            elif status == "INACTIVE":
 
-            queryset = queryset.filter(
-                is_used=is_used.lower() == "true"
-            )
+                queryset = queryset.exclude(
+                    status="ACTIVE"
+                )
 
         # =====================================
         # DATE FILTER
@@ -2069,7 +2108,7 @@ class GiftCardListAPIView(APIView):
             data=serializer.data
         )
 
-
+    
 # =========================================================
 # USER ADDRESSES
 # =========================================================
@@ -2144,6 +2183,8 @@ class UserAddressesAPIView(APIView):
             message='آدرس‌ها دریافت شد',
             data=data
         )
+
+
 
 class GoldLimitOrderCreateAPIView(APIView):
 
@@ -2241,6 +2282,30 @@ class GoldLimitOrderListAPIView(APIView):
 
 
 
+
+class GoldDepositInfoAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        bank = GoldBankInfo.objects.filter(is_active=True).first()
+
+        if not bank:
+            return error_response(message="اطلاعات بانکی طلا ثبت نشده")
+
+        return success_response(
+            message="اطلاعات واریز طلا",
+            data={
+                "card_number": bank.card_number,
+                "full_name": bank.full_name,
+                "sheba": bank.sheba,
+            }
+        )
+
+
+
+
 class LatestPriceAPIView(APIView):
 
     permission_classes = [AllowAny]
@@ -2260,4 +2325,56 @@ class LatestPriceAPIView(APIView):
         return success_response(
             message="آخرین قیمت دریافت شد",
             data=price
+        )
+    
+
+
+class GoldPriceAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        data = get_group_prices("gold")
+
+        if not data:
+            return error_response(message="قیمت طلا یافت نشد")
+
+        return success_response(
+            message="قیمت لحظه‌ای طلا",
+            data=data
+        )
+    
+
+class CoinPriceAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        data = get_group_prices("coin")
+
+        if not data:
+            return error_response(message="قیمت سکه یافت نشد")
+
+        return success_response(
+            message="قیمت لحظه‌ای سکه",
+            data=data
+        )
+    
+
+class ParsianPriceAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        data = get_group_prices("parsian")
+
+        if not data:
+            return error_response(message="قیمت پارسیان یافت نشد")
+
+        return success_response(
+            message="قیمت لحظه‌ای پارسیان",
+            data=data
         )

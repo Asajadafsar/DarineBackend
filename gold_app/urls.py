@@ -1,12 +1,18 @@
 from django.urls import path
 
 from .views import (
+    CoinPriceAPIView,
     GoldDashboardAPIView,
+    GoldDepositInfoAPIView,
     GoldLimitOrderCreateAPIView,
     GoldLimitOrderListAPIView,
+    GoldPriceAPIView,
     LatestPriceAPIView,
+    ParsianPriceAPIView,
     PhysicalOrderAPIView,
+    ProductCategoryListAPIView,
     UserAddressCreateAPIView,
+    UserAddressListAPIView,
     UserBalanceAPIView,
     GoldChartAPIView,
     BuyGoldAPIView,
@@ -80,6 +86,10 @@ urlpatterns = [
         "gold-limit-orders/",
         GoldLimitOrderListAPIView.as_view()
     ),
+    path(
+    "product/categories/",
+    ProductCategoryListAPIView.as_view()
+),
 
 
 
@@ -119,7 +129,7 @@ urlpatterns = [
     # USER ADDRESSES
     path(
         'addresses/',
-        UserAddressesAPIView.as_view()
+        UserAddressListAPIView.as_view()
     ),
     path(
         'address/',
@@ -141,6 +151,11 @@ urlpatterns = [
         RecentDeliveriesAPIView.as_view()
     ),
 
+
+    path("price/gold/", GoldPriceAPIView.as_view()),
+    path("price/coin/", CoinPriceAPIView.as_view()),
+    path("price/parsian/", ParsianPriceAPIView.as_view()),
+    path("deposit/info/", GoldDepositInfoAPIView.as_view()),
 
 
 path(

@@ -9,6 +9,7 @@ from .models import (
     GoldInventory,
     GoldOrder,
     GoldTransaction,
+    ProductCategory,
     UserAddress,
     Wallet,
     FinancialTransaction,
@@ -1086,3 +1087,15 @@ class GoldOrderListSerializer(serializers.ModelSerializer):
 
 class PriceQuerySerializer(serializers.Serializer):
     key = serializers.CharField()
+
+    
+
+class ProductCategorySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = ProductCategory
+        fields = [
+            "id",
+            "name",
+            "slug",
+        ]

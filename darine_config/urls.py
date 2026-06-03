@@ -9,7 +9,7 @@ urlpatterns = [
     path('accounts/', include('accounts.urls')),
     path('gold/', include('gold_app.urls')),
     path('silver/', include('silver_app.urls')),
-    #  path('admin_panel/', include('admin_panel.urls')),
+     path('panel/', include('admin_panel.urls')),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),

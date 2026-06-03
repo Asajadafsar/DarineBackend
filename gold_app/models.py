@@ -776,7 +776,18 @@ class UserAddress(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+class GoldBankInfo(models.Model):
 
+    card_number = models.CharField(max_length=30)
+    full_name = models.CharField(max_length=255)
+    sheba = models.CharField(max_length=34)
+
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"GOLD - {self.card_number}"
 
 
 class GoldOrder(models.Model):

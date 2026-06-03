@@ -56,6 +56,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     full_name = serializers.SerializerMethodField()
     birth_date = serializers.SerializerMethodField()
+    role_display = serializers.SerializerMethodField()
+    auth_status_display = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -68,23 +70,26 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "national_code",
             "birth_date",
             "role",
+            "role_display",
             "auth_status",
+            "auth_status_display",
         ]
 
     def get_full_name(self, obj):
         return f"{obj.first_name or ''} {obj.last_name or ''}".strip()
 
     def get_birth_date(self, obj):
-
         if not obj.birth_date:
             return ""
+        return jdatetime.date.fromgregorian(date=obj.birth_date).strftime("%Y/%m/%d")
 
-        # تبدیل میلادی به شمسی
-        jdate = jdatetime.date.fromgregorian(date=obj.birth_date)
+    def get_role_display(self, obj):
+        return obj.get_role_display()
 
-        return jdate.strftime("%Y/%m/%d")
-
-
+    def get_auth_status_display(self, obj):
+        return obj.get_auth_status_display()
+    
+    
 
 
 class BankCardSerializer(serializers.ModelSerializer):
