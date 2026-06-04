@@ -341,46 +341,81 @@ class SilverDepositSerializer(serializers.Serializer):
 # BUY SILVER
 # =========================================================
 
+from rest_framework import serializers
+from decimal import Decimal
+
 class BuySilverSerializer(serializers.Serializer):
 
     payment_method = serializers.ChoiceField(
         choices=[
             ("WALLET", "کیف پول"),
             ("GATEWAY", "درگاه")
-        ],
-        error_messages={
-            "required": "روش پرداخت الزامی است",
-            "invalid_choice": "روش پرداخت نامعتبر است"
-        }
+        ]
     )
 
     toman = serializers.DecimalField(
         max_digits=20,
         decimal_places=2,
         required=False,
-        allow_null=True,
-        error_messages={
-            "invalid": "مبلغ نامعتبر است"
-        }
+        allow_null=True
     )
 
     weight = serializers.DecimalField(
         max_digits=20,
         decimal_places=8,
         required=False,
-        allow_null=True,
-        error_messages={
-            "invalid": "وزن نامعتبر است"
-        }
+        allow_null=True
     )
 
+    fee = None
+    fee_rate = None
+    total_toman = None
+    final_weight = None
+
     def validate(self, attrs):
+
         if not attrs.get("toman") and not attrs.get("weight"):
             raise serializers.ValidationError({
-                "non_field_errors": ["مبلغ یا وزن الزامی است"]
+                "message": "مبلغ یا وزن الزامی است"
             })
-        return attrs
 
+        request = self.context.get("request")
+        user = request.user
+
+        silver_price = self.context.get("silver_price")
+
+        # ======================
+        # USER FEE
+        # ======================
+        user_fee = getattr(user, "fee", None)
+        fee_rate = user_fee.silver_buy_fee if user_fee else Decimal("0.0099")
+
+        attrs["fee_rate"] = fee_rate
+
+        # ======================
+        # CALCULATION
+        # ======================
+        if attrs.get("toman"):
+
+            total_toman = Decimal(str(attrs["toman"]))
+            fee = total_toman * fee_rate
+            net = total_toman - fee
+
+            weight = net / silver_price
+
+        else:
+
+            weight = Decimal(str(attrs["weight"]))
+            pure = weight * silver_price
+
+            fee = pure * fee_rate
+            total_toman = pure + fee
+
+        attrs["fee"] = fee
+        attrs["total_toman"] = total_toman
+        attrs["final_weight"] = weight
+
+        return attrs
 
 # =========================================================
 # SELL SILVER
@@ -392,28 +427,66 @@ class SellSilverSerializer(serializers.Serializer):
         max_digits=20,
         decimal_places=2,
         required=False,
-        allow_null=True,
-        error_messages={
-            "invalid": "مبلغ نامعتبر است"
-        }
+        allow_null=True
     )
 
     weight = serializers.DecimalField(
         max_digits=20,
         decimal_places=8,
         required=False,
-        allow_null=True,
-        error_messages={
-            "invalid": "وزن نامعتبر است"
-        }
+        allow_null=True
     )
 
+    fee = None
+    fee_rate = None
+    final_amount = None
+    final_weight = None
+
     def validate(self, attrs):
+
         if not attrs.get("toman") and not attrs.get("weight"):
             raise serializers.ValidationError({
-                "non_field_errors": ["مبلغ یا وزن الزامی است"]
+                "message": "مبلغ یا وزن الزامی است"
             })
+
+        request = self.context.get("request")
+        user = request.user
+
+        silver_price = self.context.get("silver_price")
+
+        # ======================
+        # USER FEE
+        # ======================
+        user_fee = getattr(user, "fee", None)
+        fee_rate = user_fee.silver_sell_fee if user_fee else Decimal("0.0099")
+
+        attrs["fee_rate"] = fee_rate
+
+        # ======================
+        # CALCULATION
+        # ======================
+        if attrs.get("toman"):
+
+            toman = Decimal(str(attrs["toman"]))
+
+            final_weight = toman / silver_price
+            fee = toman * fee_rate
+            final_amount = toman - fee
+
+        else:
+
+            final_weight = Decimal(str(attrs["weight"]))
+
+            pure = final_weight * silver_price
+            fee = pure * fee_rate
+            final_amount = pure - fee
+
+        attrs["fee"] = fee
+        attrs["final_amount"] = final_amount
+        attrs["final_weight"] = final_weight
+
         return attrs
+    
 
 
 # =========================================================

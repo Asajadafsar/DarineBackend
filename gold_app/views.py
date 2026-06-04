@@ -266,51 +266,32 @@ class BuyGoldAPIView(APIView):
     @transaction.atomic
     def post(self, request):
 
-        serializer = BuyGoldSerializer(data=request.data)
-
-        if not serializer.is_valid():
-            return error_response(data=serializer.errors)
-
-        user = request.user
-
-        toman = serializer.validated_data.get("toman")
-        weight_input = serializer.validated_data.get("weight")
-        payment_method = serializer.validated_data.get("payment_method")
-
         gold_price = get_live_gold_price()
 
         if not gold_price:
-            return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
+            return error_response(message="خطا در دریافت قیمت طلا")
 
-        # ======================
-        # FEE FROM SETTINGS
-        # ======================
-        fee_setting = FeeSetting.objects.first()
-        fee_rate = fee_setting.gold_fee if fee_setting else Decimal("0.0099")
+        serializer = BuyGoldSerializer(
+            data=request.data,
+            context={
+                "request": request,
+                "gold_price": gold_price
+            }
+        )
 
-        # ======================
-        # CALCULATION
-        # ======================
-        if toman:
+        serializer.is_valid(raise_exception=True)
 
-            total_toman = Decimal(str(toman))
-            fee = total_toman * fee_rate
-            net = total_toman - fee
+        user = request.user
 
-            weight = (net / gold_price).quantize(Decimal("0.0001"))
+        fee = serializer.validated_data["fee"]
+        fee_rate = serializer.validated_data["fee_rate"]
+        total_toman = serializer.validated_data["total_toman"]
+        weight = serializer.validated_data["final_weight"]
 
-        else:
-
-            weight = Decimal(str(weight_input)).quantize(Decimal("0.0001"))
-
-            pure = weight * gold_price
-            fee = pure * fee_rate
-            total_toman = pure + fee
-
-        # ======================
-        # WALLET
-        # ======================
         wallet, _ = Wallet.objects.get_or_create(user=user)
+        inventory, _ = GoldInventory.objects.get_or_create(user=user)
+
+        payment_method = request.data.get("payment_method")
 
         if payment_method == "WALLET":
 
@@ -332,19 +313,9 @@ class BuyGoldAPIView(APIView):
                 description="پرداخت خرید طلا"
             )
 
-        else:
-            return error_response(message="روش پرداخت نامعتبر است")
-
-        # ======================
-        # INVENTORY
-        # ======================
-        inventory, _ = GoldInventory.objects.get_or_create(user=user)
         inventory.balance += weight
         inventory.save()
 
-        # ======================
-        # TRANSACTION (PENDING)
-        # ======================
         tx = GoldTransaction.objects.create(
             user=user,
             type="BUY",
@@ -356,19 +327,15 @@ class BuyGoldAPIView(APIView):
             tracking_code=generate_tracking_code("BUY")
         )
 
-        # ======================
-        # REFERRAL BONUS
-        # ======================
-        apply_referral_bonus(user, total_toman, "GOLD")
-
         return success_response(
             message="خرید طلا ثبت شد و در انتظار تایید است",
-            status_code=201,
             data={
                 "transaction_id": tx.id,
                 "tracking_code": tx.tracking_code,
                 "gold_weight": float(weight),
                 "paid_amount": float(total_toman),
+                "fee": float(fee),
+                "fee_rate": float(fee_rate),
                 "wallet_balance": float(wallet.balance)
             }
         )
@@ -387,68 +354,30 @@ class SellGoldAPIView(APIView):
     @transaction.atomic
     def post(self, request):
 
+        gold_price = get_live_gold_price()
+
         serializer = SellGoldSerializer(
-            data=request.data
+            data=request.data,
+            context={
+                "request": request,
+                "gold_price": gold_price
+            }
         )
 
-        if not serializer.is_valid():
-
-            return error_response(
-                message='اطلاعات نامعتبر است',
-                data=serializer.errors
-            )
+        serializer.is_valid(raise_exception=True)
 
         user = request.user
 
-        toman = serializer.validated_data.get(
-            'toman'
-        )
+        fee = serializer.validated_data["fee"]
+        fee_rate = serializer.validated_data["fee_rate"]
+        final_amount = serializer.validated_data["final_amount"]
+        final_weight = serializer.validated_data["final_weight"]
 
-        weight = serializer.validated_data.get(
-            'weight'
-        )
-
-        gold_price = get_live_gold_price()
-
-        inventory, _ = GoldInventory.objects.get_or_create(
-            user=user
-        )
-
-        wallet, _ = Wallet.objects.get_or_create(
-            user=user
-        )
-
-        fee_rate = Decimal('0.99')
-
-        if toman:
-
-            toman = Decimal(str(toman))
-
-            final_weight = (
-                toman / gold_price
-            )
-
-            fee = toman * fee_rate
-
-            final_amount = toman - fee
-
-        else:
-
-            final_weight = Decimal(str(weight))
-
-            pure_price = (
-                final_weight * gold_price
-            )
-
-            fee = pure_price * fee_rate
-
-            final_amount = pure_price - fee
+        inventory, _ = GoldInventory.objects.get_or_create(user=user)
+        wallet, _ = Wallet.objects.get_or_create(user=user)
 
         if inventory.balance < final_weight:
-
-            return error_response(
-                message='موجودی طلا کافی نیست'
-            )
+            return error_response(message="موجودی طلا کافی نیست")
 
         inventory.balance -= final_weight
         inventory.save()
@@ -456,31 +385,28 @@ class SellGoldAPIView(APIView):
         wallet.balance += final_amount
         wallet.save()
 
-        transaction_obj = GoldTransaction.objects.create(
+        tx = GoldTransaction.objects.create(
             user=user,
-            type='SELL',
-            status='COMPLETED',
+            type="SELL",
+            status="COMPLETED",
             amount_gr=final_weight,
             price_per_gram=gold_price,
             fee=fee,
             total_amount=final_amount,
-            tracking_code=generate_tracking_code(
-                'SELL'
-            )
+            tracking_code=generate_tracking_code("SELL")
         )
 
         return success_response(
-            message='فروش طلا انجام شد',
+            message="فروش طلا انجام شد",
             data={
-                "transaction_id": transaction_obj.id,
-                "tracking_code": transaction_obj.tracking_code,
-                "wallet_balance": round(wallet.balance)
+                "transaction_id": tx.id,
+                "tracking_code": tx.tracking_code,
+                "gold_weight": float(final_weight),
+                "fee": float(fee),
+                "fee_rate": float(fee_rate),
+                "wallet_balance": float(wallet.balance)
             }
         )
-
-
-
-
 
 
 # =========================================================

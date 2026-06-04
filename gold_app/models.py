@@ -485,32 +485,6 @@ class PriceAlert(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
-# # =========================================================
-# # REFERRAL EARNING
-# # =========================================================
-
-# class ReferralEarning(models.Model):
-
-#     referrer = models.ForeignKey(
-#         settings.AUTH_USER_MODEL,
-#         on_delete=models.CASCADE,
-#         related_name='silver_referral_earnings'
-#     )
-
-#     referred_user = models.ForeignKey(
-#         settings.AUTH_USER_MODEL,
-#         on_delete=models.CASCADE,
-#         related_name='earned_from_me'
-#     )
-
-#     amount = models.DecimalField(
-#         max_digits=20,
-#         decimal_places=0
-#     )
-
-#     transaction_date = models.DateTimeField(
-#         auto_now_add=True
-#     )
 
 
 # =========================================================

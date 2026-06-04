@@ -72,54 +72,6 @@ def get_live_gold_price():
         return None
 
 
-# =========================================================
-# SILVER PRICE
-# =========================================================
-
-def get_live_silver_price():
-
-    """
-    دریافت قیمت نقره
-    """
-
-    url = (
-        "https://api.noghresea.ir/"
-        "api/market/getSilverPrice"
-    )
-
-    try:
-
-        response = requests.get(
-            url,
-            timeout=10
-        )
-
-        if response.status_code != 200:
-
-            logger.error(
-                f"Silver API Error: {response.status_code}"
-            )
-
-            return None
-
-        data = response.json()
-
-        price = Decimal(
-            str(
-                data['price']
-            )
-        )
-
-        return price
-
-    except Exception as e:
-
-        logger.error(
-            f"Silver Price Error: {str(e)}"
-        )
-
-        return None
-
 
 # =========================================================
 # SAVE GOLD PRICE HISTORY

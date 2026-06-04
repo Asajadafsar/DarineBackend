@@ -362,54 +362,28 @@ class SellSilverAPIView(APIView):
     @transaction.atomic
     def post(self, request):
 
-        serializer = SellSilverSerializer(data=request.data)
+        silver_price = get_live_silver_price()
 
-        if not serializer.is_valid():
-            return error_response(
-                message="اطلاعات نامعتبر است",
-                data=serializer.errors
-            )
+        serializer = SellSilverSerializer(
+            data=request.data,
+            context={
+                "request": request,
+                "silver_price": silver_price
+            }
+        )
+
+        serializer.is_valid(raise_exception=True)
 
         user = request.user
 
-        toman = serializer.validated_data.get("toman")
-        weight = serializer.validated_data.get("weight")
-
-        silver_price = get_live_silver_price()
-
-        if not silver_price:
-            return error_response(
-                message="خطا در دریافت قیمت نقره",
-                status_code=500
-            )
+        fee = serializer.validated_data["fee"]
+        fee_rate = serializer.validated_data["fee_rate"]
+        final_amount = serializer.validated_data["final_amount"]
+        final_weight = serializer.validated_data["final_weight"]
 
         inventory, _ = SilverInventory.objects.get_or_create(user=user)
         wallet, _ = SilverWallet.objects.get_or_create(user=user)
 
-        fee_rate = Decimal("0.0099")
-
-        # ======================
-        # CALCULATION
-        # ======================
-        if toman:
-
-            toman = Decimal(str(toman))
-            final_weight = toman / silver_price
-
-            fee = toman * fee_rate
-            final_amount = toman - fee
-
-        else:
-
-            final_weight = Decimal(str(weight))
-
-            pure_price = final_weight * silver_price
-            fee = pure_price * fee_rate
-            final_amount = pure_price - fee
-
-        # ======================
-        # CHECK INVENTORY
-        # ======================
         if inventory.balance < final_weight:
             return error_response(message="موجودی نقره کافی نیست")
 
@@ -419,9 +393,6 @@ class SellSilverAPIView(APIView):
         wallet.balance += final_amount
         wallet.save()
 
-        # ======================
-        # TRANSACTION
-        # ======================
         tx = SilverTransaction.objects.create(
             user=user,
             type="SELL",
@@ -438,6 +409,9 @@ class SellSilverAPIView(APIView):
             data={
                 "transaction_id": tx.id,
                 "tracking_code": tx.tracking_code,
+                "silver_weight": float(final_weight),
+                "fee": float(fee),
+                "fee_rate": float(fee_rate),
                 "wallet_balance": float(wallet.balance)
             }
         )

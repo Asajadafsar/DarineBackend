@@ -183,3 +183,56 @@ class FeeSetting(models.Model):
 
     def __str__(self):
         return "Fee Settings"
+    
+
+
+# accounts/models.py
+
+
+class UserFee(models.Model):
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="fee"
+    )
+
+    # =========================
+    # GOLD FEES (default 0.99%)
+    # =========================
+    gold_buy_fee = models.DecimalField(
+        max_digits=6,
+        decimal_places=4,
+        default=0.0099,
+        help_text="کارمزد خرید طلا (0.99%)"
+    )
+
+    gold_sell_fee = models.DecimalField(
+        max_digits=6,
+        decimal_places=4,
+        default=0.0099,
+        help_text="کارمزد فروش طلا (0.99%)"
+    )
+
+    # =========================
+    # SILVER FEES (default 0.99%)
+    # =========================
+    silver_buy_fee = models.DecimalField(
+        max_digits=6,
+        decimal_places=4,
+        default=0.0099,
+        help_text="کارمزد خرید نقره (0.99%)"
+    )
+
+    silver_sell_fee = models.DecimalField(
+        max_digits=6,
+        decimal_places=4,
+        default=0.0099,
+        help_text="کارمزد فروش نقره (0.99%)"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Fees - {self.user.mobile}"

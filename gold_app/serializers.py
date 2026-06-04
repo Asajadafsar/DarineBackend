@@ -775,6 +775,9 @@ class DepositSerializer(serializers.Serializer):
 # BUY GOLD
 # =========================================================
 
+from rest_framework import serializers
+from decimal import Decimal
+
 class BuyGoldSerializer(serializers.Serializer):
 
     payment_method = serializers.ChoiceField(
@@ -798,6 +801,14 @@ class BuyGoldSerializer(serializers.Serializer):
         allow_null=True
     )
 
+    # =========================
+    # CALCULATED FIELDS
+    # =========================
+    fee = None
+    fee_rate = None
+    total_toman = None
+    final_weight = None
+
     def validate(self, attrs):
 
         toman = attrs.get('toman')
@@ -808,7 +819,44 @@ class BuyGoldSerializer(serializers.Serializer):
                 "message": "مبلغ یا وزن الزامی است"
             })
 
+        request = self.context.get("request")
+        user = request.user
+
+        # =========================
+        # FEE FROM USER SETTINGS
+        # =========================
+        user_fee = getattr(user, "fee", None)
+        fee_rate = user_fee.gold_buy_fee if user_fee else Decimal("0.0099")
+
+        attrs["fee_rate"] = fee_rate
+
+        gold_price = self.context.get("gold_price")
+
+        # =========================
+        # CALCULATION
+        # =========================
+        if toman:
+
+            total_toman = Decimal(str(toman))
+            fee = total_toman * fee_rate
+            net = total_toman - fee
+
+            weight = net / gold_price
+
+        else:
+
+            weight = Decimal(str(weight))
+            pure = weight * gold_price
+
+            fee = pure * fee_rate
+            total_toman = pure + fee
+
+        attrs["fee"] = fee
+        attrs["total_toman"] = total_toman
+        attrs["final_weight"] = weight
+
         return attrs
+    
 
 
 # =========================================================
@@ -831,6 +879,11 @@ class SellGoldSerializer(serializers.Serializer):
         allow_null=True
     )
 
+    fee = None
+    fee_rate = None
+    final_amount = None
+    final_weight = None
+
     def validate(self, attrs):
 
         if not attrs.get('toman') and not attrs.get('weight'):
@@ -838,7 +891,41 @@ class SellGoldSerializer(serializers.Serializer):
                 "message": "مبلغ یا وزن الزامی است"
             })
 
+        request = self.context.get("request")
+        user = request.user
+
+        user_fee = getattr(user, "fee", None)
+        fee_rate = user_fee.gold_sell_fee if user_fee else Decimal("0.0099")
+
+        attrs["fee_rate"] = fee_rate
+
+        gold_price = self.context.get("gold_price")
+
+        if attrs.get("toman"):
+
+            toman = Decimal(str(attrs["toman"]))
+
+            final_weight = toman / gold_price
+            fee = toman * fee_rate
+            final_amount = toman - fee
+
+        else:
+
+            final_weight = Decimal(str(attrs["weight"]))
+
+            pure = final_weight * gold_price
+            fee = pure * fee_rate
+            final_amount = pure - fee
+
+        attrs["fee"] = fee
+        attrs["final_amount"] = final_amount
+        attrs["final_weight"] = final_weight
+
         return attrs
+
+
+
+
 # =========================================================
 # WITHDRAW
 # =========================================================
