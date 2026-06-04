@@ -4,6 +4,21 @@ from .views import (
     AdminCategoryCreateAPIView,
     AdminCategoryDeleteAPIView,
     AdminCategoryListAPIView,
+    AdminDashboardAPIView,
+    AdminFinancialListAPIView,
+    AdminFinancialStatusAPIView,
+    AdminGiftCardChangeStatusAPIView,
+    AdminGiftCardCreateAPIView,
+    AdminGiftCardDeleteAPIView,
+    AdminGiftCardDetailAPIView,
+    AdminGiftCardListAPIView,
+    AdminGiftCardOrderListAPIView,
+    AdminGiftCardOrderStatusAPIView,
+    AdminGiftCardUpdateAPIView,
+    AdminGoldTransactionListAPIView,
+    AdminGoldTransactionStatusAPIView,
+    AdminOrderListAPIView,
+    AdminOrderStatusAPIView,
     AdminProductCreateAPIView,
     AdminProductDeleteAPIView,
     AdminProductDetailAPIView,
@@ -12,11 +27,17 @@ from .views import (
     AdminSilverCategoryCreateAPIView,
     AdminSilverCategoryDeleteAPIView,
     AdminSilverCategoryListAPIView,
+    AdminSilverFinancialListAPIView,
+    AdminSilverFinancialStatusAPIView,
+    AdminSilverOrderListAPIView,
+    AdminSilverOrderStatusAPIView,
     AdminSilverProductCreateAPIView,
     AdminSilverProductDeleteAPIView,
     AdminSilverProductDetailAPIView,
     AdminSilverProductListAPIView,
     AdminSilverProductUpdateAPIView,
+    AdminSilverTransactionListAPIView,
+    AdminSilverTransactionStatusAPIView,
     AdminUserListAPIView,
     AdminUserDetailAPIView,
     AdminUserUpdateAPIView,
@@ -55,4 +76,42 @@ urlpatterns = [
     path("silver/categories/create/", AdminSilverCategoryCreateAPIView.as_view()),
     path("silver/categories/<int:pk>/delete/", AdminSilverCategoryDeleteAPIView.as_view()),
 
+    path("gold/gift-cards/", AdminGiftCardListAPIView.as_view()),
+    path("gold/gift-cards/create/", AdminGiftCardCreateAPIView.as_view()),
+    path("gold/gift-cards/<int:pk>/", AdminGiftCardDetailAPIView.as_view()),
+    path("gold/gift-cards/<int:pk>/update/", AdminGiftCardUpdateAPIView.as_view()),
+    path("gold/gift-cards/<int:pk>/delete/", AdminGiftCardDeleteAPIView.as_view()),
+
+# optional action
+    path("gold/gift-cards/<int:pk>/status/", AdminGiftCardChangeStatusAPIView.as_view()),
+# ORDERS
+path("gold/orders/gift-cards/", AdminGiftCardOrderListAPIView.as_view()),
+path("gold/orders/gift-cards/<int:pk>/status/", AdminGiftCardOrderStatusAPIView.as_view()),
+
+path("gold/orders/products/", AdminOrderListAPIView.as_view()),
+path("gold/orders/products/<int:pk>/status/", AdminOrderStatusAPIView.as_view()),
+
+# FINANCIAL
+path("gold/finance/transactions/", AdminFinancialListAPIView.as_view()),
+path("gold/finance/transactions/<int:pk>/status/", AdminFinancialStatusAPIView.as_view()),
+
+# GOLD TRADE
+path("gold/transactions/", AdminGoldTransactionListAPIView.as_view()),
+path("gold/transactions/<int:pk>/status/", AdminGoldTransactionStatusAPIView.as_view()),
+# SILVER ORDERS
+path("silver/orders/", AdminSilverOrderListAPIView.as_view()),
+path("silver/orders/<int:pk>/status/", AdminSilverOrderStatusAPIView.as_view()),
+
+# SILVER FINANCIAL
+path("silver/finance/", AdminSilverFinancialListAPIView.as_view()),
+path("silver/finance/<int:pk>/status/", AdminSilverFinancialStatusAPIView.as_view()),
+
+# SILVER TRANSACTIONS
+path("silver/transactions/", AdminSilverTransactionListAPIView.as_view()),
+path("silver/transactions/<int:pk>/status/", AdminSilverTransactionStatusAPIView.as_view()),
+path(
+    "dashboard/",
+    AdminDashboardAPIView.as_view(),
+    name="admin-dashboard"
+),
 ]

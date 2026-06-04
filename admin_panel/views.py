@@ -3,20 +3,29 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from accounts.models import User, UserFee
+from silver_app.serializers import SilverTransactionSerializer
 from .serializers import (
     AdminUserListSerializer,
     AdminUserDetailSerializer,
-    AdminUserUpdateSerializer
+    AdminUserUpdateSerializer,
+    GiftCardCreateUpdateSerializer,
+    GiftCardOrderSerializer,
+    GiftCardSerializer,
+    GoldTransactionSerializer,
+    OrderSerializer,
+    SilverFinancialTransactionSerializer,
+    SilverOrderSerializer,
+    StatusUpdateSerializer
 )
 from rest_framework.parsers import MultiPartParser, FormParser
-from silver_app.models import SilverProduct, SilverProductCategory
+from silver_app.models import SilverFinancialTransaction, SilverOrder, SilverProduct, SilverProductCategory, SilverTransaction
 from .serializers import (
     SilverProductSerializer,
     SilverProductCreateUpdateSerializer,
     SilverProductCategorySerializer
 )
-
-from gold_app.models import Product, ProductCategory
+from .serializers import FinancialTransactionSerializer
+from gold_app.models import FinancialTransaction, GiftCard, GiftCardOrder, GoldTransaction, Order, Product, ProductCategory
 from .serializers import (
     ProductSerializer,
     ProductCreateUpdateSerializer,
@@ -26,7 +35,28 @@ from .permissions import IsAdminRole
 from django.shortcuts import get_object_or_404
 from decimal import Decimal
 from rest_framework import serializers
+from django.db.models import Sum
+from rest_framework.views import APIView
 
+from accounts.models import User
+
+from gold_app.models import (
+    Wallet,
+    GoldInventory,
+    Product,
+    Order,
+    FinancialTransaction,
+)
+
+from silver_app.models import (
+    SilverWallet,
+    SilverInventory,
+    SilverProduct,
+    SilverOrder,
+    SilverFinancialTransaction,
+)
+
+from .permissions import IsAdminRole
 
 
 
@@ -623,3 +653,625 @@ class AdminSilverCategoryDeleteAPIView(APIView):
         )
     
 
+class AdminGiftCardListAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+
+        status_filter = request.GET.get("status")
+
+        cards = GiftCard.objects.all().order_by("-id")
+
+        if status_filter:
+            cards = cards.filter(status=status_filter)
+
+        serializer = GiftCardSerializer(cards, many=True)
+
+        return success_response(
+            message="لیست گیفت کارت‌ها",
+            data={
+                "total_results": cards.count(),
+                "results": serializer.data
+            }
+        )
+    
+
+class AdminGiftCardDetailAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request, pk):
+
+        card = get_object_or_404(GiftCard, pk=pk)
+
+        serializer = GiftCardSerializer(card)
+
+        return success_response(
+            message="جزئیات گیفت کارت",
+            data={
+                "total_results": 1,
+                "results": [serializer.data]
+            }
+        )
+    
+
+class AdminGiftCardCreateAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request):
+
+        serializer = GiftCardCreateUpdateSerializer(data=request.data)
+
+        if serializer.is_valid():
+
+            card = serializer.save(
+                created_by=request.user,
+                status="ACTIVE",
+                is_used=False
+            )
+
+            return success_response(
+                message="گیفت کارت ساخته شد",
+                data={
+                    "total_results": 1,
+                    "results": [GiftCardSerializer(card).data]
+                }
+            )
+
+        return error_response("خطا در ساخت گیفت کارت", data=serializer.errors)
+    
+
+
+class AdminGiftCardUpdateAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def put(self, request, pk):
+
+        card = get_object_or_404(GiftCard, pk=pk)
+
+        serializer = GiftCardCreateUpdateSerializer(
+            instance=card,
+            data=request.data,
+            partial=True
+        )
+
+        if serializer.is_valid():
+
+            card = serializer.save()
+
+            return success_response(
+                message="گیفت کارت ویرایش شد",
+                data={
+                    "total_results": 1,
+                    "results": [GiftCardSerializer(card).data]
+                }
+            )
+
+        return error_response("خطا در ویرایش", data=serializer.errors)
+    
+
+class AdminGiftCardDeleteAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def delete(self, request, pk):
+
+        card = get_object_or_404(GiftCard, pk=pk)
+        card.delete()
+
+        return success_response(
+            message="گیفت کارت حذف شد",
+            data={"total_results": 0, "results": []}
+        )
+    
+
+
+class AdminGiftCardChangeStatusAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+
+        card = get_object_or_404(GiftCard, pk=pk)
+
+        new_status = request.data.get("status")
+
+        if new_status not in ["ACTIVE", "USED", "EXPIRED"]:
+            return error_response("status نامعتبر است")
+
+        card.status = new_status
+
+        if new_status == "USED":
+            card.is_used = True
+
+        card.save()
+
+        return success_response(
+            message="وضعیت تغییر کرد",
+            data={
+                "total_results": 1,
+                "results": [GiftCardSerializer(card).data]
+            }
+        )
+    
+
+
+class AdminGiftCardOrderListAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+
+        qs = GiftCardOrder.objects.all().order_by("-id")
+
+        serializer = GiftCardOrderSerializer(qs, many=True)
+
+        return success_response(
+            message="لیست سفارش گیفت کارت",
+            data={
+                "total_results": qs.count(),
+                "results": serializer.data
+            }
+        )
+
+
+
+class AdminGiftCardOrderStatusAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+
+        order = get_object_or_404(GiftCardOrder, pk=pk)
+
+        serializer = StatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        order.status = serializer.validated_data["status"]
+        order.save()
+
+        return success_response(
+            message="وضعیت سفارش تغییر کرد",
+            data={
+                "total_results": 1,
+                "results": GiftCardOrderSerializer(order).data
+            }
+        )
+
+
+
+
+class AdminOrderListAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+
+        qs = Order.objects.prefetch_related("items").all().order_by("-id")
+
+        serializer = OrderSerializer(qs, many=True)
+
+        return success_response(
+            message="لیست سفارشات",
+            data={
+                "total_results": qs.count(),
+                "results": serializer.data
+            }
+        )
+    
+
+
+
+class AdminOrderStatusAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+
+        order = get_object_or_404(Order, pk=pk)
+
+        serializer = StatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        order.status = serializer.validated_data["status"]
+        order.save()
+
+        return success_response(
+            message="وضعیت سفارش تغییر کرد",
+            data={
+                "total_results": 1,
+                "results": OrderSerializer(order).data
+            }
+        )
+    
+
+
+
+class AdminFinancialListAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+
+        qs = FinancialTransaction.objects.all().order_by("-id")
+
+        serializer = FinancialTransactionSerializer(qs, many=True)
+
+        return success_response(
+            message="لیست تراکنش‌ها",
+            data={
+                "total_results": qs.count(),
+                "results": serializer.data
+            }
+        )
+
+
+
+class AdminFinancialStatusAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+
+        tx = get_object_or_404(FinancialTransaction, pk=pk)
+
+        serializer = StatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        tx.status = serializer.validated_data["status"]
+        tx.admin_note = serializer.validated_data.get("admin_note", "")
+        tx.save()
+
+        return success_response(
+            message="وضعیت تراکنش تغییر کرد",
+            data={
+                "total_results": 1,
+                "results": FinancialTransactionSerializer(tx).data
+            }
+        )
+    
+
+class AdminGoldTransactionListAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+
+        qs = GoldTransaction.objects.all().order_by("-id")
+
+        serializer = GoldTransactionSerializer(qs, many=True)
+
+        return success_response(
+            message="لیست معاملات طلا",
+            data={
+                "total_results": qs.count(),
+                "results": serializer.data
+            }
+        )
+    
+
+class AdminGoldTransactionStatusAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+
+        tx = get_object_or_404(GoldTransaction, pk=pk)
+
+        serializer = StatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        tx.status = serializer.validated_data["status"]
+        tx.save()
+
+        return success_response(
+            message="وضعیت معامله تغییر کرد",
+            data={
+                "total_results": 1,
+                "results": GoldTransactionSerializer(tx).data
+            }
+        )
+    
+
+
+class AdminSilverOrderListAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+
+        qs = SilverOrder.objects.prefetch_related("items").all().order_by("-id")
+
+        serializer = SilverOrderSerializer(qs, many=True)
+
+        return success_response(
+            message="لیست سفارشات نقره",
+            data={
+                "total_results": qs.count(),
+                "results": serializer.data
+            }
+        )
+    
+
+class AdminSilverOrderStatusAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+
+        order = get_object_or_404(SilverOrder, pk=pk)
+
+        serializer = StatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        order.status = serializer.validated_data["status"]
+        order.save()
+
+        return success_response(
+            message="وضعیت سفارش تغییر کرد",
+            data={
+                "total_results": 1,
+                "results": SilverOrderSerializer(order).data
+            }
+        )
+    
+
+
+class AdminSilverFinancialListAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+
+        qs = SilverFinancialTransaction.objects.all().order_by("-id")
+
+        serializer = SilverFinancialTransactionSerializer(qs, many=True)
+
+        return success_response(
+            message="لیست تراکنش‌های نقره",
+            data={
+                "total_results": qs.count(),
+                "results": serializer.data
+            }
+        )
+    
+
+class AdminSilverFinancialStatusAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+
+        tx = get_object_or_404(SilverFinancialTransaction, pk=pk)
+
+        serializer = StatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        tx.status = serializer.validated_data["status"]
+        tx.admin_note = serializer.validated_data.get("admin_note", "")
+        tx.save()
+
+        return success_response(
+            message="وضعیت تراکنش نقره تغییر کرد",
+            data={
+                "total_results": 1,
+                "results": SilverFinancialTransactionSerializer(tx).data
+            }
+        )
+    
+
+class AdminSilverFinancialStatusAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+
+        tx = get_object_or_404(SilverFinancialTransaction, pk=pk)
+
+        serializer = StatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        tx.status = serializer.validated_data["status"]
+        tx.admin_note = serializer.validated_data.get("admin_note", "")
+        tx.save()
+
+        return success_response(
+            message="وضعیت تراکنش نقره تغییر کرد",
+            data={
+                "total_results": 1,
+                "results": SilverFinancialTransactionSerializer(tx).data
+            }
+        )
+    
+
+class AdminSilverTransactionListAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+
+        qs = SilverTransaction.objects.all().order_by("-id")
+
+        serializer = SilverTransactionSerializer(qs, many=True)
+
+        return success_response(
+            message="لیست معاملات نقره",
+            data={
+                "total_results": qs.count(),
+                "results": serializer.data
+            }
+        )
+    
+
+class AdminSilverTransactionStatusAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+
+        tx = get_object_or_404(SilverTransaction, pk=pk)
+
+        serializer = StatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        tx.status = serializer.validated_data["status"]
+        tx.save()
+
+        return success_response(
+            message="وضعیت معامله تغییر کرد",
+            data={
+                "total_results": 1,
+                "results": SilverTransactionSerializer(tx).data
+            }
+        )
+
+
+class AdminDashboardAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+
+        users_count = User.objects.count()
+
+        verified_users = User.objects.filter(
+            auth_status="verified"
+        ).count()
+
+        pending_users = User.objects.filter(
+            auth_status="pending"
+        ).count()
+
+        gold_products = Product.objects.count()
+
+        silver_products = SilverProduct.objects.count()
+
+        gold_orders = Order.objects.count()
+
+        silver_orders = SilverOrder.objects.count()
+
+        pending_orders = (
+            Order.objects.filter(status="PENDING").count()
+            +
+            SilverOrder.objects.filter(status="PENDING").count()
+        )
+
+        gold_transactions = FinancialTransaction.objects.count()
+
+        silver_transactions = SilverFinancialTransaction.objects.count()
+
+        total_wallet_balance = (
+            Wallet.objects.aggregate(
+                total=Sum("balance")
+            )["total"] or 0
+        )
+
+        total_silver_wallet_balance = (
+            SilverWallet.objects.aggregate(
+                total=Sum("balance")
+            )["total"] or 0
+        )
+
+        total_gold_inventory = (
+            GoldInventory.objects.aggregate(
+                total=Sum("balance")
+            )["total"] or 0
+        )
+
+        total_silver_inventory = (
+            SilverInventory.objects.aggregate(
+                total=Sum("balance")
+            )["total"] or 0
+        )
+
+        total_deposit_amount = (
+            FinancialTransaction.objects.filter(
+                type="DEPOSIT",
+                status="COMPLETED"
+            ).aggregate(
+                total=Sum("amount")
+            )["total"] or 0
+        )
+
+        pending_withdraw_amount = (
+            FinancialTransaction.objects.filter(
+                type="WITHDRAW",
+                status="PENDING"
+            ).aggregate(
+                total=Sum("amount")
+            )["total"] or 0
+        )
+
+        recent_users = list(
+            User.objects.order_by("-id")
+            .values(
+                "id",
+                "mobile",
+                "first_name",
+                "last_name",
+                "auth_status"
+            )[:10]
+        )
+
+        recent_orders = []
+
+        gold_recent = Order.objects.order_by("-id")[:5]
+
+        for order in gold_recent:
+
+            recent_orders.append({
+                "id": order.id,
+                "type": "gold",
+                "user": order.user.mobile,
+                "status": order.status,
+                "amount": str(order.total_toman_amount),
+                "created_at": order.created_at
+            })
+
+        silver_recent = SilverOrder.objects.order_by("-id")[:5]
+
+        for order in silver_recent:
+
+            recent_orders.append({
+                "id": order.id,
+                "type": "silver",
+                "user": order.user.mobile,
+                "status": order.status,
+                "amount": str(order.total_toman_amount),
+                "created_at": order.created_at
+            })
+
+        return success_response(
+            message="اطلاعات داشبورد",
+            data={
+                "users_count": users_count,
+                "verified_users": verified_users,
+                "pending_users": pending_users,
+
+                "gold_products": gold_products,
+                "silver_products": silver_products,
+
+                "gold_orders": gold_orders,
+                "silver_orders": silver_orders,
+
+                "pending_orders": pending_orders,
+
+                "gold_transactions": gold_transactions,
+                "silver_transactions": silver_transactions,
+
+                "total_wallet_balance": total_wallet_balance,
+                "total_silver_wallet_balance": total_silver_wallet_balance,
+
+                "total_gold_inventory": total_gold_inventory,
+                "total_silver_inventory": total_silver_inventory,
+
+                "total_deposit_amount": total_deposit_amount,
+                "pending_withdraw_amount": pending_withdraw_amount,
+
+                "recent_users": recent_users,
+                "recent_orders": recent_orders
+            }
+        )

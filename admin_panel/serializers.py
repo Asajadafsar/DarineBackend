@@ -5,11 +5,12 @@ from accounts.models import User
 from rest_framework import serializers
 from accounts.models import UserFee
 from rest_framework import serializers
-from gold_app.models import Product, ProductCategory
+from gold_app.models import FinancialTransaction, GiftCard, GiftCardOrder, GoldTransaction, Order, OrderItem, Product, ProductCategory
 from gold_app.utils import get_live_gold_price
 from decimal import Decimal
-from silver_app.models import SilverProductCategory, SilverProduct
+from silver_app.models import SilverFinancialTransaction, SilverOrder, SilverOrderItem, SilverProductCategory, SilverProduct, SilverTransaction
 from silver_app.utils import get_live_silver_price
+import uuid
 
 
 
@@ -226,3 +227,189 @@ class SilverProductCreateUpdateSerializer(serializers.ModelSerializer):
             attrs["total_weight_with_fees"] = weight
 
         return attrs
+    
+
+class GiftCardSerializer(serializers.ModelSerializer):
+
+    created_by_name = serializers.CharField(source="created_by.mobile", read_only=True)
+    activated_by_name = serializers.CharField(source="activated_by.mobile", read_only=True)
+
+    class Meta:
+        model = GiftCard
+        fields = "__all__"
+
+
+
+class GiftCardCreateUpdateSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = GiftCard
+        fields = "__all__"
+        extra_kwargs = {
+            "created_by": {"required": False, "read_only": True},
+            "activated_by": {"required": False, "read_only": True},
+            "serial_number": {"required": False},
+            "status": {"required": False},
+            "is_used": {"required": False},
+            "used_at": {"required": False},
+        }
+
+    def validate(self, attrs):
+
+        import uuid
+
+        if not attrs.get("serial_number"):
+            attrs["serial_number"] = str(uuid.uuid4()).split("-")[0].upper()
+
+        return attrs
+
+
+
+
+class StatusUpdateSerializer(serializers.Serializer):
+    status = serializers.CharField(required=True)
+    admin_note = serializers.CharField(required=False, allow_blank=True)
+
+
+class GiftCardOrderSerializer(serializers.ModelSerializer):
+
+    user_mobile = serializers.CharField(source="user.mobile", read_only=True)
+
+    class Meta:
+        model = GiftCardOrder
+        fields = "__all__"
+
+    
+
+class OrderItemSerializer(serializers.ModelSerializer):
+
+    product_name = serializers.CharField(source="product.name", read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = "__all__"
+
+
+class OrderSerializer(serializers.ModelSerializer):
+
+    user_mobile = serializers.CharField(source="user.mobile", read_only=True)
+    items = OrderItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Order
+        fields = "__all__"
+
+
+
+class FinancialTransactionSerializer(serializers.ModelSerializer):
+
+    user_mobile = serializers.CharField(source="user.mobile", read_only=True)
+
+    class Meta:
+        model = FinancialTransaction
+        fields = "__all__"
+
+
+class GoldTransactionSerializer(serializers.ModelSerializer):
+
+    user_mobile = serializers.CharField(source="user.mobile", read_only=True)
+
+    class Meta:
+        model = GoldTransaction
+        fields = "__all__"
+
+
+
+class SilverOrderItemSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source="product.name", read_only=True)
+
+    class Meta:
+        model = SilverOrderItem
+        fields = "__all__"
+
+
+class SilverOrderSerializer(serializers.ModelSerializer):
+    items = SilverOrderItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = SilverOrder
+        fields = "__all__"
+
+
+class SilverTransactionSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = SilverTransaction
+        fields = "__all__"
+
+
+class SilverFinancialTransactionSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = SilverFinancialTransaction
+        fields = "__all__"
+
+
+# class StatusUpdateSerializer(serializers.Serializer):
+#     status = serializers.CharField()
+#     admin_note = serializers.CharField(required=False, allow_blank=True)
+
+
+
+
+
+class AdminDashboardSerializer(serializers.Serializer):
+
+    users_count = serializers.IntegerField()
+
+    verified_users = serializers.IntegerField()
+
+    pending_users = serializers.IntegerField()
+
+    gold_products = serializers.IntegerField()
+
+    silver_products = serializers.IntegerField()
+
+    gold_orders = serializers.IntegerField()
+
+    silver_orders = serializers.IntegerField()
+
+    pending_orders = serializers.IntegerField()
+
+    gold_transactions = serializers.IntegerField()
+
+    silver_transactions = serializers.IntegerField()
+
+    total_wallet_balance = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=0
+    )
+
+    total_silver_wallet_balance = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=0
+    )
+
+    total_gold_inventory = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=5
+    )
+
+    total_silver_inventory = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=5
+    )
+
+    total_deposit_amount = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=0
+    )
+
+    pending_withdraw_amount = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=0
+    )
+
+    recent_users = serializers.ListField()
+
+    recent_orders = serializers.ListField()
