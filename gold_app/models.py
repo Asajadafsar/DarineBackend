@@ -750,6 +750,8 @@ class UserAddress(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+
+
 class GoldBankInfo(models.Model):
 
     card_number = models.CharField(max_length=30)

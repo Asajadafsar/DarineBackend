@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from accounts.models import BankCard, ReferralEarning
 
@@ -360,17 +360,13 @@ class BuySilverSerializer(serializers.Serializer):
         allow_null=True
     )
 
+    # 👇 مهم: validation سخت رو برمی‌داریم
     weight = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=8,
+        max_digits=30,
+        decimal_places=18,   # 👈 اجازه عدد خام فرانت
         required=False,
         allow_null=True
     )
-
-    fee = None
-    fee_rate = None
-    total_toman = None
-    final_weight = None
 
     def validate(self, attrs):
 
@@ -381,12 +377,8 @@ class BuySilverSerializer(serializers.Serializer):
 
         request = self.context.get("request")
         user = request.user
-
         silver_price = self.context.get("silver_price")
 
-        # ======================
-        # USER FEE
-        # ======================
         user_fee = getattr(user, "fee", None)
         fee_rate = user_fee.silver_buy_fee if user_fee else Decimal("0.0099")
 
@@ -395,6 +387,7 @@ class BuySilverSerializer(serializers.Serializer):
         # ======================
         # CALCULATION
         # ======================
+
         if attrs.get("toman"):
 
             total_toman = Decimal(str(attrs["toman"]))
@@ -405,17 +398,22 @@ class BuySilverSerializer(serializers.Serializer):
 
         else:
 
-            weight = Decimal(str(attrs["weight"]))
-            pure = weight * silver_price
+            # 👇 اینجا trim واقعی انجام میشه
+            weight = Decimal(str(attrs["weight"])).quantize(
+                Decimal("0.00000001"),
+                rounding=ROUND_DOWN
+            )
 
+            pure = weight * silver_price
             fee = pure * fee_rate
             total_toman = pure + fee
 
-        attrs["fee"] = fee
-        attrs["total_toman"] = total_toman
-        attrs["final_weight"] = weight
+        attrs["fee"] = fee.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+        attrs["total_toman"] = total_toman.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+        attrs["final_weight"] = weight.quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
 
         return attrs
+    
 
 # =========================================================
 # SELL SILVER

@@ -235,7 +235,7 @@ class SilverChartAPIView(APIView):
 
 
 # =========================================================
-# BUY SILVER
+# BUY SILVER API
 # =========================================================
 
 class BuySilverAPIView(APIView):
@@ -245,17 +245,6 @@ class BuySilverAPIView(APIView):
     @transaction.atomic
     def post(self, request):
 
-        serializer = BuySilverSerializer(data=request.data)
-
-        if not serializer.is_valid():
-            return error_response(data=serializer.errors)
-
-        user = request.user
-
-        toman = serializer.validated_data.get("toman")
-        weight_input = serializer.validated_data.get("weight")
-        payment_method = serializer.validated_data.get("payment_method")
-
         silver_price = get_live_silver_price()
 
         if not silver_price:
@@ -264,34 +253,31 @@ class BuySilverAPIView(APIView):
                 status_code=500
             )
 
-        # ======================
-        # FEE
-        # ======================
-        fee_rate = Decimal("0.0099")
+        serializer = BuySilverSerializer(
+            data=request.data,
+            context={
+                "request": request,
+                "silver_price": silver_price
+            }
+        )
 
-        # ======================
-        # CALCULATION
-        # ======================
-        if toman:
+        serializer.is_valid(raise_exception=True)
 
-            total_toman = Decimal(str(toman))
-            fee = total_toman * fee_rate
-            net = total_toman - fee
+        user = request.user
 
-            weight = (net / silver_price).quantize(Decimal("0.0001"))
+        fee = serializer.validated_data["fee"]
+        fee_rate = serializer.validated_data["fee_rate"]
+        total_toman = serializer.validated_data["total_toman"]
+        weight = serializer.validated_data["final_weight"]
 
-        else:
-
-            weight = Decimal(str(weight_input)).quantize(Decimal("0.0001"))
-
-            pure = weight * silver_price
-            fee = pure * fee_rate
-            total_toman = pure + fee
-
-        # ======================
-        # WALLET
-        # ======================
         wallet, _ = SilverWallet.objects.get_or_create(user=user)
+        inventory, _ = SilverInventory.objects.get_or_create(user=user)
+
+        payment_method = serializer.validated_data["payment_method"]
+
+        # ======================
+        # PAYMENT
+        # ======================
 
         if payment_method == "WALLET":
 
@@ -313,19 +299,17 @@ class BuySilverAPIView(APIView):
                 description="پرداخت خرید نقره"
             )
 
-        else:
-            return error_response(message="روش پرداخت نامعتبر است")
+        # ======================
+        # INVENTORY UPDATE
+        # ======================
 
-        # ======================
-        # INVENTORY
-        # ======================
-        inventory, _ = SilverInventory.objects.get_or_create(user=user)
         inventory.balance += weight
         inventory.save()
 
         # ======================
         # TRANSACTION
         # ======================
+
         tx = SilverTransaction.objects.create(
             user=user,
             type="BUY",
@@ -338,17 +322,20 @@ class BuySilverAPIView(APIView):
         )
 
         return success_response(
-            message="خرید  نقره ثبت شد و در انتظار تایید است",
+            message="خرید نقره ثبت شد و در انتظار تایید است",
             status_code=201,
             data={
                 "transaction_id": tx.id,
                 "tracking_code": tx.tracking_code,
                 "silver_weight": float(weight),
                 "paid_amount": float(total_toman),
+                "fee": float(fee),
+                "fee_rate": float(fee_rate),
                 "wallet_balance": float(wallet.balance)
             }
         )
     
+
 
 
 # =========================================================

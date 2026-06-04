@@ -5,10 +5,10 @@ from accounts.models import User
 from rest_framework import serializers
 from accounts.models import UserFee
 from rest_framework import serializers
-from gold_app.models import FinancialTransaction, GiftCard, GiftCardOrder, GoldTransaction, Order, OrderItem, Product, ProductCategory
+from gold_app.models import FinancialTransaction, GiftCard, GiftCardOrder, GoldBankInfo, GoldTransaction, Order, OrderItem, Product, ProductCategory
 from gold_app.utils import get_live_gold_price
 from decimal import Decimal
-from silver_app.models import SilverFinancialTransaction, SilverOrder, SilverOrderItem, SilverProductCategory, SilverProduct, SilverTransaction
+from silver_app.models import SilverBankInfo, SilverFinancialTransaction, SilverOrder, SilverOrderItem, SilverProductCategory, SilverProduct, SilverTransaction
 from silver_app.utils import get_live_silver_price
 import uuid
 
@@ -413,3 +413,20 @@ class AdminDashboardSerializer(serializers.Serializer):
     recent_users = serializers.ListField()
 
     recent_orders = serializers.ListField()
+
+
+
+class GoldBankInfoSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = GoldBankInfo
+        fields = "__all__"
+
+
+class SilverBankInfoSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = SilverBankInfo
+        fields = "__all__"
+
+        

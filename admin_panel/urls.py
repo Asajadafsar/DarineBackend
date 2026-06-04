@@ -15,6 +15,12 @@ from .views import (
     AdminGiftCardOrderListAPIView,
     AdminGiftCardOrderStatusAPIView,
     AdminGiftCardUpdateAPIView,
+    AdminGoldBankCreateAPIView,
+    AdminGoldBankDeleteAPIView,
+    AdminGoldBankDetailAPIView,
+    AdminGoldBankListAPIView,
+    AdminGoldBankToggleAPIView,
+    AdminGoldBankUpdateAPIView,
     AdminGoldTransactionListAPIView,
     AdminGoldTransactionStatusAPIView,
     AdminOrderListAPIView,
@@ -24,6 +30,12 @@ from .views import (
     AdminProductDetailAPIView,
     AdminProductListAPIView,
     AdminProductUpdateAPIView,
+    AdminSilverBankCreateAPIView,
+    AdminSilverBankDeleteAPIView,
+    AdminSilverBankDetailAPIView,
+    AdminSilverBankListAPIView,
+    AdminSilverBankToggleAPIView,
+    AdminSilverBankUpdateAPIView,
     AdminSilverCategoryCreateAPIView,
     AdminSilverCategoryDeleteAPIView,
     AdminSilverCategoryListAPIView,
@@ -114,4 +126,22 @@ path(
     AdminDashboardAPIView.as_view(),
     name="admin-dashboard"
 ),
+# GOLD BANKS
+
+path("gold/banks/", AdminGoldBankListAPIView.as_view()),
+path("gold/banks/create/", AdminGoldBankCreateAPIView.as_view()),
+path("gold/banks/<int:pk>/", AdminGoldBankDetailAPIView.as_view()),
+path("gold/banks/<int:pk>/update/", AdminGoldBankUpdateAPIView.as_view()),
+path("gold/banks/<int:pk>/delete/", AdminGoldBankDeleteAPIView.as_view()),
+path("gold/banks/<int:pk>/toggle/", AdminGoldBankToggleAPIView.as_view()),
+
+
+# SILVER BANKS
+
+path("silver/banks/", AdminSilverBankListAPIView.as_view()),
+path("silver/banks/create/", AdminSilverBankCreateAPIView.as_view()),
+path("silver/banks/<int:pk>/", AdminSilverBankDetailAPIView.as_view()),
+path("silver/banks/<int:pk>/update/", AdminSilverBankUpdateAPIView.as_view()),
+path("silver/banks/<int:pk>/delete/", AdminSilverBankDeleteAPIView.as_view()),
+path("silver/banks/<int:pk>/toggle/", AdminSilverBankToggleAPIView.as_view()),
 ]

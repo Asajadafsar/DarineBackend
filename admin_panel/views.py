@@ -11,21 +11,23 @@ from .serializers import (
     GiftCardCreateUpdateSerializer,
     GiftCardOrderSerializer,
     GiftCardSerializer,
+    GoldBankInfoSerializer,
     GoldTransactionSerializer,
     OrderSerializer,
+    SilverBankInfoSerializer,
     SilverFinancialTransactionSerializer,
     SilverOrderSerializer,
     StatusUpdateSerializer
 )
 from rest_framework.parsers import MultiPartParser, FormParser
-from silver_app.models import SilverFinancialTransaction, SilverOrder, SilverProduct, SilverProductCategory, SilverTransaction
+from silver_app.models import SilverBankInfo, SilverFinancialTransaction, SilverOrder, SilverProduct, SilverProductCategory, SilverTransaction
 from .serializers import (
     SilverProductSerializer,
     SilverProductCreateUpdateSerializer,
     SilverProductCategorySerializer
 )
 from .serializers import FinancialTransactionSerializer
-from gold_app.models import FinancialTransaction, GiftCard, GiftCardOrder, GoldTransaction, Order, Product, ProductCategory
+from gold_app.models import FinancialTransaction, GiftCard, GiftCardOrder, GoldBankInfo, GoldTransaction, Order, Product, ProductCategory
 from .serializers import (
     ProductSerializer,
     ProductCreateUpdateSerializer,
@@ -55,7 +57,7 @@ from silver_app.models import (
     SilverOrder,
     SilverFinancialTransaction,
 )
-
+from django.db import transaction
 from .permissions import IsAdminRole
 
 
@@ -1273,5 +1275,306 @@ class AdminDashboardAPIView(APIView):
 
                 "recent_users": recent_users,
                 "recent_orders": recent_orders
+            }
+        )
+    
+
+
+class AdminGoldBankDetailAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request, pk):
+
+        bank = get_object_or_404(
+            GoldBankInfo,
+            pk=pk
+        )
+
+        return success_response(
+            message="جزئیات کارت",
+            data={
+                "total_results": 1,
+                "results": [
+                    GoldBankInfoSerializer(bank).data
+                ]
+            }
+        )
+    
+
+class AdminGoldBankCreateAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request):
+
+        serializer = GoldBankInfoSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        bank = serializer.save()
+
+        return success_response(
+            message="کارت ثبت شد",
+            data={
+                "total_results": 1,
+                "results": [
+                    GoldBankInfoSerializer(bank).data
+                ]
+            }
+        )
+    
+
+class AdminGoldBankUpdateAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def put(self, request, pk):
+
+        bank = get_object_or_404(
+            GoldBankInfo,
+            pk=pk
+        )
+
+        serializer = GoldBankInfoSerializer(
+            bank,
+            data=request.data,
+            partial=True
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        bank = serializer.save()
+
+        return success_response(
+            message="کارت ویرایش شد",
+            data={
+                "total_results": 1,
+                "results": [
+                    GoldBankInfoSerializer(bank).data
+                ]
+            }
+        )
+    
+
+class AdminGoldBankDeleteAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def delete(self, request, pk):
+
+        bank = get_object_or_404(
+            GoldBankInfo,
+            pk=pk
+        )
+
+        bank.delete()
+
+        return success_response(
+            message="کارت حذف شد"
+        )
+    
+
+class AdminGoldBankToggleAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    @transaction.atomic
+    def post(self, request, pk):
+
+        bank = get_object_or_404(GoldBankInfo, pk=pk)
+
+        # فقط یک کارت فعال باشه
+        GoldBankInfo.objects.exclude(pk=pk).update(is_active=False)
+
+        bank.is_active = True
+        bank.save(update_fields=["is_active"])
+
+        return success_response(
+            message="کارت فعال شد",
+            data={
+                "results": GoldBankInfoSerializer(bank).data
+            }
+        )
+    
+
+
+class AdminSilverBankListAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+
+        qs = SilverBankInfo.objects.all().order_by("-id")
+
+        serializer = SilverBankInfoSerializer(
+            qs,
+            many=True
+        )
+
+        return success_response(
+            message="لیست کارت های نقره",
+            data={
+                "total_results": qs.count(),
+                "results": serializer.data
+            }
+        )
+    
+
+class AdminSilverBankDetailAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request, pk):
+
+        bank = get_object_or_404(
+            SilverBankInfo,
+            pk=pk
+        )
+
+        return success_response(
+            message="جزئیات کارت",
+            data={
+                "total_results": 1,
+                "results": [
+                    SilverBankInfoSerializer(bank).data
+                ]
+            }
+        )
+    
+
+class AdminSilverBankCreateAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request):
+
+        serializer = SilverBankInfoSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        bank = serializer.save()
+
+        return success_response(
+            message="کارت ثبت شد",
+            data={
+                "total_results": 1,
+                "results": [
+                    SilverBankInfoSerializer(bank).data
+                ]
+            }
+        )
+    
+
+class AdminSilverBankUpdateAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def put(self, request, pk):
+
+        bank = get_object_or_404(
+            SilverBankInfo,
+            pk=pk
+        )
+
+        serializer = SilverBankInfoSerializer(
+            bank,
+            data=request.data,
+            partial=True
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        bank = serializer.save()
+
+        return success_response(
+            message="کارت ویرایش شد",
+            data={
+                "total_results": 1,
+                "results": [
+                    SilverBankInfoSerializer(bank).data
+                ]
+            }
+        )
+    
+
+class AdminSilverBankDeleteAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def delete(self, request, pk):
+
+        bank = get_object_or_404(
+            SilverBankInfo,
+            pk=pk
+        )
+
+        bank.delete()
+
+        return success_response(
+            message="کارت حذف شد"
+        )
+    
+
+class AdminSilverBankToggleAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+
+        bank = get_object_or_404(
+            SilverBankInfo,
+            pk=pk
+        )
+
+        SilverBankInfo.objects.update(
+            is_active=False
+        )
+
+        bank.is_active = True
+        bank.save()
+
+        return success_response(
+            message="کارت فعال شد",
+            data={
+                "total_results": 1,
+                "results": [
+                    SilverBankInfoSerializer(bank).data
+                ]
+            }
+        )
+    
+
+
+class AdminGoldBankListAPIView(APIView):
+
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+
+        qs = GoldBankInfo.objects.all().order_by("-id")
+
+        serializer = GoldBankInfoSerializer(
+            qs,
+            many=True
+        )
+
+        return success_response(
+            message="لیست کارت های طلا",
+            data={
+                "total_results": qs.count(),
+                "results": serializer.data
             }
         )
