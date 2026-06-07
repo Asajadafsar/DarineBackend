@@ -795,10 +795,10 @@ class BuyGoldSerializer(serializers.Serializer):
     )
 
     weight = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=8,
-        required=False,
-        allow_null=True
+    max_digits=20,
+    decimal_places=4,
+    required=False,
+    allow_null=True
     )
 
     # =========================
@@ -874,7 +874,7 @@ class SellGoldSerializer(serializers.Serializer):
 
     weight = serializers.DecimalField(
         max_digits=20,
-        decimal_places=8,
+        decimal_places=4,
         required=False,
         allow_null=True
     )

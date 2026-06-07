@@ -20,82 +20,49 @@ logger = logging.getLogger(__name__)
 # =========================================================
 
 def get_live_gold_price():
-
-    """
-    دریافت قیمت لحظه‌ای طلا
-    """
-
     url = (
         "https://api.wallgold.ir/api/v1/"
         "price?side=buy&symbol=GLD_18C_750TMN"
     )
 
     try:
-
-        response = requests.get(
-            url,
-            timeout=10
-        )
+        response = requests.get(url, timeout=10)
 
         if response.status_code != 200:
-
-            logger.error(
-                f"Gold API Error: {response.status_code}"
-            )
-
+            logger.error(f"Gold API Error: {response.status_code}")
             return None
 
         data = response.json()
 
         if not data.get('success'):
-
-            logger.error(
-                "Gold API success=False"
-            )
-
+            logger.error("Gold API success=False")
             return None
 
-        price = Decimal(
-            str(
-                data['result']['price']
-            )
-        )
-
-        return price
+        return Decimal(str(data['result']['price']))
 
     except Exception as e:
-
-        logger.error(
-            f"Gold Price Error: {str(e)}"
-        )
-
+        logger.error(f"Gold Price Error: {str(e)}")
         return None
 
 
-
 # =========================================================
-# SAVE GOLD PRICE HISTORY
+# SAVE HISTORY
 # =========================================================
 
 def save_gold_price_history():
-
     price = get_live_gold_price()
 
-    if not price:
+    if price is None:
         return False
 
-    last = GoldPriceHistory.objects.order_by(
-        "-created_at"
-    ).first()
+    last = GoldPriceHistory.objects.order_by("-created_at").first()
 
     if last and last.price == price:
         return True
 
-    GoldPriceHistory.objects.create(
-        price=price
-    )
-
+    GoldPriceHistory.objects.create(price=price)
     return True
+
 
 # =========================================================
 # GOLD CHART DATA
@@ -262,72 +229,41 @@ def generate_tracking_code(
 
 
 # =========================================================
-# BUY GOLD CALC
+# BUY CALC (SAFE - NO UNPACK)
 # =========================================================
 
-def calculate_buy_gold(
-    toman_amount=None,
-    weight_amount=None,
-    fee_rate=Decimal('0.01')
-):
+def calculate_buy_gold(toman_amount=None, weight_amount=None, fee_rate=Decimal("0.01")):
+    price = get_live_gold_price()
 
-    price_per_gram = (
-        get_live_gold_price()
-    )
-
-    if not price_per_gram:
+    if price is None:
         return None
 
-    if toman_amount:
+    price = Decimal(price)
 
-        total_toman = Decimal(
-            str(toman_amount)
-        )
+    if toman_amount is not None:
 
-        fee = (
-            total_toman * fee_rate
-        )
+        total_toman = Decimal(str(toman_amount))
+        fee = total_toman * fee_rate
+        net = total_toman - fee
+        weight = net / price
 
-        net_amount = (
-            total_toman - fee
-        )
+        return {
+            "price_per_gram": price,
+            "weight": float(weight),
+            "fee": float(fee),
+            "total_toman": float(total_toman)
+        }
 
-        weight = (
-            net_amount / price_per_gram
-        )
-
-    else:
-
-        weight = Decimal(
-            str(weight_amount)
-        )
-
-        pure_price = (
-            weight * price_per_gram
-        )
-
-        fee = (
-            pure_price * fee_rate
-        )
-
-        total_toman = (
-            pure_price + fee
-        )
+    weight = Decimal(str(weight_amount))
+    base = weight * price
+    fee = base * fee_rate
+    total = base + fee
 
     return {
-
-        "price_per_gram": price_per_gram,
-
-        "weight": round(
-            weight,
-            5
-        ),
-
-        "fee": round(fee),
-
-        "total_toman": round(
-            total_toman
-        )
+        "price_per_gram": price,
+        "weight": float(weight),
+        "fee": float(fee),
+        "total_toman": float(total)
     }
 
 

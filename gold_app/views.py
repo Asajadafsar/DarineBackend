@@ -694,27 +694,35 @@ class ProductListAPIView(APIView):
 
         queryset = Product.objects.filter(
             is_active=True
-        ).select_related('category').order_by('-created_at')
+        ).select_related(
+            "category"
+        ).order_by(
+            "-created_at"
+        )
 
         category = request.GET.get("category")
         delivery_type = request.GET.get("delivery_type")
 
         if category:
-            queryset = queryset.filter(category__slug=category)
+            queryset = queryset.filter(
+                category__slug=category
+            )
 
         if delivery_type:
-            queryset = queryset.filter(delivery_type=delivery_type)
+            queryset = queryset.filter(
+                delivery_type=delivery_type
+            )
 
-        serializer = ProductSerializer(queryset, many=True)
+        serializer = ProductSerializer(
+            queryset,
+            many=True,
+            context={"request": request}
+        )
 
         return success_response(
             message="محصولات دریافت شد",
             data=serializer.data
         )
-# =========================================================
-
-
-
 
 # =========================================================
 # PHYSICAL ORDER (GOLD CHECKOUT)
