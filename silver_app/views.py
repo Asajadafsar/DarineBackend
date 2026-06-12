@@ -486,7 +486,7 @@ class DepositAPIView(APIView):
                 )
 
                 return success_response(
-                    message="درخواست واریز ثبت شد",
+                    message="درخواست واریز ثبت شد و در انتظار تایید است",
                     status_code=201,
                     data={
                         "transaction_id": tx.id,
@@ -505,7 +505,7 @@ class DepositAPIView(APIView):
                     amount=amount,
                     type="DEPOSIT",
                     method="ONLINE",
-                    status="COMPLETED",
+                    status="PENDING",
                     tracking_code=generate_tracking_code("SLV_PAY"),
                     description="واریز آنلاین نقره"
                 )
@@ -514,13 +514,13 @@ class DepositAPIView(APIView):
                 wallet.save()
 
                 return success_response(
-                    message="واریز با موفقیت انجام شد",
+                    message="درخواست واریز با موفقیت ثبت و در انتظار تایید است",
                     status_code=201,
                     data={
                         "transaction_id": tx.id,
                         "tracking_code": tx.tracking_code,
                         "wallet_balance": int(wallet.balance),
-                        "status": "COMPLETED"
+                        "status": "PENDING"
                     }
                 )
 
@@ -590,7 +590,7 @@ class WithdrawAPIView(APIView):
             )
 
             return success_response(
-                message="درخواست برداشت ثبت شد",
+                message="درخواست برداشت ثبت شد و در انتظار تایید است",
                 data={
                     "transaction_id": tx.id,
                     "tracking_code": tx.tracking_code,
@@ -622,14 +622,14 @@ class WithdrawAPIView(APIView):
                 amount=amount,
                 type="WITHDRAW",
                 method="BANK",
-                status="COMPLETED",
+                status="PENDING",
                 tracking_code=generate_tracking_code("SLV_CONVERT"),
                 admin_note="تبدیل ریال به نقره",
                 description="تبدیل کیف پول به نقره"
             )
 
             return success_response(
-                message="تبدیل به نقره انجام شد",
+                message="تبدیل به نقره ثبت و در انتظار تایید است",
                 data={
                     "transaction_id": tx.id,
                     "tracking_code": tx.tracking_code,
@@ -1384,3 +1384,161 @@ class SilverReferralDashboardAPIView(APIView):
                 "recent_earnings": serializer.data
             }
         )
+    
+
+
+class SilverAssetValueAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        user = request.user
+
+        wallet = SilverWallet.objects.filter(
+            user=user
+        ).first()
+
+        inventory = SilverInventory.objects.filter(
+            user=user
+        ).first()
+
+        wallet_balance = (
+            wallet.balance
+            if wallet
+            else Decimal("0")
+        )
+
+        silver_balance = (
+            inventory.balance
+            if inventory
+            else Decimal("0")
+        )
+
+        silver_price = (
+            get_live_silver_price()
+            or Decimal("0")
+        )
+
+        silver_asset_value = (
+            silver_balance * silver_price
+        )
+
+        total_asset_value = (
+            wallet_balance +
+            silver_asset_value
+        )
+
+        return Response({
+
+            "total_asset_value": int(
+                total_asset_value
+            ),
+
+            "silver_balance": silver_balance,
+
+            "wallet_balance": int(
+                wallet_balance
+            ),
+
+            "silver_asset_value": int(
+                silver_asset_value
+            ),
+
+            "silver_price": int(
+                silver_price
+            )
+
+        })
+
+
+class SilverStatisticsAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        user = request.user
+
+        silver_price = (
+            get_live_silver_price()
+            or Decimal("0")
+        )
+
+        wallet = SilverWallet.objects.filter(
+            user=user
+        ).first()
+
+        inventory = SilverInventory.objects.filter(
+            user=user
+        ).first()
+
+        wallet_balance = (
+            wallet.balance
+            if wallet
+            else Decimal("0")
+        )
+
+        silver_balance = (
+            inventory.balance
+            if inventory
+            else Decimal("0")
+        )
+
+        total_assets = (
+            wallet_balance +
+            (silver_balance * silver_price)
+        )
+
+        pending_toman = (
+            SilverFinancialTransaction.objects.filter(
+                user=user,
+                status="PENDING"
+            ).aggregate(
+                total=Sum("amount")
+            )["total"]
+            or Decimal("0")
+        )
+
+        pending_silver = (
+            inventory.blocked_balance
+            if inventory
+            else Decimal("0")
+        )
+
+        withdrawn_silver = (
+            SilverFinancialTransaction.objects.filter(
+                user=user,
+                type="WITHDRAW",
+                status="COMPLETED"
+            ).aggregate(
+                total=Sum("amount")
+            )["total"]
+            or Decimal("0")
+        )
+
+        return Response({
+
+            "total_assets": int(
+                total_assets
+            ),
+
+            "profit": 0,
+
+            "withdrawn_silver": str(
+                withdrawn_silver
+            ),
+
+            "purchased_giftcards": 0,
+
+            "received_giftcards": 0,
+
+            "pending_toman": int(
+                pending_toman
+            ),
+
+            "pending_silver": str(
+                pending_silver
+            )
+
+        })

@@ -569,16 +569,40 @@ class SilverPriceHistory(models.Model):
 
 class SilverBankInfo(models.Model):
 
-    card_number = models.CharField(max_length=30)
-    full_name = models.CharField(max_length=255)
-    sheba = models.CharField(max_length=34)
+    card_number = models.CharField(
+        max_length=16,
+        unique=True
+    )
 
-    is_active = models.BooleanField(default=True)
+    full_name = models.CharField(
+        max_length=255
+    )
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    sheba = models.CharField(
+        max_length=26,
+        unique=True
+    )
 
-    def __str__(self):
-        return f"SILVER - {self.card_number}"
+    is_active = models.BooleanField(
+        default=False
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    def save(self, *args, **kwargs):
+
+        if self.is_active:
+
+            SilverBankInfo.objects.exclude(
+                pk=self.pk
+            ).update(
+                is_active=False
+            )
+
+        super().save(*args, **kwargs)
+
 
 class UserAddress(models.Model):
 

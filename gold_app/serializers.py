@@ -1186,3 +1186,47 @@ class ProductCategorySerializer(serializers.ModelSerializer):
             "name",
             "slug",
         ]
+
+
+
+class AssetValueSerializer(serializers.Serializer):
+
+    total_asset_value = serializers.DecimalField(
+        max_digits=25,
+        decimal_places=0
+    )
+
+    gold_balance = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=5
+    )
+
+    silver_balance = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=5
+    )
+
+    wallet_balance = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=0
+    )
+
+    gold_asset_value = serializers.DecimalField(
+        max_digits=25,
+        decimal_places=0
+    )
+
+    silver_asset_value = serializers.DecimalField(
+        max_digits=25,
+        decimal_places=0
+    )
+
+    gold_price = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=0
+    )
+
+    silver_price = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=0
+    )

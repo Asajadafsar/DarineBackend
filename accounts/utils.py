@@ -10,11 +10,31 @@ def success_response(message="", data=None, status_code=200):
     }, status=status_code)
 
 
-def error_response(message="", errors=None, status_code=400):
+def error_response(message="اطلاعات نامعتبر است", errors=None, status_code=400):
+
+    formatted_errors = []
+
+    if errors:
+
+        for field, msgs in errors.items():
+
+            for msg in msgs:
+
+                formatted_errors.append({
+                    "field": field,
+                    "message": msg
+                })
+
+        # ساخت message کلی از همه خطاها
+        message = "، ".join([
+            f"{item['message']}"
+            for item in formatted_errors
+        ])
+
     return Response({
         "success": False,
         "message": message,
-        "errors": errors
+        "errors": formatted_errors
     }, status=status_code)
 
 from .models import FeeSetting, ReferralEarning

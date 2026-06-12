@@ -157,6 +157,51 @@ class UserAdminViewSet(AdminBaseViewSet):
         })
 
 
+
+class CooperationRequestAdminViewSet(AdminBaseViewSet):
+
+    queryset = CooperationRequest.objects.all().order_by("-id")
+
+    # ======================
+    # LIST
+    # ======================
+    def list(self, request):
+
+        requests = self.get_queryset()
+
+        results = []
+
+        for item in requests:
+
+            data = CooperationRequestListSerializer(item).data
+
+            results.append(data)
+
+        return success_response(
+            "لیست درخواست‌های همکاری",
+            {
+                "total_results": len(results),
+                "results": results
+            }
+        )
+
+    # ======================
+    # RETRIEVE
+    # ======================
+    def retrieve(self, request, pk=None):
+
+        obj = get_object_or_404(CooperationRequest, pk=pk)
+
+        data = CooperationRequestListSerializer(obj).data
+
+        return success_response(
+            "جزئیات درخواست همکاری",
+            data
+        )
+
+
+
+
 # =========================================================
 # PRODUCT (GOLD)
 # =========================================================
@@ -652,22 +697,31 @@ class DashboardAdminViewSet(ViewSet):
             "wallet_balance": Wallet.objects.aggregate(total=Sum("balance"))["total"] or 0,
         })
 
-
 class GoldBankAdminViewSet(AdminBaseViewSet):
+
     queryset = GoldBankInfo.objects.all().order_by("-id")
+
     serializer_class = GoldBankInfoSerializer
+
+    create_update_serializer_class = (
+        GoldBankInfoCreateUpdateSerializer
+    )
 
     # ======================
     # LIST
     # ======================
     def list(self, request):
+
         qs = self.get_queryset()
 
         return success_response(
             "لیست کارت‌های طلا",
             {
                 "total_results": qs.count(),
-                "results": self.serializer_class(qs, many=True).data
+                "results": self.serializer_class(
+                    qs,
+                    many=True
+                ).data
             }
         )
 
@@ -675,6 +729,7 @@ class GoldBankAdminViewSet(AdminBaseViewSet):
     # RETRIEVE
     # ======================
     def retrieve(self, request, pk=None):
+
         obj = self.get_object()
 
         return success_response(
@@ -686,22 +741,55 @@ class GoldBankAdminViewSet(AdminBaseViewSet):
     # CREATE
     # ======================
     def create(self, request):
-        ser = self.serializer_class(data=request.data)
-        ser.is_valid(raise_exception=True)
-        obj = ser.save()
 
-        return success_response("کارت طلا ساخته شد", self.serializer_class(obj).data)
+        serializer = (
+            self.create_update_serializer_class(
+                data=request.data
+            )
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        obj = serializer.save()
+
+        return success_response(
+            "کارت طلا ساخته شد",
+            self.serializer_class(obj).data
+        )
 
     # ======================
     # UPDATE
     # ======================
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", False)
+    def update(
+        self,
+        request,
+        *args,
+        **kwargs
+    ):
+
+        partial = kwargs.pop(
+            "partial",
+            False
+        )
+
         obj = self.get_object()
 
-        ser = self.serializer_class(obj, data=request.data, partial=partial)
-        ser.is_valid(raise_exception=True)
-        obj = ser.save()
+        serializer = (
+            self.create_update_serializer_class(
+                obj,
+                data=request.data,
+                partial=partial
+            )
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        obj = serializer.save()
+
         obj.refresh_from_db()
 
         return success_response(
@@ -709,43 +797,78 @@ class GoldBankAdminViewSet(AdminBaseViewSet):
             self.serializer_class(obj).data
         )
 
-    def partial_update(self, request, *args, **kwargs):
+    def partial_update(
+        self,
+        request,
+        *args,
+        **kwargs
+    ):
+
         kwargs["partial"] = True
-        return self.update(request, *args, **kwargs)
+
+        return self.update(
+            request,
+            *args,
+            **kwargs
+        )
 
     # ======================
     # TOGGLE
     # ======================
-    @action(detail=True, methods=["post"])
-    def toggle(self, request, pk=None):
+    @action(
+        detail=True,
+        methods=["post"]
+    )
+    def toggle(
+        self,
+        request,
+        pk=None
+    ):
+
         bank = self.get_object()
 
-        GoldBankInfo.objects.exclude(pk=pk).update(is_active=False)
+        GoldBankInfo.objects.exclude(
+            pk=bank.pk
+        ).update(
+            is_active=False
+        )
+
         bank.is_active = True
         bank.save()
 
         return success_response(
             "کارت طلا فعال شد",
-            {"is_active": bank.is_active}
+            {
+                "is_active": True
+            }
         )
     
 
-    
 class SilverBankAdminViewSet(AdminBaseViewSet):
+
     queryset = SilverBankInfo.objects.all().order_by("-id")
+
     serializer_class = SilverBankInfoSerializer
+
+    create_update_serializer_class = (
+        SilverBankInfoCreateUpdateSerializer
+    )
 
     # ======================
     # LIST
     # ======================
     def list(self, request):
+
         qs = self.get_queryset()
 
         return success_response(
             "لیست کارت‌های نقره",
             {
                 "total_results": qs.count(),
-                "results": self.serializer_class(qs, many=True).data
+                "results": self.serializer_class(
+                    qs,
+                    many=True
+                ).data
             }
         )
 
@@ -753,6 +876,7 @@ class SilverBankAdminViewSet(AdminBaseViewSet):
     # RETRIEVE
     # ======================
     def retrieve(self, request, pk=None):
+
         obj = self.get_object()
 
         return success_response(
@@ -764,22 +888,55 @@ class SilverBankAdminViewSet(AdminBaseViewSet):
     # CREATE
     # ======================
     def create(self, request):
-        ser = self.serializer_class(data=request.data)
-        ser.is_valid(raise_exception=True)
-        obj = ser.save()
 
-        return success_response("کارت نقره ساخته شد", self.serializer_class(obj).data)
+        serializer = (
+            self.create_update_serializer_class(
+                data=request.data
+            )
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        obj = serializer.save()
+
+        return success_response(
+            "کارت نقره ساخته شد",
+            self.serializer_class(obj).data
+        )
 
     # ======================
     # UPDATE
     # ======================
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", False)
+    def update(
+        self,
+        request,
+        *args,
+        **kwargs
+    ):
+
+        partial = kwargs.pop(
+            "partial",
+            False
+        )
+
         obj = self.get_object()
 
-        ser = self.serializer_class(obj, data=request.data, partial=partial)
-        ser.is_valid(raise_exception=True)
-        obj = ser.save()
+        serializer = (
+            self.create_update_serializer_class(
+                obj,
+                data=request.data,
+                partial=partial
+            )
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        obj = serializer.save()
+
         obj.refresh_from_db()
 
         return success_response(
@@ -787,22 +944,48 @@ class SilverBankAdminViewSet(AdminBaseViewSet):
             self.serializer_class(obj).data
         )
 
-    def partial_update(self, request, *args, **kwargs):
+    def partial_update(
+        self,
+        request,
+        *args,
+        **kwargs
+    ):
+
         kwargs["partial"] = True
-        return self.update(request, *args, **kwargs)
+
+        return self.update(
+            request,
+            *args,
+            **kwargs
+        )
 
     # ======================
     # TOGGLE
     # ======================
-    @action(detail=True, methods=["post"])
-    def toggle(self, request, pk=None):
+    @action(
+        detail=True,
+        methods=["post"]
+    )
+    def toggle(
+        self,
+        request,
+        pk=None
+    ):
+
         bank = self.get_object()
 
-        SilverBankInfo.objects.exclude(pk=pk).update(is_active=False)
+        SilverBankInfo.objects.exclude(
+            pk=bank.pk
+        ).update(
+            is_active=False
+        )
+
         bank.is_active = True
         bank.save()
 
         return success_response(
             "کارت نقره فعال شد",
-            {"is_active": bank.is_active}
+            {
+                "is_active": True
+            }
         )

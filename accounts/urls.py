@@ -113,3 +113,4 @@ urlpatterns = [
     ),
     path("cooperation-request/", CooperationRequestAPIView.as_view()),
 ]
+

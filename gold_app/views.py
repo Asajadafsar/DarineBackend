@@ -23,6 +23,7 @@ from accounts.utils import apply_referral_bonus
 from silver_app.models import (
     SilverInventory
 )
+from silver_app.utils import get_live_silver_price
 
 from .models import (
     AutoSavingPlan,
@@ -515,7 +516,7 @@ class DepositAPIView(APIView):
                     amount=amount,
                     type='DEPOSIT',
                     method='ONLINE',
-                    status='COMPLETED',
+                    status='PENDING',
                     tracking_code=generate_tracking_code(
                         'PAY'
                     ),
@@ -526,7 +527,7 @@ class DepositAPIView(APIView):
                 wallet.save()
 
                 return success_response(
-                    message='واریز با موفقیت انجام شد',
+                    message=' درخواست واریز با موفقیت ثبت و در انتظار تایید است.   ',
                     status_code=201,
                     data={
                         "transaction_id": transaction_obj.id,
@@ -659,7 +660,7 @@ class WithdrawAPIView(APIView):
                 amount=amount,
                 type='CONVERT',
                 method='SILVER',
-                status='COMPLETED',
+                status='PENDING',
                 tracking_code=generate_tracking_code(
                     'SLV'
                 ),
@@ -668,7 +669,7 @@ class WithdrawAPIView(APIView):
             )
 
             return success_response(
-                message='تبدیل به نقره انجام شد',
+                message='درخواست تبدیل به نقره انجام شد ',
                 data={
                     "transaction_id": transaction_obj.id,
                     "tracking_code": transaction_obj.tracking_code,
@@ -2312,3 +2313,193 @@ class ParsianPriceAPIView(APIView):
             message="قیمت لحظه‌ای پارسیان",
             data=data
         )
+    
+
+class AssetValueAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        user = request.user
+
+        wallet = Wallet.objects.filter(
+            user=user
+        ).first()
+
+        gold_inventory = GoldInventory.objects.filter(
+            user=user
+        ).first()
+
+        silver_inventory = SilverInventory.objects.filter(
+            user=user
+        ).first()
+
+        wallet_balance = (
+            wallet.balance
+            if wallet
+            else Decimal("0")
+        )
+
+        gold_balance = (
+            gold_inventory.balance
+            if gold_inventory
+            else Decimal("0")
+        )
+
+        silver_balance = (
+            silver_inventory.balance
+            if silver_inventory
+            else Decimal("0")
+        )
+
+        gold_price = (
+            get_live_gold_price()
+            or Decimal("0")
+        )
+
+        silver_price = (
+            get_live_silver_price()
+            or Decimal("0")
+        )
+
+        gold_asset_value = (
+            gold_balance * gold_price
+        )
+
+        silver_asset_value = (
+            silver_balance * silver_price
+        )
+
+        total_asset_value = (
+            wallet_balance +
+            gold_asset_value +
+            silver_asset_value
+        )
+
+        return Response({
+
+            "total_asset_value": round(
+                total_asset_value
+            ),
+
+            "gold_balance": gold_balance,
+
+            "silver_balance": silver_balance,
+
+            "wallet_balance": round(
+                wallet_balance
+            ),
+
+            "gold_asset_value": round(
+                gold_asset_value
+            ),
+
+            "silver_asset_value": round(
+                silver_asset_value
+            ),
+
+            "gold_price": round(
+                gold_price
+            ),
+
+            "silver_price": round(
+                silver_price
+            )
+
+        })
+    
+
+
+class GoldStatisticsAPIView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        user = request.user
+
+        gold_price = (
+            get_live_gold_price()
+            or Decimal("0")
+        )
+
+        wallet = Wallet.objects.filter(
+            user=user
+        ).first()
+
+        inventory = GoldInventory.objects.filter(
+            user=user
+        ).first()
+
+        wallet_balance = (
+            wallet.balance
+            if wallet else Decimal("0")
+        )
+
+        gold_balance = (
+            inventory.balance
+            if inventory else Decimal("0")
+        )
+
+        total_assets = (
+            wallet_balance +
+            (gold_balance * gold_price)
+        )
+
+        withdrawn_gold = (
+            FinancialTransaction.objects.filter(
+                user=user,
+                type="WITHDRAW",
+                status="COMPLETED"
+            ).aggregate(
+                total=Sum("amount")
+            )["total"]
+            or 0
+        )
+
+        purchased_giftcards = (
+            GiftCardOrder.objects.filter(
+                user=user
+            ).aggregate(
+                total=Sum("total_price")
+            )["total"]
+            or 0
+        )
+
+        pending_toman = (
+            FinancialTransaction.objects.filter(
+                user=user,
+                status="PENDING"
+            ).aggregate(
+                total=Sum("amount")
+            )["total"]
+            or 0
+        )
+
+        pending_gold = (
+            inventory.blocked_balance
+            if inventory else Decimal("0")
+        )
+
+        return Response({
+
+            "total_assets": int(total_assets),
+
+            "profit": 0,
+
+            "withdrawn_gold": pending_gold,
+
+            "purchased_giftcards": int(
+                purchased_giftcards
+            ),
+
+            "received_giftcards": 0,
+
+            "pending_toman": int(
+                pending_toman
+            ),
+
+            "pending_gold": pending_gold
+
+        })

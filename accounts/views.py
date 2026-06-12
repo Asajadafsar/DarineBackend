@@ -1,6 +1,7 @@
 # accounts/views.py
 
 import random
+from tokenize import TokenError
 
 import jdatetime
 from rest_framework.views import APIView
@@ -18,6 +19,7 @@ from .models import User, OTPRequest, BankCard
 
 from .serializers import (
     CooperationRequestSerializer,
+    RegisterSerializer,
     SendOTPSerializer,
     VerifyOTPSerializer,
 
@@ -148,16 +150,141 @@ class RegisterStepTwo(APIView):
 # REGISTER STEP 3
 # ==========================================
 
+# class RegisterStepThree(APIView):
+
+#     permission_classes = [AllowAny]
+
+#     def post(self, request):
+
+#         mobile = request.data.get("mobile")
+
+#         if User.objects.filter(mobile=mobile).exists():
+#             return error_response("این شماره قبلاً ثبت شده")
+
+#         otp_verified = OTPRequest.objects.filter(
+#             mobile=mobile,
+#             is_used=True
+#         ).exists()
+
+#         if not otp_verified:
+#             return error_response(
+#                 "ابتدا شماره موبایل را تایید کنید",
+#                 status_code=403
+#             )
+
+#         password = request.data.get("password")
+#         confirm_password = request.data.get("confirm_password")
+
+#         if password != confirm_password:
+#             return error_response("تکرار رمز عبور صحیح نیست")
+
+#         # ==========================================
+#         # BIRTH DATE (SMART PARSER)
+#         # ==========================================
+#         birth_date_input = request.data.get("birth_date")
+#         birth_date_gregorian = None
+
+#         if birth_date_input:
+
+#             try:
+#                 # =========================
+#                 # CASE 1: JALALI (1402/10/01)
+#                 # =========================
+#                 if "/" in birth_date_input and len(birth_date_input.split("/")[0]) == 4:
+#                     y, m, d = map(int, birth_date_input.split("/"))
+#                     birth_date_gregorian = jdatetime.date(y, m, d).togregorian()
+
+#                 # =========================
+#                 # CASE 2: GREGORIAN (2007-04-30)
+#                 # =========================
+#                 else:
+#                     birth_date_gregorian = datetime.strptime(
+#                         birth_date_input,
+#                         "%Y-%m-%d"
+#                     ).date()
+
+#             except Exception:
+#                 return error_response(
+#                     "فرمت تاریخ اشتباه است (1402/10/01 یا 2007-04-30)"
+#                 )
+
+#         try:
+
+#             user = User.objects.create(
+#                 mobile=mobile,
+#                 username=mobile,
+
+#                 first_name=request.data.get("first_name"),
+#                 last_name=request.data.get("last_name"),
+
+#                 national_code=request.data.get("national_code"),
+
+#                 birth_date=birth_date_gregorian,
+
+#                 role="customer",
+#                 auth_status="pending"
+#             )
+
+#             user.set_password(password)
+#             user.save()
+
+#             return success_response(
+#                 message="ثبت نام با موفقیت انجام شد",
+#                 data={
+#                     "user_id": user.id
+#                 },
+#                 status_code=201
+#             )
+
+#         except Exception as e:
+#             return error_response(str(e))
+
+
 class RegisterStepThree(APIView):
 
     permission_classes = [AllowAny]
 
     def post(self, request):
 
-        mobile = request.data.get("mobile")
+        serializer = RegisterSerializer(
+            data=request.data
+        )
 
-        if User.objects.filter(mobile=mobile).exists():
-            return error_response("این شماره قبلاً ثبت شده")
+        if not serializer.is_valid():
+
+            return error_response(
+                "اطلاعات نامعتبر است",
+                serializer.errors
+            )
+
+        data = serializer.validated_data
+
+        mobile = data["mobile"]
+
+        first_name = data["first_name"]
+        last_name = data["last_name"]
+
+        national_code = data["national_code"]
+
+        password = data["password"]
+
+        birth_date_input = data["birth_date"]
+
+        if User.objects.filter(
+            mobile=mobile
+        ).exists():
+
+            return error_response(
+                "این شماره قبلا ثبت شده است"
+            )
+
+        if User.objects.filter(
+            national_code=national_code
+        ).exists():
+
+            return error_response(
+                "این کد ملی قبلا ثبت شده است"
+            )
 
         otp_verified = OTPRequest.objects.filter(
             mobile=mobile,
@@ -165,46 +292,45 @@ class RegisterStepThree(APIView):
         ).exists()
 
         if not otp_verified:
+
             return error_response(
                 "ابتدا شماره موبایل را تایید کنید",
                 status_code=403
             )
 
-        password = request.data.get("password")
-        confirm_password = request.data.get("confirm_password")
-
-        if password != confirm_password:
-            return error_response("تکرار رمز عبور صحیح نیست")
-
-        # ==========================================
-        # BIRTH DATE (SMART PARSER)
-        # ==========================================
-        birth_date_input = request.data.get("birth_date")
         birth_date_gregorian = None
 
-        if birth_date_input:
+        try:
 
-            try:
-                # =========================
-                # CASE 1: JALALI (1402/10/01)
-                # =========================
-                if "/" in birth_date_input and len(birth_date_input.split("/")[0]) == 4:
-                    y, m, d = map(int, birth_date_input.split("/"))
-                    birth_date_gregorian = jdatetime.date(y, m, d).togregorian()
+            if "/" in birth_date_input:
 
-                # =========================
-                # CASE 2: GREGORIAN (2007-04-30)
-                # =========================
-                else:
-                    birth_date_gregorian = datetime.strptime(
+                y, m, d = map(
+                    int,
+                    birth_date_input.split("/")
+                )
+
+                birth_date_gregorian = (
+                    jdatetime.date(
+                        y,
+                        m,
+                        d
+                    ).togregorian()
+                )
+
+            else:
+
+                birth_date_gregorian = (
+                    datetime.strptime(
                         birth_date_input,
                         "%Y-%m-%d"
                     ).date()
-
-            except Exception:
-                return error_response(
-                    "فرمت تاریخ اشتباه است (1402/10/01 یا 2007-04-30)"
                 )
+
+        except Exception:
+
+            return error_response(
+                "فرمت تاریخ نامعتبر است"
+            )
 
         try:
 
@@ -212,10 +338,10 @@ class RegisterStepThree(APIView):
                 mobile=mobile,
                 username=mobile,
 
-                first_name=request.data.get("first_name"),
-                last_name=request.data.get("last_name"),
+                first_name=first_name,
+                last_name=last_name,
 
-                national_code=request.data.get("national_code"),
+                national_code=national_code,
 
                 birth_date=birth_date_gregorian,
 
@@ -226,17 +352,40 @@ class RegisterStepThree(APIView):
             user.set_password(password)
             user.save()
 
-            return success_response(
+            refresh = RefreshToken.for_user(
+                user
+            )
+
+            access = refresh.access_token
+
+            response = success_response(
                 message="ثبت نام با موفقیت انجام شد",
                 data={
-                    "user_id": user.id
+                    "user": {
+                        "id": user.id,
+                        "full_name":
+                            f"{user.first_name} {user.last_name}",
+                        "role": user.role,
+                        "status": user.auth_status
+                    }
                 },
                 status_code=201
             )
 
+            set_auth_cookies(
+                response,
+                str(access),
+                str(refresh)
+            )
+
+            return response
+
         except Exception as e:
-            return error_response(str(e))
-        
+
+            return error_response(
+                str(e)
+            )
+    
     
 # ==========================================
 # LOGIN PASSWORD
@@ -352,9 +501,15 @@ class LoginWithOTP(APIView):
             mobile=mobile
         ).first()
 
+
         if not user:
             return error_response(
-                "کاربر یافت نشد",
+                {
+                    "success": False,
+                     "message": " شماره موبایل ثبت نشده است، لطفا ثبت نام کنید.,",
+                     "need_register": True,
+                     "mobile": mobile
+                },
                 status_code=404
             )
 
@@ -450,6 +605,21 @@ class LogoutView(APIView):
 
     def post(self, request):
 
+        refresh_token = request.COOKIES.get("refreshToken")
+
+        # =========================
+        # BLACKLIST REFRESH TOKEN
+        # =========================
+        if refresh_token:
+            try:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            except TokenError:
+                pass
+
+        # =========================
+        # CLEAR COOKIES
+        # =========================
         response = success_response(
             message="خروج موفق"
         )
@@ -871,25 +1041,37 @@ class ChangeMobileConfirm(APIView):
 
 
 
+class CooperationRequestAPIView(
+    APIView
+):
 
+    permission_classes = [
+        AllowAny
+    ]
 
-class CooperationRequestAPIView(APIView):
+    def post(
+        self,
+        request
+    ):
 
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-
-        serializer = CooperationRequestSerializer(data=request.data)
+        serializer = CooperationRequestSerializer(
+            data=request.data
+        )
 
         if not serializer.is_valid():
-            return error_response(data=serializer.errors)
 
-        obj = serializer.save()
+            return error_response(
+                errors=serializer.errors
+            )
+
+        cooperation_request = serializer.save()
 
         return success_response(
             message="درخواست همکاری با موفقیت ثبت شد",
             status_code=201,
             data={
-                "request_id": obj.id
+                "request_id": cooperation_request.id,
+                "full_name": cooperation_request.full_name,
+                "mobile": cooperation_request.mobile,
             }
         )

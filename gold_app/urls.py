@@ -1,12 +1,14 @@
 from django.urls import path
 
 from .views import (
+    AssetValueAPIView,
     CoinPriceAPIView,
     GoldDashboardAPIView,
     GoldDepositInfoAPIView,
     GoldLimitOrderCreateAPIView,
     GoldLimitOrderListAPIView,
     GoldPriceAPIView,
+    GoldStatisticsAPIView,
     LatestPriceAPIView,
     ParsianPriceAPIView,
     PhysicalOrderAPIView,
@@ -177,8 +179,16 @@ path(
     'physical-order/',
     PhysicalOrderAPIView.as_view()
 ),
+    path(
+        "asset-value/",
+        AssetValueAPIView.as_view(),
+        name="asset-value"
+    ),
 
 
-
-
+path(
+    "statistics/",
+    GoldStatisticsAPIView.as_view(),
+    name="gold-statistics"
+),
 ]

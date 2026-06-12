@@ -2,7 +2,7 @@ from rest_framework import serializers
 from decimal import Decimal
 import uuid
 
-from accounts.models import User, UserFee
+from accounts.models import CooperationRequest, User, UserFee
 
 from gold_app.models import (
     Product,
@@ -144,6 +144,9 @@ class UserFeeUpdateSerializer(serializers.ModelSerializer):
             attrs[field] = value
 
         return attrs
+
+
+
 
 # =========================================================
 # PRODUCT (GOLD)
@@ -393,41 +396,175 @@ class SilverProductCreateUpdateSerializer(serializers.ModelSerializer):
 
 
 
-# =========================================================
-# BANK INFO (GOLD)
-# =========================================================
+
+
+from rest_framework import serializers
+from gold_app.models import GoldBankInfo
+
 
 class GoldBankInfoSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = GoldBankInfo
         fields = "__all__"
 
 
 class GoldBankInfoCreateUpdateSerializer(serializers.ModelSerializer):
+
     success_message = "کارت بانکی با موفقیت ثبت/ویرایش شد"
+
     class Meta:
         model = GoldBankInfo
         fields = "__all__"
 
+    # =========================
+    # REMOVE DRF UNIQUE VALIDATOR
+    # =========================
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-# =========================================================
-# BANK INFO (SILVER)
-# =========================================================
+        # جلوگیری از خطای انگلیسی unique
+        self.fields['card_number'].validators = []
+        self.fields['sheba'].validators = []
+
+    # =========================
+    # CARD NUMBER VALIDATION
+    # =========================
+    def validate_card_number(self, value):
+
+        value = value.replace(" ", "").replace("-", "")
+
+        if not value.isdigit():
+            raise serializers.ValidationError("شماره کارت نامعتبر است")
+
+        if len(value) != 16:
+            raise serializers.ValidationError("شماره کارت باید 16 رقم باشد")
+
+        qs = GoldBankInfo.objects.filter(card_number=value)
+
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        if qs.exists():
+            raise serializers.ValidationError("این شماره کارت قبلاً ثبت شده است")
+
+        return value
+
+    # =========================
+    # SHEBA VALIDATION
+    # =========================
+    def validate_sheba(self, value):
+
+        value = value.strip().upper()
+
+        if not value.startswith("IR"):
+            raise serializers.ValidationError("شماره شبا باید با IR شروع شود")
+
+        if len(value) != 26:
+            raise serializers.ValidationError("شماره شبا باید 26 کاراکتر باشد")
+
+        if not value[2:].isdigit():
+            raise serializers.ValidationError("فرمت شماره شبا نامعتبر است")
+
+        qs = GoldBankInfo.objects.filter(sheba=value)
+
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        if qs.exists():
+            raise serializers.ValidationError("این شماره شبا قبلاً ثبت شده است")
+
+        return value
+    
+
+from rest_framework import serializers
+from silver_app.models import SilverBankInfo
+
 
 class SilverBankInfoSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = SilverBankInfo
         fields = "__all__"
 
 
 class SilverBankInfoCreateUpdateSerializer(serializers.ModelSerializer):
+
     success_message = "کارت بانکی با موفقیت ثبت/ویرایش شد"
+
     class Meta:
         model = SilverBankInfo
         fields = "__all__"
 
+    # =========================
+    # REMOVE DRF UNIQUE VALIDATOR
+    # =========================
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-# =========================================================
+        self.fields['card_number'].validators = []
+        self.fields['sheba'].validators = []
+
+    # =========================
+    # CARD NUMBER VALIDATION
+    # =========================
+    def validate_card_number(self, value):
+
+        value = value.replace(" ", "").replace("-", "")
+
+        if not value.isdigit():
+            raise serializers.ValidationError("شماره کارت نامعتبر است")
+
+        if len(value) != 16:
+            raise serializers.ValidationError("شماره کارت باید 16 رقم باشد")
+
+        qs = SilverBankInfo.objects.filter(card_number=value)
+
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        if qs.exists():
+            raise serializers.ValidationError("این شماره کارت قبلاً ثبت شده است")
+
+        return value
+
+    # =========================
+    # SHEBA VALIDATION
+    # =========================
+    def validate_sheba(self, value):
+
+        value = value.strip().upper()
+
+        if not value.startswith("IR"):
+            raise serializers.ValidationError("شماره شبا باید با IR شروع شود")
+
+        if len(value) != 26:
+            raise serializers.ValidationError("شماره شبا باید 26 کاراکتر باشد")
+
+        if not value[2:].isdigit():
+            raise serializers.ValidationError("فرمت شماره شبا نامعتبر است")
+
+        qs = SilverBankInfo.objects.filter(sheba=value)
+
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        if qs.exists():
+            raise serializers.ValidationError("این شماره شبا قبلاً ثبت شده است")
+
+        return value
+
+
+
+
+
+
+
+
+
+
+
+
 # ORDERS
 # =========================================================
 
@@ -568,3 +705,8 @@ class AdminDashboardSerializer(serializers.Serializer):
     recent_orders = serializers.ListField()
 
 
+class CooperationRequestListSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = CooperationRequest
+        fields = "__all__"

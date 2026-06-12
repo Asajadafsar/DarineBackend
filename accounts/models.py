@@ -104,19 +104,19 @@ class BankCard(models.Model):
 
 class CooperationRequest(models.Model):
 
-    organization_name = models.CharField(max_length=255)
+    full_name = models.CharField(
+        max_length=255
+    )
 
-    full_name = models.CharField(max_length=255)
+    mobile = models.CharField(
+        max_length=11
+    )
 
-    email = models.EmailField()
+    description = models.TextField()
 
-    mobile = models.CharField(max_length=20)
-
-    description = models.TextField(blank=True, null=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    is_reviewed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
 
     def __str__(self):
         return self.full_name

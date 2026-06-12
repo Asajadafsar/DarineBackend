@@ -9,9 +9,11 @@ from .views import (
     # =========================
     # DASHBOARD & BALANCE
     # =========================
+    SilverAssetValueAPIView,
     SilverDashboardAPIView,
     SilverDepositInfoAPIView,
     SilverProductCategoryListAPIView,
+    SilverStatisticsAPIView,
     SilverUserBalanceAPIView,
 
     # =========================
@@ -112,4 +114,17 @@ urlpatterns = [
     # REFERRAL
     # =====================================================
     path("referral/", SilverReferralDashboardAPIView.as_view(), name="silver-referral"),
+        path(
+        "asset-value/",
+        SilverAssetValueAPIView.as_view(),
+        name="silver-asset-value"
+    ),
+
+
+    path(
+        "statistics/",
+        SilverStatisticsAPIView.as_view(),
+        name="silver-statistics"
+    ),
 ]
+

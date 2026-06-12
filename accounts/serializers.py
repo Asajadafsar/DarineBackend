@@ -49,8 +49,137 @@ class ResetPasswordCompleteSerializer(serializers.Serializer):
         return attrs
 
 
+from rest_framework import serializers
 
 
+from rest_framework import serializers
+
+
+from rest_framework import serializers
+
+
+class RegisterSerializer(serializers.Serializer):
+
+    mobile = serializers.CharField(
+        max_length=11,
+        min_length=11,
+        error_messages={
+            "required": "شماره موبایل الزامی است",
+            "blank": "شماره موبایل نمی‌تواند خالی باشد",
+            "max_length": "شماره موبایل باید 11 رقم باشد",
+            "min_length": "شماره موبایل باید 11 رقم باشد",
+        }
+    )
+
+    first_name = serializers.CharField(
+        error_messages={
+            "required": "نام الزامی است",
+            "blank": "نام نمی‌تواند خالی باشد",
+        }
+    )
+
+    last_name = serializers.CharField(
+        error_messages={
+            "required": "نام خانوادگی الزامی است",
+            "blank": "نام خانوادگی نمی‌تواند خالی باشد",
+        }
+    )
+
+    national_code = serializers.CharField(
+        max_length=10,
+        min_length=10,
+        error_messages={
+            "required": "کد ملی الزامی است",
+            "blank": "کد ملی نمی‌تواند خالی باشد",
+            "max_length": "کد ملی باید دقیقاً 10 رقم باشد",
+            "min_length": "کد ملی باید دقیقاً 10 رقم باشد",
+        }
+    )
+
+    birth_date = serializers.CharField(
+        error_messages={
+            "required": "تاریخ تولد الزامی است",
+            "blank": "تاریخ تولد نمی‌تواند خالی باشد",
+        }
+    )
+
+    password = serializers.CharField(
+        min_length=8,
+        error_messages={
+            "required": "رمز عبور الزامی است",
+            "blank": "رمز عبور نمی‌تواند خالی باشد",
+            "min_length": "رمز عبور باید حداقل 8 کاراکتر باشد",
+        }
+    )
+
+    confirm_password = serializers.CharField(
+        error_messages={
+            "required": "تکرار رمز عبور الزامی است",
+            "blank": "تکرار رمز عبور نمی‌تواند خالی باشد",
+        }
+    )
+
+    referral_code = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+
+    # =========================
+    # MOBILE VALIDATION
+    # =========================
+    def validate_mobile(self, value):
+
+        if not value.isdigit():
+            raise serializers.ValidationError(
+                "شماره موبایل فقط باید عدد باشد"
+            )
+
+        if len(value) != 11:
+            raise serializers.ValidationError(
+                "شماره موبایل باید دقیقاً 11 رقم باشد"
+            )
+
+        if not value.startswith("09"):
+            raise serializers.ValidationError(
+                "شماره موبایل باید با 09 شروع شود"
+            )
+
+        return value
+
+    # =========================
+    # NATIONAL CODE VALIDATION
+    # =========================
+    def validate_national_code(self, value):
+
+        if not value.isdigit():
+            raise serializers.ValidationError(
+                "کد ملی فقط باید عدد باشد"
+            )
+
+        if len(value) != 10:
+            raise serializers.ValidationError(
+                "کد ملی باید دقیقاً 10 رقم باشد"
+            )
+
+        return value
+
+    # =========================
+    # GLOBAL VALIDATION
+    # =========================
+    def validate(self, attrs):
+
+        password = attrs.get("password")
+        confirm_password = attrs.get("confirm_password")
+
+        # فقط بررسی برابر بودن
+        if password != confirm_password:
+            raise serializers.ValidationError({
+                "confirm_password": [
+                    "رمز عبور و تکرار آن یکسان نیست"
+                ]
+            })
+
+        return attrs
 
 class UserProfileSerializer(serializers.ModelSerializer):
 
@@ -113,28 +242,76 @@ class ChangeMobileConfirmSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=6)
 
 
-
-
-
-class CooperationRequestSerializer(serializers.ModelSerializer):
+class CooperationRequestSerializer(
+    serializers.ModelSerializer
+):
 
     class Meta:
+
         model = CooperationRequest
+
         fields = [
             "id",
-            "organization_name",
             "full_name",
-            "email",
             "mobile",
             "description",
         ]
 
-    def validate_mobile(self, value):
+        read_only_fields = [
+            "id"
+        ]
+
+    def validate_full_name(
+        self,
+        value
+    ):
+
+        value = value.strip()
+
+        if len(value) < 3:
+
+            raise serializers.ValidationError(
+                "نام و نام خانوادگی معتبر نیست"
+            )
+
+        return value
+
+    def validate_mobile(
+        self,
+        value
+    ):
 
         if not value.isdigit():
-            raise serializers.ValidationError("شماره همراه نامعتبر است")
+
+            raise serializers.ValidationError(
+                "شماره همراه نامعتبر است"
+            )
+
+        if len(value) != 11:
+
+            raise serializers.ValidationError(
+                "شماره همراه باید 11 رقم باشد"
+            )
+
+        if not value.startswith("09"):
+
+            raise serializers.ValidationError(
+                "شماره همراه باید با 09 شروع شود"
+            )
+
+        return value
+
+    def validate_description(
+        self,
+        value
+    ):
+
+        value = value.strip()
 
         if len(value) < 10:
-            raise serializers.ValidationError("شماره همراه کوتاه است")
+
+            raise serializers.ValidationError(
+                "توضیحات همکاری حداقل باید 10 کاراکتر باشد"
+            )
 
         return value
