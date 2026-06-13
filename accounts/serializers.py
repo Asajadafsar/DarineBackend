@@ -242,9 +242,41 @@ class ChangeMobileConfirmSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=6)
 
 
+
+
+
 class CooperationRequestSerializer(
     serializers.ModelSerializer
 ):
+
+    full_name = serializers.CharField(
+        required=True,
+        error_messages={
+            "required": "نام و نام خانوادگی الزامی است",
+            "blank": "نام و نام خانوادگی نمی‌تواند خالی باشد",
+            "max_length": "نام و نام خانوادگی بیش از حد مجاز است",
+        }
+    )
+
+    mobile = serializers.CharField(
+        required=True,
+        max_length=11,
+        min_length=11,
+        error_messages={
+            "required": "شماره همراه الزامی است",
+            "blank": "شماره همراه نمی‌تواند خالی باشد",
+            "max_length": "شماره همراه باید 11 رقم باشد",
+            "min_length": "شماره همراه باید 11 رقم باشد",
+        }
+    )
+
+    description = serializers.CharField(
+        required=True,
+        error_messages={
+            "required": "توضیحات همکاری الزامی است",
+            "blank": "توضیحات همکاری نمی‌تواند خالی باشد",
+        }
+    )
 
     class Meta:
 
@@ -280,6 +312,8 @@ class CooperationRequestSerializer(
         self,
         value
     ):
+
+        value = value.strip()
 
         if not value.isdigit():
 
