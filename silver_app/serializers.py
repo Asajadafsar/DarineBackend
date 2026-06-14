@@ -154,6 +154,9 @@ class SilverFinancialTransactionSerializer(serializers.ModelSerializer):
 # PRODUCT
 # =========================================================
 
+
+
+
 class SilverProductSerializer(serializers.ModelSerializer):
 
     category_name = serializers.CharField(
@@ -161,6 +164,7 @@ class SilverProductSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    image_url = serializers.SerializerMethodField()
     total_price = serializers.SerializerMethodField()
 
     class Meta:
@@ -177,12 +181,32 @@ class SilverProductSerializer(serializers.ModelSerializer):
             "sell_price",
             "total_price",
             "inventory_count",
-            "image",
+            "image_url",   # 👈 مهم: image نه، image_url
             "description",
             "is_active",
             "created_at"
         ]
 
+    # =========================
+    # IMAGE FIX (قطعی)
+    # =========================
+    def get_image_url(self, obj):
+
+        if not obj.image:
+            return None
+
+        request = self.context.get("request")
+
+        # حالت استاندارد Django (بهترین حالت)
+        if request:
+            return request.build_absolute_uri(obj.image.url)
+
+        # fallback (اگر request خراب بود)
+        return f"https://api.darine.shop{obj.image.url}"
+
+    # =========================
+    # TOTAL PRICE
+    # =========================
     def get_total_price(self, obj):
 
         if obj.buy_price and obj.total_weight_with_fees:
@@ -192,6 +216,10 @@ class SilverProductSerializer(serializers.ModelSerializer):
             return int(obj.buy_price)
 
         return 0
+
+
+
+
 
 # =========================================================
 # ORDER ITEM

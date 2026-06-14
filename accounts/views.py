@@ -75,9 +75,14 @@ class RegisterStepOne(APIView):
 
         code = str(random.randint(100000, 999999))
 
+
+
+        client_type = request.headers.get("X-Client-Type", "gold")
+
         sms_sent = send_otp_sms(
             mobile,
-            code
+            code,
+            client_type
         )
 
         if not sms_sent:
@@ -779,9 +784,13 @@ class ResetPasswordRequest(APIView):
 
         code = str(random.randint(100000, 999999))
 
+
+        client_type = request.headers.get("X-Client-Type", "gold")
+
         sms_sent = send_otp_sms(
             mobile,
-            code
+            code,
+            client_type
         )
 
         if not sms_sent:
@@ -955,9 +964,13 @@ class ChangeMobileRequest(APIView):
 
         code = str(random.randint(100000, 999999))
 
+
+        client_type = request.headers.get("X-Client-Type", "gold")
+
         sms_sent = send_otp_sms(
             new_mobile,
-            code
+            code,
+            client_type
         )
 
         if not sms_sent:
@@ -975,6 +988,8 @@ class ChangeMobileRequest(APIView):
         return success_response(
             message="کد تایید ارسال شد"
         )
+
+
 
 
 # ==========================================

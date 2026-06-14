@@ -1,6 +1,6 @@
 from rest_framework.routers import DefaultRouter
 
-from admin_panel.views import CategoryAdminViewSet, CooperationRequestAdminViewSet, DashboardAdminViewSet, GiftCardAdminViewSet, GoldBankAdminViewSet, OrderAdminViewSet, ProductAdminViewSet, SilverBankAdminViewSet, SilverOrderAdminViewSet, SilverProductAdminViewSet, UserAdminViewSet
+from admin_panel.views import CategoryAdminViewSet, CooperationRequestAdminViewSet, DashboardAdminViewSet, DepositAdminViewSet, GiftCardAdminViewSet, GoldBankAdminViewSet, OrderAdminViewSet, ProductAdminViewSet, SilverBankAdminViewSet, SilverDepositAdminViewSet, SilverOrderAdminViewSet, SilverProductAdminViewSet, SilverWithdrawAdminViewSet, UserAdminViewSet, WithdrawAdminViewSet
 
 router = DefaultRouter()
 
@@ -15,7 +15,10 @@ router.register("dashboard", DashboardAdminViewSet, basename="dashboard")
 router.register("gold-bank", GoldBankAdminViewSet, basename="gold-bank")
 router.register("silver-bank", SilverBankAdminViewSet, basename="silver-bank")
 router.register("CooperationRequest", CooperationRequestAdminViewSet, basename="CooperationRequest")
-
+router.register("OrderDeposit", DepositAdminViewSet, basename="OrderDeposit")
+router.register("Orderithdraw", WithdrawAdminViewSet, basename="Orderithdraw")
+router.register("silver-OrderDeposit", SilverDepositAdminViewSet, basename="silver-OrderDeposit")
+router.register("silver-Orderithdraw", SilverWithdrawAdminViewSet, basename="silver-Orderithdraw")
 
 urlpatterns = router.urls
 

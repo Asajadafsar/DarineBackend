@@ -268,6 +268,9 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
 
         return attrs
 
+
+
+
 # =========================================================
 # PRODUCT (SILVER)
 # =========================================================
@@ -710,3 +713,30 @@ class CooperationRequestListSerializer(serializers.ModelSerializer):
     class Meta:
         model = CooperationRequest
         fields = "__all__"
+        
+        
+        
+        
+class FinancialTransactionSerializer(serializers.ModelSerializer):
+
+    user_mobile = serializers.CharField(source="user.mobile", read_only=True)
+    receipt_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FinancialTransaction
+        fields = "__all__"
+
+    def get_receipt_url(self, obj):
+
+        if not obj.receipt_image:
+            return None
+
+        request = self.context.get("request")
+
+        if request:
+            return request.build_absolute_uri(obj.receipt_image.url)
+
+        return obj.receipt_image.url
+    
+    
+    
