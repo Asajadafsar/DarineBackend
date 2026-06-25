@@ -12,59 +12,57 @@ from .models import SilverPriceHistory
 
 logger = logging.getLogger(__name__)
 
+from decimal import Decimal, ROUND_DOWN
 
+def decimal_3(value):
+    return Decimal(value).quantize(
+        Decimal("0.001"),
+        rounding=ROUND_DOWN
+    )
 # =========================================================
 # SILVER PRICE
 # =========================================================
-
 def get_live_silver_price():
-    """
-    دریافت قیمت لحظه‌ای نقره
-    """
-
     url = (
         "https://api.noghresea.ir/"
         "api/market/getSilverPrice"
     )
 
     try:
-
-        response = requests.get(
-            url,
-            timeout=10
-        )
+        response = requests.get(url, timeout=10)
 
         if response.status_code != 200:
-
-            logger.error(
-                f"Silver API Error: {response.status_code}"
-            )
-
+            logger.error(f"Silver API Error: {response.status_code}")
             return None
 
         data = response.json()
 
-        price = Decimal(
-            str(
-                data['price']
-            )
-        )
+        raw_price = Decimal(str(data['price']))
 
-        if price <= 0:
-
-            logger.error("Invalid Silver Price")
-
+        if raw_price <= 0:
             return None
 
-        return price
+        price = raw_price * 1000
 
     except Exception as e:
-
-        logger.error(
-            f"Silver Price Error: {str(e)}"
-        )
-
+        logger.error(f"Silver Price Error: {str(e)}")
         return None
+
+    # offset
+    try:
+        from admin_panel.models import SilverPriceOffset
+        offset = SilverPriceOffset.objects.filter(
+            is_active=True
+        ).first()
+        if offset:
+            price = price + offset.offset_amount
+    except Exception:
+        pass
+
+    return price
+
+
+
 
 
 # =========================================================
@@ -72,29 +70,38 @@ def get_live_silver_price():
 # =========================================================
 
 def save_silver_price_history():
-
     price = get_live_silver_price()
 
     if not price:
         return False
 
-    last = SilverPriceHistory.objects.order_by(
-        "-created_at"
-    ).first()
+    last = SilverPriceHistory.objects.order_by("-created_at").first()
 
+    # اصلاح باگ: اگر قیمت تکراری بود ولی بیشتر از ۱ ساعت گذشته بود، حتماً ثبت کن
     if last and last.price == price:
-        return True
+        if timezone.now() - last.created_at < timedelta(hours=1):
+            return True
 
-    SilverPriceHistory.objects.create(
-        price=price
-    )
-
+    SilverPriceHistory.objects.create(price=price)
     return True
 
 
 # =========================================================
 # SILVER CHART DATA
 # =========================================================
+
+from datetime import timedelta
+
+from django.utils import timezone
+from django.db.models import Avg
+from django.db.models.functions import (
+    TruncMinute,
+    TruncHour,
+    TruncDate
+)
+
+from .models import SilverPriceHistory
+
 
 def get_silver_chart_data(filter_type='24H'):
 
@@ -103,34 +110,54 @@ def get_silver_chart_data(filter_type='24H'):
     if filter_type == "24H":
         start_date = now - timedelta(hours=24)
 
+        # مهم
+        trunc_fn = TruncMinute
+
+        label_format = "%H:%M"
+
     elif filter_type == "WEEKLY":
         start_date = now - timedelta(days=7)
+
+        trunc_fn = TruncHour
+
+        label_format = "%m/%d %H:%M"
 
     else:
         start_date = now - timedelta(days=30)
 
-    queryset = SilverPriceHistory.objects.filter(
-        created_at__gte=start_date
-    ).order_by("created_at")
+        trunc_fn = TruncDate
+
+        label_format = "%m/%d"
+
+    queryset = (
+        SilverPriceHistory.objects
+        .filter(created_at__gte=start_date)
+        .annotate(
+            period=trunc_fn(
+                "created_at",
+                tzinfo=timezone.get_current_timezone()
+            )
+        )
+        .values("period")
+        .annotate(avg_price=Avg("price"))
+        .order_by("period")
+    )
 
     labels = []
     prices = []
 
     for item in queryset:
 
-        prices.append(int(item.price))
+        if item["avg_price"] is None:
+            continue
 
-        if filter_type == "24H":
+        prices.append(
+            int(item["avg_price"])
+        )
 
-            labels.append(
-                item.created_at.strftime("%H:%M:%S")
-            )
-
-        else:
-
-            labels.append(
-                item.created_at.strftime("%m/%d %H:%M")
-            )
+        labels.append(
+            item["period"].strftime(label_format)
+        )
 
     if not prices:
 
@@ -144,6 +171,7 @@ def get_silver_chart_data(filter_type='24H'):
                 "highest_price": 0,
                 "lowest_price": 0,
                 "change_percent": 0,
+                "change_amount": 0,
                 "min_y": 0,
                 "max_y": 0
             }
@@ -154,28 +182,74 @@ def get_silver_chart_data(filter_type='24H'):
     lowest_price = min(prices)
     first_price = prices[0]
 
+    change_amount = current_price - first_price
+
     change_percent = round(
         ((current_price - first_price) / first_price) * 100,
         2
+    ) if first_price else 0
+
+    price_range = highest_price - lowest_price
+
+    padding = (
+        int(price_range * 0.1)
+        if price_range
+        else int(highest_price * 0.01)
     )
 
     return {
-
         "chart": {
             "labels": labels,
             "prices": prices
         },
-
         "stats": {
-
             "current_price": current_price,
             "highest_price": highest_price,
             "lowest_price": lowest_price,
+            "change_amount": change_amount,
             "change_percent": change_percent,
-            "min_y": lowest_price,
-            "max_y": highest_price
+            "min_y": max(
+                0,
+                lowest_price - padding
+            ),
+            "max_y": highest_price + padding
         }
     }
+
+
+def get_silver_bubble():
+    """
+    حباب نقره نسبت به طلا
+    نسبت تاریخی طلا به نقره: 65
+    """
+    from gold_app.utils import get_live_gold_price
+
+    silver_price = get_live_silver_price()  # تومان per gram
+    gold_price = get_live_gold_price()      # تومان per gram
+
+    if not silver_price or not gold_price:
+        return None
+
+    # نسبت تاریخی طلا به نقره
+    HISTORICAL_RATIO = Decimal("65")
+
+    # قیمت ذاتی نقره بر اساس قیمت طلا
+    intrinsic_price = gold_price / HISTORICAL_RATIO
+
+    # حباب
+    bubble_percent = round(
+        ((silver_price - intrinsic_price) / intrinsic_price) * 100,
+        2
+    )
+
+    return {
+        "silver_price": int(silver_price),
+        "intrinsic_price": int(intrinsic_price),
+        "bubble_percent": float(bubble_percent),
+        "is_positive": bubble_percent > 0,  # مثبت = حباب دارد، منفی = زیر ارزش
+    }
+
+
 
 
 # =========================================================
@@ -278,7 +352,7 @@ def calculate_buy_silver(
 
         "price_per_gram": price_per_gram,
 
-        "weight": round(weight, 5),
+        "weight": round(weight, 3),
 
         "fee": round(fee),
 
@@ -325,7 +399,7 @@ def calculate_sell_silver(
 
         "price_per_gram": price_per_gram,
 
-        "weight": round(weight, 5),
+        "weight": round(weight, 3),
 
         "fee": round(fee),
 

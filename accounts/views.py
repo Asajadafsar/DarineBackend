@@ -13,7 +13,9 @@ from drf_spectacular.utils import extend_schema
 
 from django.contrib.auth import authenticate
 from django.utils import timezone
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+
+from admin_panel.utils import create_admin_log
 
 from .models import User, OTPRequest, BankCard
 
@@ -49,7 +51,6 @@ from .utils import (
     error_response
 )
 
-
 # ==========================================
 # REGISTER STEP 1
 # ==========================================
@@ -58,192 +59,90 @@ class RegisterStepOne(APIView):
 
     permission_classes = [AllowAny]
 
-    @extend_schema(
-        request=SendOTPSerializer
-    )
+    @extend_schema(request=SendOTPSerializer)
     def post(self, request):
 
         serializer = SendOTPSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return error_response(
-                "اطلاعات نامعتبر است",
-                serializer.errors
-            )
+            return error_response("اطلاعات نامعتبر است", serializer.errors)
 
         mobile = serializer.validated_data["mobile"]
-
         code = str(random.randint(100000, 999999))
-
-
-
         client_type = request.headers.get("X-Client-Type", "gold")
 
-        sms_sent = send_otp_sms(
-            mobile,
-            code,
-            client_type
-        )
+        sms_sent = send_otp_sms(mobile, code, client_type)
 
         if not sms_sent:
-            return error_response(
-                "خطا در ارسال پیامک",
-                status_code=500
-            )
+            return error_response("خطا در ارسال پیامک", status_code=500)
 
-        OTPRequest.objects.create(
-            mobile=mobile,
-            code=code
-        )
+        # همه OTP های قبلی این موبایل رو غیرفعال کن
+        OTPRequest.objects.filter(mobile=mobile, is_used=False).update(is_used=True)
 
-        return success_response(
-            message="کد تایید ارسال شد"
-        )
+        OTPRequest.objects.create(mobile=mobile, code=code)
+
+        return success_response(message="کد تایید ارسال شد")
 
 
 # ==========================================
 # REGISTER STEP 2
+# ==========================================
+# ==========================================
+# REGISTER STEP 2 (اصلاح‌شده و هماهنگ با فرانت)
 # ==========================================
 
 class RegisterStepTwo(APIView):
 
     permission_classes = [AllowAny]
 
-    @extend_schema(
-        request=VerifyOTPSerializer
-    )
     def post(self, request):
+        serializer = VerifyOTPSerializer(data=request.data)
 
-        serializer = VerifyOTPSerializer(
-            data=request.data
-        )
-
+        # مدیریت خطاهای اعتبارسنجی سریالایزر (طول کد، خالی بودن و...)
         if not serializer.is_valid():
+            error_msg = "اطلاعات نامعتبر است"
+            if "code" in serializer.errors:
+                error_msg = serializer.errors["code"][0]
+            elif "mobile" in serializer.errors:
+                error_msg = serializer.errors["mobile"][0]
+            elif "non_field_errors" in serializer.errors:
+                error_msg = serializer.errors["non_field_errors"][0]
+
             return error_response(
-                "اطلاعات نامعتبر",
-                serializer.errors
+                message=error_msg, 
+                errors=serializer.errors, 
+                status_code=400
             )
 
         mobile = serializer.validated_data["mobile"]
         code = serializer.validated_data["code"]
 
+        # پیدا کردن آخرین کد بدون در نظر گرفتن فیلتر is_used برای فهمیدن اشتباه بودن
         otp = OTPRequest.objects.filter(
             mobile=mobile,
-            code=code,
-            is_used=False
+            code=code
         ).last()
 
-        if not otp:
-            return error_response(
-                "کد تایید اشتباه است"
-            )
+        if not otp or otp.is_used:
+            return error_response(message="کد تایید وارد شده اشتباه است", status_code=400)
 
         if otp.is_expired():
-            return error_response(
-                "کد تایید منقضی شده است"
-            )
+            return error_response(message="کد تایید منقضی شده است. لطفا مجدداً درخواست کنید", status_code=400)
 
+        # تایید موفقیت‌آمیز کد
         otp.is_used = True
         otp.save()
 
-        return success_response(
-            message="کد تایید شد"
-        )
+        return success_response(message="کد با موفقیت تایید شد")
+
+
+
+
 
 
 # ==========================================
 # REGISTER STEP 3
 # ==========================================
-
-# class RegisterStepThree(APIView):
-
-#     permission_classes = [AllowAny]
-
-#     def post(self, request):
-
-#         mobile = request.data.get("mobile")
-
-#         if User.objects.filter(mobile=mobile).exists():
-#             return error_response("این شماره قبلاً ثبت شده")
-
-#         otp_verified = OTPRequest.objects.filter(
-#             mobile=mobile,
-#             is_used=True
-#         ).exists()
-
-#         if not otp_verified:
-#             return error_response(
-#                 "ابتدا شماره موبایل را تایید کنید",
-#                 status_code=403
-#             )
-
-#         password = request.data.get("password")
-#         confirm_password = request.data.get("confirm_password")
-
-#         if password != confirm_password:
-#             return error_response("تکرار رمز عبور صحیح نیست")
-
-#         # ==========================================
-#         # BIRTH DATE (SMART PARSER)
-#         # ==========================================
-#         birth_date_input = request.data.get("birth_date")
-#         birth_date_gregorian = None
-
-#         if birth_date_input:
-
-#             try:
-#                 # =========================
-#                 # CASE 1: JALALI (1402/10/01)
-#                 # =========================
-#                 if "/" in birth_date_input and len(birth_date_input.split("/")[0]) == 4:
-#                     y, m, d = map(int, birth_date_input.split("/"))
-#                     birth_date_gregorian = jdatetime.date(y, m, d).togregorian()
-
-#                 # =========================
-#                 # CASE 2: GREGORIAN (2007-04-30)
-#                 # =========================
-#                 else:
-#                     birth_date_gregorian = datetime.strptime(
-#                         birth_date_input,
-#                         "%Y-%m-%d"
-#                     ).date()
-
-#             except Exception:
-#                 return error_response(
-#                     "فرمت تاریخ اشتباه است (1402/10/01 یا 2007-04-30)"
-#                 )
-
-#         try:
-
-#             user = User.objects.create(
-#                 mobile=mobile,
-#                 username=mobile,
-
-#                 first_name=request.data.get("first_name"),
-#                 last_name=request.data.get("last_name"),
-
-#                 national_code=request.data.get("national_code"),
-
-#                 birth_date=birth_date_gregorian,
-
-#                 role="customer",
-#                 auth_status="pending"
-#             )
-
-#             user.set_password(password)
-#             user.save()
-
-#             return success_response(
-#                 message="ثبت نام با موفقیت انجام شد",
-#                 data={
-#                     "user_id": user.id
-#                 },
-#                 status_code=201
-#             )
-
-#         except Exception as e:
-#             return error_response(str(e))
-
 
 class RegisterStepThree(APIView):
 
@@ -251,116 +150,91 @@ class RegisterStepThree(APIView):
 
     def post(self, request):
 
-        serializer = RegisterSerializer(
-            data=request.data
-        )
+        serializer = RegisterSerializer(data=request.data)
 
         if not serializer.is_valid():
-
-            return error_response(
-                "اطلاعات نامعتبر است",
-                serializer.errors
-            )
+            return error_response("اطلاعات نامعتبر است", serializer.errors)
 
         data = serializer.validated_data
-
         mobile = data["mobile"]
-
         first_name = data["first_name"]
         last_name = data["last_name"]
-
         national_code = data["national_code"]
-
         password = data["password"]
-
         birth_date_input = data["birth_date"]
+        referral_code = data.get("referral_code", "")
 
-        if User.objects.filter(
-            mobile=mobile
-        ).exists():
+        # ۱. بررسی تکراری نبودن شماره موبایل
+        if User.objects.filter(mobile=mobile).exists():
+            return error_response("این شماره قبلا ثبت شده است")
 
-            return error_response(
-                "این شماره قبلا ثبت شده است"
-            )
+        # ۲. بررسی تکراری نبودن کد ملی
+        if User.objects.filter(national_code=national_code).exists():
+            return error_response("این کد ملی قبلا ثبت شده است")
 
-        if User.objects.filter(
-            national_code=national_code
-        ).exists():
-
-            return error_response(
-                "این کد ملی قبلا ثبت شده است"
-            )
-
-        otp_verified = OTPRequest.objects.filter(
-            mobile=mobile,
+        # ۳. چک کردن وجود تاییدیه OTP (بدون وابستگی به آخرین رکورد یا زمان)
+        # فقط بررسی میکنیم که آیا این موبایل اصلاً مرحله دو را با موفقیت رد کرده است یا خیر
+        has_verified_otp = OTPRequest.objects.filter(
+            mobile=mobile, 
             is_used=True
         ).exists()
 
-        if not otp_verified:
-
+        if not has_verified_otp:
             return error_response(
                 "ابتدا شماره موبایل را تایید کنید",
                 status_code=403
             )
 
+        # ۴. تبدیل تاریخ تولد شمسی/میلادی به گریگوریان
         birth_date_gregorian = None
-
         try:
-
             if "/" in birth_date_input:
-
-                y, m, d = map(
-                    int,
-                    birth_date_input.split("/")
-                )
-
-                birth_date_gregorian = (
-                    jdatetime.date(
-                        y,
-                        m,
-                        d
-                    ).togregorian()
-                )
-
+                y, m, d = map(int, birth_date_input.split("/"))
+                birth_date_gregorian = jdatetime.date(y, m, d).togregorian()
             else:
-
-                birth_date_gregorian = (
-                    datetime.strptime(
-                        birth_date_input,
-                        "%Y-%m-%d"
-                    ).date()
-                )
-
+                birth_date_gregorian = datetime.strptime(birth_date_input, "%Y-%m-%d").date()
         except Exception:
+            return error_response("فرمت تاریخ نامعتبر است")
 
-            return error_response(
-                "فرمت تاریخ نامعتبر است"
-            )
-
+        # ۵. فرآیند ساخت کاربر و لاگ سیستم
         try:
+            # بررسی کد معرف
+            referred_by = None
+            if referral_code:
+                referred_by = User.objects.filter(referral_code=referral_code).first()
 
+            # ایجاد رکورد کاربر جدید
             user = User.objects.create(
                 mobile=mobile,
                 username=mobile,
-
                 first_name=first_name,
                 last_name=last_name,
-
                 national_code=national_code,
-
                 birth_date=birth_date_gregorian,
-
                 role="customer",
-                auth_status="pending"
+                auth_status="pending",
+                referred_by=referred_by
             )
 
             user.set_password(password)
             user.save()
 
-            refresh = RefreshToken.for_user(
-                user
+            # مصرف کردن یا پاک کردن تمام OTPهای این موبایل بعد از ثبت نام موفق برای امنیت بیشتر
+            OTPRequest.objects.filter(mobile=mobile).delete()
+
+            # ثبت لاگ در پنل ادمین
+            create_admin_log(
+                admin=None,
+                user=user,
+                action_type="USER_REGISTER",
+                action="ثبت نام کاربر",
+                model_name="User",
+                object_id=user.id,
+                description=f"کاربر جدید {user.mobile} ثبت نام کرد"
             )
 
+            # صدور توکن‌های JWT
+            refresh = RefreshToken.for_user(user)
             access = refresh.access_token
 
             response = success_response(
@@ -368,8 +242,7 @@ class RegisterStepThree(APIView):
                 data={
                     "user": {
                         "id": user.id,
-                        "full_name":
-                            f"{user.first_name} {user.last_name}",
+                        "full_name": f"{user.first_name} {user.last_name}",
                         "role": user.role,
                         "status": user.auth_status
                     }
@@ -377,21 +250,16 @@ class RegisterStepThree(APIView):
                 status_code=201
             )
 
-            set_auth_cookies(
-                response,
-                str(access),
-                str(refresh)
-            )
+            # ست کردن کوکی‌های امنیتی احراز هویت
+            set_auth_cookies(response, str(access), str(refresh))
 
             return response
 
         except Exception as e:
+            return error_response(str(e))
 
-            return error_response(
-                str(e)
-            )
-    
-    
+
+
 # ==========================================
 # LOGIN PASSWORD
 # ==========================================

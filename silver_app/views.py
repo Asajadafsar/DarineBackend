@@ -8,6 +8,31 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.db import transaction
+from decimal import Decimal
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+
+from drf_spectacular.utils import extend_schema
+
+from admin_panel.models import SilverBanner
+from admin_panel.serializers import SilverBannerSerializer
+from admin_panel.utils import create_admin_log
+
+from .models import (
+    SilverWallet,
+    SilverFinancialTransaction,
+    SilverInventory
+)
+
+from .serializers import (
+    SilverDepositSerializer,
+    SilverWithdrawSerializer
+)
+
+from .utils import generate_tracking_code
 
 import jdatetime
 from rest_framework import status
@@ -149,7 +174,7 @@ def error_response(
         status=status_code
     )
 
-
+from .views import success_response, error_response
 # =========================================================
 # DASHBOARD
 # =========================================================
@@ -213,24 +238,24 @@ class SilverUserBalanceAPIView(APIView):
         )
 
 
-# =========================================================
-# SILVER CHART
-# =========================================================
+# # =========================================================
+# # SILVER CHART
+# # =========================================================
 
-class SilverChartAPIView(APIView):
+# class SilverChartAPIView(APIView):
 
-    permission_classes = [AllowAny]
+#     permission_classes = [AllowAny]
 
-    def get(self, request):
+#     def get(self, request):
 
-        filter_type = request.GET.get("filter", "24H")
+#         filter_type = request.GET.get("filter", "24H")
 
-        chart_data = get_silver_chart_data(filter_type)
+#         chart_data = get_silver_chart_data(filter_type)
 
-        return success_response(
-            message="اطلاعات نمودار دریافت شد",
-            data=chart_data
-        )
+#         return success_response(
+#             message="اطلاعات نمودار دریافت شد",
+#             data=chart_data
+#         )
     
 
 
@@ -320,7 +345,23 @@ class BuySilverAPIView(APIView):
             total_amount=total_toman,
             tracking_code=generate_tracking_code("BUY_SLV")
         )
-
+        
+        
+        create_admin_log(
+            admin=None,
+            user=user,
+            action_type="BUY_SILVER",
+            action="خرید نقره",
+            model_name="SilverTransaction",
+            object_id=tx.id,
+            description=f"""
+        کاربر {user.mobile}
+        خرید نقره
+        وزن: {weight}
+        مبلغ: {total_toman}
+        """
+        )
+        
         return success_response(
             message="خرید نقره ثبت شد و در انتظار تایید است",
             status_code=201,
@@ -391,6 +432,21 @@ class SellSilverAPIView(APIView):
             tracking_code=generate_tracking_code("SELL_SLV")
         )
 
+        create_admin_log(
+            admin=None,
+            user=user,
+            action_type="SELL_SILVER",
+            action="فروش نقره",
+            model_name="SilverTransaction",
+            object_id=tx.id,
+            description=f"""
+        کاربر {user.mobile}
+        فروش نقره
+        وزن: {final_weight}
+        مبلغ: {final_amount}
+        """
+        )
+
         return success_response(
             message="فروش نقره انجام شد",
             data={
@@ -409,36 +465,16 @@ class SellSilverAPIView(APIView):
 # DEPOSIT WALLET (SILVER)
 # =========================================================
 
-from rest_framework.parsers import MultiPartParser, FormParser
-from django.db import transaction
-from decimal import Decimal
-
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-
-from drf_spectacular.utils import extend_schema
-
-from .models import (
-    SilverWallet,
-    SilverFinancialTransaction,
-    SilverInventory
-)
-
-from .serializers import (
-    SilverDepositSerializer,
-    SilverWithdrawSerializer
-)
-
-from .utils import generate_tracking_code
-
-from .views import success_response, error_response
 
 
 class DepositAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [
+        MultiPartParser,
+        FormParser
+    ]
 
     @extend_schema(
         tags=['Silver Wallet'],
@@ -450,9 +486,12 @@ class DepositAPIView(APIView):
 
         try:
 
-            serializer = SilverDepositSerializer(data=request.data)
+            serializer = SilverDepositSerializer(
+                data=request.data
+            )
 
             if not serializer.is_valid():
+
                 return error_response(
                     message="اطلاعات نامعتبر است",
                     data=serializer.errors
@@ -460,19 +499,32 @@ class DepositAPIView(APIView):
 
             user = request.user
 
-            amount = serializer.validated_data.get("amount")
-            method = serializer.validated_data.get("method")
-            receipt = serializer.validated_data.get("receipt")
+            amount = serializer.validated_data.get(
+                "amount"
+            )
 
-            wallet, _ = SilverWallet.objects.get_or_create(user=user)
+            method = serializer.validated_data.get(
+                "method"
+            )
 
-            # =========================
+            receipt = serializer.validated_data.get(
+                "receipt"
+            )
+
+            description = serializer.validated_data.get(
+                "description",
+                ""
+            )
+
+            wallet, _ = SilverWallet.objects.get_or_create(
+                user=user
+            )
+
+            # =====================================
             # RECEIPT METHOD
-            # =========================
-            if method == "RECEIPT":
+            # =====================================
 
-                if not receipt:
-                    return error_response(message="تصویر رسید الزامی است")
+            if method == "RECEIPT":
 
                 tx = SilverFinancialTransaction.objects.create(
                     user=user,
@@ -481,8 +533,10 @@ class DepositAPIView(APIView):
                     method="CARD_TO_CARD",
                     status="PENDING",
                     receipt_image=receipt,
-                    tracking_code=generate_tracking_code("SLV_DEP"),
-                    description="واریز کارت به کارت نقره"
+                    tracking_code=generate_tracking_code(
+                        "SLV_DEP"
+                    ),
+                    description=description or "واریز کارت به کارت نقره"
                 )
 
                 return success_response(
@@ -495,9 +549,10 @@ class DepositAPIView(APIView):
                     }
                 )
 
-            # =========================
+            # =====================================
             # GATEWAY METHOD
-            # =========================
+            # =====================================
+
             elif method == "GATEWAY":
 
                 tx = SilverFinancialTransaction.objects.create(
@@ -506,8 +561,10 @@ class DepositAPIView(APIView):
                     type="DEPOSIT",
                     method="ONLINE",
                     status="PENDING",
-                    tracking_code=generate_tracking_code("SLV_PAY"),
-                    description="واریز آنلاین نقره"
+                    tracking_code=generate_tracking_code(
+                        "SLV_PAY"
+                    ),
+                    description=description or "واریز آنلاین نقره"
                 )
 
                 wallet.balance += amount
@@ -520,16 +577,20 @@ class DepositAPIView(APIView):
                         "transaction_id": tx.id,
                         "tracking_code": tx.tracking_code,
                         "wallet_balance": int(wallet.balance),
-                        "status": "PENDING"
+                        "status": "COMPLETED"
                     }
                 )
 
-            return error_response(message="روش واریز نامعتبر است")
+            return error_response(
+                message="روش واریز نامعتبر است"
+            )
 
         except Exception as e:
-            return error_response(message=str(e), status_code=500)
-        
 
+            return error_response(
+                message=str(e),
+                status_code=500
+            )
 
 
 class WithdrawAPIView(APIView):
@@ -1050,6 +1111,158 @@ class SilverOrderHistoryAPIView(APIView):
 # SILVER REPORTS (FIXED - SAME STRUCTURE AS GOLD)
 # =========================================================
 
+# class SilverReportsAPIView(APIView):
+
+#     permission_classes = [IsAuthenticated]
+
+#     # ==========================================
+#     # DATE PARSER
+#     # ==========================================
+#     def parse_date(self, value):
+
+#         if not value:
+#             return None
+
+#         try:
+#             if "/" in value:
+#                 y, m, d = map(int, value.split("/"))
+#                 return jdatetime.date(y, m, d).togregorian()
+
+#             return datetime.strptime(value, "%Y-%m-%d").date()
+
+#         except Exception:
+#             return None
+
+#     # ==========================================
+#     def get(self, request):
+
+#         report_type = request.GET.get("type")
+#         status_filter = request.GET.get("status")
+#         method_filter = request.GET.get("method")
+
+#         start_date = self.parse_date(request.GET.get("start_date"))
+#         end_date = self.parse_date(request.GET.get("end_date"))
+
+#         # =====================================================
+#         # SILVER TRANSACTIONS (BUY / SELL)
+#         # =====================================================
+#         if report_type == "silver":
+
+#             queryset = SilverTransaction.objects.filter(
+#                 user=request.user
+#             ).order_by("-created_at")
+
+#             if method_filter:
+#                 queryset = queryset.filter(type=method_filter.upper())
+
+#             if status_filter:
+#                 queryset = queryset.filter(status=status_filter)
+
+#             if start_date:
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             serializer = SilverTransactionSerializer(queryset, many=True)
+
+#             return success_response(
+#                 message="گزارش معاملات نقره",
+#                 data=serializer.data
+#             )
+
+#         # =====================================================
+#         # DEPOSIT
+#         # =====================================================
+#         elif report_type == "deposit":
+
+#             queryset = SilverFinancialTransaction.objects.filter(
+#                 user=request.user,
+#                 type="DEPOSIT"
+#             ).order_by("-created_at")
+
+#             if method_filter:
+#                 queryset = queryset.filter(method=method_filter.upper())
+
+#             if status_filter:
+#                 queryset = queryset.filter(status=status_filter)
+
+#             if start_date:
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             serializer = SilverFinancialTransactionSerializer(queryset, many=True)
+
+#             return success_response(
+#                 message="گزارش واریزهای نقره",
+#                 data=serializer.data
+#             )
+
+#         # =====================================================
+#         # WITHDRAW
+#         # =====================================================
+#         elif report_type == "withdraw":
+
+#             queryset = SilverFinancialTransaction.objects.filter(
+#                 user=request.user,
+#                 type="WITHDRAW"
+#             ).order_by("-created_at")
+
+#             if method_filter:
+#                 queryset = queryset.filter(method=method_filter.upper())
+
+#             if status_filter:
+#                 queryset = queryset.filter(status=status_filter)
+
+#             if start_date:
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             serializer = SilverFinancialTransactionSerializer(queryset, many=True)
+
+#             return success_response(
+#                 message="گزارش برداشت‌های نقره",
+#                 data=serializer.data
+#             )
+
+#         # =====================================================
+#         # ORDERS
+#         # =====================================================
+#         elif report_type == "orders":
+
+#             queryset = SilverOrder.objects.filter(
+#                 user=request.user
+#             ).order_by("-created_at")
+
+#             if method_filter:
+#                 queryset = queryset.filter(payment_method=method_filter.upper())
+
+#             if status_filter:
+#                 queryset = queryset.filter(status=status_filter)
+
+#             if start_date:
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+#                 queryset = queryset.filter(created_at__date__lte=start_date)
+
+#             serializer = SilverOrderSerializer(queryset, many=True)
+
+#             return success_response(
+#                 message="گزارش سفارشات نقره",
+#                 data=serializer.data
+#             )
+
+#         return error_response(
+#             message="نوع گزارش نامعتبر است"
+#         )
+
+
+
 class SilverReportsAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -1069,9 +1282,11 @@ class SilverReportsAPIView(APIView):
 
             return datetime.strptime(value, "%Y-%m-%d").date()
 
-        except Exception:
-            return None
+        except (ValueError, TypeError):
+            return False
 
+    # ==========================================
+    # GET
     # ==========================================
     def get(self, request):
 
@@ -1079,17 +1294,40 @@ class SilverReportsAPIView(APIView):
         status_filter = request.GET.get("status")
         method_filter = request.GET.get("method")
 
-        start_date = self.parse_date(request.GET.get("start_date"))
-        end_date = self.parse_date(request.GET.get("end_date"))
+        start_date_raw = request.GET.get("start_date")
+        end_date_raw = request.GET.get("end_date")
 
-        # =====================================================
+        start_date = self.parse_date(start_date_raw)
+        end_date = self.parse_date(end_date_raw)
+
+        # ==========================================
+        # VALIDATIONS
+        # ==========================================
+        allowed_types = ["silver", "deposit", "withdraw", "orders"]
+
+        if not report_type:
+            return error_response(message="نوع گزارش الزامی است")
+
+        if report_type not in allowed_types:
+            return error_response(message="نوع گزارش نامعتبر است")
+
+        if start_date_raw and start_date is False:
+            return error_response(message="فرمت تاریخ شروع نامعتبر است")
+
+        if end_date_raw and end_date is False:
+            return error_response(message="فرمت تاریخ پایان نامعتبر است")
+
+        if start_date and end_date and start_date > end_date:
+            return error_response(message="تاریخ شروع نمی‌تواند بزرگ‌تر باشد")
+
+        # ==========================================
         # SILVER TRANSACTIONS (BUY / SELL)
-        # =====================================================
+        # ==========================================
         if report_type == "silver":
 
             queryset = SilverTransaction.objects.filter(
                 user=request.user
-            ).order_by("-created_at")
+            )
 
             if method_filter:
                 queryset = queryset.filter(type=method_filter.upper())
@@ -1103,22 +1341,28 @@ class SilverReportsAPIView(APIView):
             if end_date:
                 queryset = queryset.filter(created_at__date__lte=end_date)
 
-            serializer = SilverTransactionSerializer(queryset, many=True)
+            queryset = queryset.order_by("-created_at")
+
+            serializer = SilverTransactionSerializer(
+                queryset,
+                many=True,
+                context={"request": request}
+            )
 
             return success_response(
-                message="گزارش معاملات نقره",
+                message="گزارش معاملات نقره دریافت شد",
                 data=serializer.data
             )
 
-        # =====================================================
+        # ==========================================
         # DEPOSIT
-        # =====================================================
-        elif report_type == "deposit":
+        # ==========================================
+        if report_type == "deposit":
 
             queryset = SilverFinancialTransaction.objects.filter(
                 user=request.user,
                 type="DEPOSIT"
-            ).order_by("-created_at")
+            )
 
             if method_filter:
                 queryset = queryset.filter(method=method_filter.upper())
@@ -1132,22 +1376,28 @@ class SilverReportsAPIView(APIView):
             if end_date:
                 queryset = queryset.filter(created_at__date__lte=end_date)
 
-            serializer = SilverFinancialTransactionSerializer(queryset, many=True)
+            queryset = queryset.order_by("-created_at")[:50]
+
+            serializer = SilverFinancialTransactionSerializer(
+                queryset,
+                many=True,
+                context={"request": request}
+            )
 
             return success_response(
-                message="گزارش واریزهای نقره",
+                message="گزارش واریزهای نقره دریافت شد",
                 data=serializer.data
             )
 
-        # =====================================================
+        # ==========================================
         # WITHDRAW
-        # =====================================================
-        elif report_type == "withdraw":
+        # ==========================================
+        if report_type == "withdraw":
 
             queryset = SilverFinancialTransaction.objects.filter(
                 user=request.user,
                 type="WITHDRAW"
-            ).order_by("-created_at")
+            )
 
             if method_filter:
                 queryset = queryset.filter(method=method_filter.upper())
@@ -1161,21 +1411,27 @@ class SilverReportsAPIView(APIView):
             if end_date:
                 queryset = queryset.filter(created_at__date__lte=end_date)
 
-            serializer = SilverFinancialTransactionSerializer(queryset, many=True)
+            queryset = queryset.order_by("-created_at")[:50]
+
+            serializer = SilverFinancialTransactionSerializer(
+                queryset,
+                many=True,
+                context={"request": request}
+            )
 
             return success_response(
-                message="گزارش برداشت‌های نقره",
+                message="گزارش برداشت‌های نقره دریافت شد",
                 data=serializer.data
             )
 
-        # =====================================================
+        # ==========================================
         # ORDERS
-        # =====================================================
-        elif report_type == "orders":
+        # ==========================================
+        if report_type == "orders":
 
             queryset = SilverOrder.objects.filter(
                 user=request.user
-            ).order_by("-created_at")
+            )
 
             if method_filter:
                 queryset = queryset.filter(payment_method=method_filter.upper())
@@ -1187,18 +1443,23 @@ class SilverReportsAPIView(APIView):
                 queryset = queryset.filter(created_at__date__gte=start_date)
 
             if end_date:
-                queryset = queryset.filter(created_at__date__lte=start_date)
+                queryset = queryset.filter(created_at__date__lte=end_date)
 
-            serializer = SilverOrderSerializer(queryset, many=True)
+            queryset = queryset.order_by("-created_at")
+
+            serializer = SilverOrderSerializer(
+                queryset,
+                many=True,
+                context={"request": request}
+            )
 
             return success_response(
-                message="گزارش سفارشات نقره",
+                message="گزارش سفارشات نقره دریافت شد",
                 data=serializer.data
             )
 
-        return error_response(
-            message="نوع گزارش نامعتبر است"
-        )
+        return error_response(message="نوع گزارش نامعتبر است")
+    
 
 # =========================================================
 # RECENT TRANSACTIONS (SILVER)
@@ -1450,6 +1711,72 @@ class SilverAssetValueAPIView(APIView):
             )
 
         })
+
+# silver_app/views.py
+
+from .utils import get_live_silver_price, get_silver_chart_data, get_silver_bubble
+
+class SilverChartAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        filter_type = request.GET.get('filter', '24H').upper()
+
+        if filter_type not in ['24H', 'WEEKLY', 'MONTHLY']:
+            return error_response(
+                message="فیلتر نامعتبر است."
+            )
+
+        data = get_silver_chart_data(filter_type)
+
+        # قیمت لحظه‌ای
+        live_price = get_live_silver_price()
+        if live_price:
+            data["stats"]["current_price"] = int(live_price)
+
+        # حباب
+        bubble = get_silver_bubble()
+        data["bubble"] = bubble if bubble else {
+            "silver_price": 0,
+            "intrinsic_price": 0,
+            "bubble_percent": 0,
+            "is_positive": False,
+        }
+
+        return success_response(
+            message="داده‌های نمودار نقره",
+            data=data
+        )
+
+
+
+
+
+
+class SilverBannerListAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        banners = SilverBanner.objects.filter(
+            is_active=True
+        ).order_by("-id")
+
+        serializer = SilverBannerSerializer(
+            banners,
+            many=True,
+            context={"request": request}
+        )
+
+        return success_response(
+            "بنرهای نقره",
+            serializer.data
+        )
+
+
 
 
 class SilverStatisticsAPIView(APIView):

@@ -146,22 +146,12 @@ class GoldTransactionSerializer(serializers.ModelSerializer):
 
 class FinancialTransactionSerializer(serializers.ModelSerializer):
 
-    type_display = serializers.CharField(
-        source='get_type_display',
-        read_only=True
-    )
-
-    method_display = serializers.CharField(
-        source='get_method_display',
-        read_only=True
-    )
-
-    status_display = serializers.CharField(
-        source='get_status_display',
-        read_only=True
-    )
+    type_display = serializers.CharField(source='get_type_display', read_only=True)
+    method_display = serializers.CharField(source='get_method_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
 
     user_card_number = serializers.SerializerMethodField()
+    receipt_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = FinancialTransaction
@@ -174,7 +164,8 @@ class FinancialTransactionSerializer(serializers.ModelSerializer):
             'method_display',
             'status',
             'status_display',
-            'receipt_image',
+            'receipt_image',        # optional (raw)
+            'receipt_image_url',    # 👈 NEW FIX
             'user_card',
             'user_card_number',
             'admin_note',
@@ -185,11 +176,21 @@ class FinancialTransactionSerializer(serializers.ModelSerializer):
         ]
 
     def get_user_card_number(self, obj):
-
         if obj.user_card:
             return obj.user_card.card_number
-
         return None
+
+    def get_receipt_image_url(self, obj):
+
+        if not obj.receipt_image:
+            return None
+
+        request = self.context.get("request")
+
+        if request:
+            return request.build_absolute_uri(obj.receipt_image.url)
+
+        return f"https://api.darine.shop{obj.receipt_image.url}"
 
 
 # =========================================================
@@ -653,38 +654,6 @@ class UserBalanceSerializer(
     )
 
 
-class GoldChartSerializer(
-    serializers.Serializer
-):
-
-    labels = serializers.ListField(
-        child=serializers.CharField()
-    )
-
-    prices = serializers.ListField(
-        child=serializers.DecimalField(
-            max_digits=20,
-            decimal_places=0
-        )
-    )
-
-    highest_price = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
-
-    lowest_price = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
-
-    change_percent = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2
-    )
-
-    filter_type = serializers.CharField()
-
 
 
 # =========================================================
@@ -756,7 +725,11 @@ class DepositSerializer(serializers.Serializer):
     receipt = serializers.ImageField(
         required=False
     )
-
+    
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
     def validate(self, attrs):
 
         method = attrs.get('method')
@@ -1105,6 +1078,47 @@ class GoldChartFilterSerializer(
         ]
     )
 
+
+# =========================================================
+# GOLD CHART
+# =========================================================
+
+class GoldChartSerializer(serializers.Serializer):
+
+    FILTER_CHOICES = ['24H', 'WEEKLY', 'MONTHLY']
+
+    filter_type = serializers.ChoiceField(
+        choices=FILTER_CHOICES,
+        default='24H'
+    )
+
+class GoldBubbleSerializer(serializers.Serializer):
+    buy_price = serializers.IntegerField()
+    sell_price = serializers.IntegerField()
+    bubble_amount = serializers.IntegerField()
+    bubble_percent = serializers.FloatField()
+    is_positive = serializers.BooleanField()
+
+
+class GoldChartStatsSerializer(serializers.Serializer):
+    current_price = serializers.IntegerField()
+    highest_price = serializers.IntegerField()
+    lowest_price = serializers.IntegerField()
+    change_amount = serializers.IntegerField()
+    change_percent = serializers.FloatField()
+    min_y = serializers.IntegerField()
+    max_y = serializers.IntegerField()
+
+
+class GoldChartDataSerializer(serializers.Serializer):
+    labels = serializers.ListField(child=serializers.CharField())
+    prices = serializers.ListField(child=serializers.IntegerField())
+
+
+class GoldChartSerializer(serializers.Serializer):
+    chart = GoldChartDataSerializer()
+    stats = GoldChartStatsSerializer()
+    bubble = GoldBubbleSerializer()
 
 
 

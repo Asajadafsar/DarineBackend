@@ -10,7 +10,16 @@ class SendOTPSerializer(serializers.Serializer):
 
 class VerifyOTPSerializer(serializers.Serializer):
     mobile = serializers.CharField(max_length=11)
-    code = serializers.CharField(max_length=6)
+    code = serializers.CharField(
+        min_length=6,
+        max_length=6,
+        error_messages={
+            "required": "وارد کردن کد تایید الزامی است",
+            "blank": "کد تایید نمی‌تواند خالی باشد",
+            "min_length": "کد تایید باید دقیقاً ۶ رقم باشد (کوتاه است)",
+            "max_length": "کد تایید باید دقیقاً ۶ رقم باشد (بلند است)",
+        }
+    )
 
 
 class LoginSerializer(serializers.Serializer):
@@ -220,17 +229,106 @@ class UserProfileSerializer(serializers.ModelSerializer):
     
     
 
+# serializers.py
+
+from rest_framework import serializers
+import re
 
 class BankCardSerializer(serializers.ModelSerializer):
 
+    shaba_number = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        error_messages={
+            "max_length": "شماره شبا باید دقیقا ۱۶ رقم باشد."
+        }
+    )
+
+    card_number = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        error_messages={
+            "max_length": "شماره کارت باید دقیقا ۱۶ رقم باشد."
+        }
+    )
+
+
     class Meta:
+
         model = BankCard
+
         fields = [
             "id",
             "card_number",
+            "shaba_number",
             "bank_name",
-            "is_active"
+            "is_active",
+            "created_at"
         ]
+
+
+
+    def validate_shaba_number(self, value):
+
+        if value:
+
+            if not value.isdigit():
+
+                raise serializers.ValidationError(
+                    "شماره شبا فقط باید شامل عدد باشد."
+                )
+
+
+            if len(value) != 16:
+
+                raise serializers.ValidationError(
+                    "شماره شبا باید دقیقا ۱۶ رقم باشد."
+                )
+
+
+        return value
+
+
+
+    def validate_card_number(self, value):
+
+        if value:
+
+            if not value.isdigit():
+
+                raise serializers.ValidationError(
+                    "شماره کارت فقط باید شامل عدد باشد."
+                )
+
+
+            if len(value) != 16:
+
+                raise serializers.ValidationError(
+                    "شماره کارت باید دقیقا ۱۶ رقم باشد."
+                )
+
+
+        return value
+
+
+
+    def validate(self, attrs):
+
+        card_number = attrs.get("card_number")
+        shaba_number = attrs.get("shaba_number")
+
+
+        if not card_number and not shaba_number:
+
+            raise serializers.ValidationError(
+                "حداقل شماره کارت یا شماره شبا الزامی است."
+            )
+
+
+        return attrs
+
 
 
 class ChangeMobileRequestSerializer(serializers.Serializer):

@@ -20,6 +20,9 @@ from drf_spectacular.utils import extend_schema
 from accounts.models import BankCard, FeeSetting, ReferralEarning
 
 from accounts.utils import apply_referral_bonus
+from admin_panel.models import GoldBanner
+from admin_panel.serializers import GoldBannerSerializer
+from admin_panel.utils import create_admin_log
 from silver_app.models import (
     SilverInventory
 )
@@ -73,7 +76,8 @@ from .utils import (
     generate_tracking_code,
     get_gold_chart_data,
     filter_by_date,
-    filter_by_status
+    filter_by_status,
+    save_gold_price_history
 )
 
 
@@ -229,29 +233,29 @@ class UserBalanceAPIView(APIView):
         )
 
 
-# =========================================================
-# GOLD CHART
-# =========================================================
+# # =========================================================
+# # GOLD CHART
+# # =========================================================
 
-class GoldChartAPIView(APIView):
+# class GoldChartAPIView(APIView):
 
-    permission_classes = [AllowAny]
+#     permission_classes = [AllowAny]
 
-    def get(self, request):
+#     def get(self, request):
 
-        filter_type = request.GET.get(
-            'filter',
-            '24H'
-        )
+#         filter_type = request.GET.get(
+#             'filter',
+#             '24H'
+#         )
 
-        chart_data = get_gold_chart_data(
-            filter_type
-        )
+#         chart_data = get_gold_chart_data(
+#             filter_type
+#         )
 
-        return success_response(
-            message='اطلاعات نمودار دریافت شد',
-            data=chart_data
-        )
+#         return success_response(
+#             message='اطلاعات نمودار دریافت شد',
+#             data=chart_data
+#         )
 
 
 
@@ -309,9 +313,9 @@ class BuyGoldAPIView(APIView):
                 amount=total_toman,
                 type="DEPOSIT",
                 method="ONLINE",
-                status="COMPLETED",
+                status="PENDING",
                 tracking_code=generate_tracking_code("PAY"),
-                description="پرداخت خرید طلا"
+                description="خرید طلا ثبت شد و در انتظار تایید است"
             )
 
         inventory.balance += weight
@@ -326,6 +330,23 @@ class BuyGoldAPIView(APIView):
             fee=fee,
             total_amount=total_toman,
             tracking_code=generate_tracking_code("BUY")
+        )
+        from admin_panel.utils import create_admin_log
+
+
+        create_admin_log(
+            admin=None,
+            user=user,
+            action_type="BUY_GOLD",
+            action="خرید طلا",
+            model_name="GoldTransaction",
+            object_id=tx.id,
+            description=f"""
+        کاربر {user.mobile}
+        خرید طلا
+        وزن: {weight}
+        مبلغ: {total_toman}
+        """
         )
 
         return success_response(
@@ -396,7 +417,20 @@ class SellGoldAPIView(APIView):
             total_amount=final_amount,
             tracking_code=generate_tracking_code("SELL")
         )
-
+        create_admin_log(
+            admin=None,
+            user=user,
+            action_type="SELL_GOLD",
+            action="فروش طلا",
+            model_name="GoldTransaction",
+            object_id=tx.id,
+            description=f"""
+        کاربر {user.mobile}
+        فروش طلا
+        وزن: {final_weight}
+        مبلغ: {final_amount}
+        """
+        )
         return success_response(
             message="فروش طلا انجام شد",
             data={
@@ -466,6 +500,11 @@ class DepositAPIView(APIView):
                 'receipt'
             )
 
+            description = serializer.validated_data.get(
+                'description',
+                ''
+            )
+
             wallet, _ = Wallet.objects.get_or_create(
                 user=user
             )
@@ -475,12 +514,6 @@ class DepositAPIView(APIView):
             # =====================================
 
             if method == 'RECEIPT':
-
-                if not receipt:
-
-                    return error_response(
-                        message='تصویر رسید الزامی است'
-                    )
 
                 transaction_obj = FinancialTransaction.objects.create(
                     user=user,
@@ -492,7 +525,7 @@ class DepositAPIView(APIView):
                     tracking_code=generate_tracking_code(
                         'DEP'
                     ),
-                    description='واریز کارت به کارت'
+                    description=description
                 )
 
                 return success_response(
@@ -520,14 +553,14 @@ class DepositAPIView(APIView):
                     tracking_code=generate_tracking_code(
                         'PAY'
                     ),
-                    description='واریز با درگاه پرداخت'
+                    description=description
                 )
 
                 wallet.balance += amount
                 wallet.save()
 
                 return success_response(
-                    message=' درخواست واریز با موفقیت ثبت و در انتظار تایید است.   ',
+                    message='درخواست واریز با موفقیت ثبت و در انتظار تایید است',
                     status_code=201,
                     data={
                         "transaction_id": transaction_obj.id,
@@ -548,6 +581,138 @@ class DepositAPIView(APIView):
                 status_code=500
             )
 
+# =========================================================
+# WITHDRAW
+# =========================================================
+
+# class WithdrawAPIView(APIView):
+
+#     permission_classes = [IsAuthenticated]
+
+#     @transaction.atomic
+#     def post(self, request):
+
+#         serializer = WithdrawSerializer(
+#             data=request.data,
+#             context={'request': request}
+#         )
+
+#         if not serializer.is_valid():
+
+#             return error_response(
+#                 message='اطلاعات نامعتبر است',
+#                 data=serializer.errors
+#             )
+
+#         user = request.user
+
+#         amount = serializer.validated_data.get(
+#             'amount'
+#         )
+
+#         target = serializer.validated_data.get(
+#             'target'
+#         )
+
+#         wallet, _ = Wallet.objects.get_or_create(
+#             user=user
+#         )
+
+#         if wallet.balance < amount:
+
+#             return error_response(
+#                 message='موجودی کیف پول کافی نیست'
+#             )
+
+#         # =====================================================
+#         # BANK WITHDRAW
+#         # =====================================================
+
+#         if target == 'BANK':
+
+#             card = serializer.validated_data.get(
+#                 'card'
+#             )
+
+#             wallet.balance -= amount
+#             wallet.save()
+
+#             transaction_obj = FinancialTransaction.objects.create(
+#                 user=user,
+#                 amount=amount,
+#                 type='WITHDRAW',
+#                 method='BANK',
+#                 status='PENDING',
+#                 user_card=card,
+#                 tracking_code=generate_tracking_code(
+#                     'WDB'
+#                 ),
+#                 admin_note='در انتظار تسویه بانکی',
+#                 description=f'''
+# برداشت بانکی
+# کارت: {card.card_number}
+# بانک: {card.bank_name}
+# '''
+#             )
+
+#             return success_response(
+#                 message='درخواست برداشت ثبت شد',
+#                 data={
+#                     "transaction_id": transaction_obj.id,
+#                     "tracking_code": transaction_obj.tracking_code,
+#                     "status": transaction_obj.status,
+#                     "wallet_balance": round(wallet.balance),
+#                     "card_number": card.card_number
+#                 }
+#             )
+
+#         # =====================================================
+#         # CONVERT TO SILVER
+#         # =====================================================
+
+#         elif target == 'SILVER':
+
+#             silver_price = Decimal('1')
+
+#             silver_inventory, _ = SilverInventory.objects.get_or_create(
+#                 user=user
+#             )
+
+#             silver_weight = amount / silver_price
+
+#             wallet.balance -= amount
+#             wallet.save()
+
+#             silver_inventory.balance += silver_weight
+#             silver_inventory.save()
+
+#             transaction_obj = FinancialTransaction.objects.create(
+#                 user=user,
+#                 amount=amount,
+#                 type='CONVERT',
+#                 method='SILVER',
+#                 status='PENDING',
+#                 tracking_code=generate_tracking_code(
+#                     'SLV'
+#                 ),
+#                 admin_note='تبدیل ریال به نقره',
+#                 description='تبدیل موجودی کیف پول به نقره'
+#             )
+
+#             return success_response(
+#                 message='درخواست تبدیل به نقره انجام شد ',
+#                 data={
+#                     "transaction_id": transaction_obj.id,
+#                     "tracking_code": transaction_obj.tracking_code,
+#                     "silver_weight": round(silver_weight, 5),
+#                     "wallet_balance": round(wallet.balance)
+#                 }
+#             )
+
+#         return error_response(
+#             message='نوع برداشت نامعتبر است'
+#         )
+
 
 
 # =========================================================
@@ -558,13 +723,17 @@ class WithdrawAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+
     @transaction.atomic
     def post(self, request):
 
         serializer = WithdrawSerializer(
             data=request.data,
-            context={'request': request}
+            context={
+                "request": request
+            }
         )
+
 
         if not serializer.is_valid():
 
@@ -573,19 +742,24 @@ class WithdrawAPIView(APIView):
                 data=serializer.errors
             )
 
+
         user = request.user
+
 
         amount = serializer.validated_data.get(
             'amount'
         )
 
+
         target = serializer.validated_data.get(
             'target'
         )
 
+
         wallet, _ = Wallet.objects.get_or_create(
             user=user
         )
+
 
         if wallet.balance < amount:
 
@@ -593,47 +767,86 @@ class WithdrawAPIView(APIView):
                 message='موجودی کیف پول کافی نیست'
             )
 
+
+
         # =====================================================
         # BANK WITHDRAW
         # =====================================================
 
         if target == 'BANK':
 
+
             card = serializer.validated_data.get(
                 'card'
             )
 
+
             wallet.balance -= amount
-            wallet.save()
+
+            wallet.save(
+                update_fields=[
+                    "balance"
+                ]
+            )
+
 
             transaction_obj = FinancialTransaction.objects.create(
+
                 user=user,
+
                 amount=amount,
+
                 type='WITHDRAW',
+
                 method='BANK',
+
                 status='PENDING',
+
                 user_card=card,
+
                 tracking_code=generate_tracking_code(
                     'WDB'
                 ),
+
                 admin_note='در انتظار تسویه بانکی',
+
                 description=f'''
 برداشت بانکی
-کارت: {card.card_number}
-بانک: {card.bank_name}
+
+کارت:
+{card.card_number}
+
+بانک:
+{card.bank_name}
 '''
             )
 
+
             return success_response(
+
                 message='درخواست برداشت ثبت شد',
+
                 data={
-                    "transaction_id": transaction_obj.id,
-                    "tracking_code": transaction_obj.tracking_code,
-                    "status": transaction_obj.status,
-                    "wallet_balance": round(wallet.balance),
-                    "card_number": card.card_number
+
+                    "transaction_id":
+                        transaction_obj.id,
+
+                    "tracking_code":
+                        transaction_obj.tracking_code,
+
+                    "status":
+                        transaction_obj.status,
+
+                    "wallet_balance":
+                        round(wallet.balance),
+
+                    "card_number":
+                        card.card_number
                 }
             )
+
+
+
 
         # =====================================================
         # CONVERT TO SILVER
@@ -641,48 +854,109 @@ class WithdrawAPIView(APIView):
 
         elif target == 'SILVER':
 
-            silver_price = Decimal('1')
+
+            silver_price = Decimal(
+                '1'
+            )
+
 
             silver_inventory, _ = SilverInventory.objects.get_or_create(
                 user=user
             )
 
-            silver_weight = amount / silver_price
+
+            silver_weight = (
+                amount / silver_price
+            )
+
 
             wallet.balance -= amount
-            wallet.save()
+
+            wallet.save(
+                update_fields=[
+                    "balance"
+                ]
+            )
+
 
             silver_inventory.balance += silver_weight
-            silver_inventory.save()
+
+            silver_inventory.save(
+                update_fields=[
+                    "balance"
+                ]
+            )
+
+
 
             transaction_obj = FinancialTransaction.objects.create(
+
                 user=user,
+
                 amount=amount,
-                type='CONVERT',
+
+
+                # FIXED
+                # قبلا CONVERT بود و گزارش نمی‌گرفت
+                type='WITHDRAW',
+
+
                 method='SILVER',
-                status='PENDING',
+
+                status='COMPLETED',
+
+
                 tracking_code=generate_tracking_code(
                     'SLV'
                 ),
-                admin_note='تبدیل ریال به نقره',
+
+
+                admin_note='تبدیل کیف پول به نقره',
+
+
                 description='تبدیل موجودی کیف پول به نقره'
+
             )
 
+
+
             return success_response(
-                message='درخواست تبدیل به نقره انجام شد ',
+
+                message='تبدیل به نقره انجام شد',
+
                 data={
-                    "transaction_id": transaction_obj.id,
-                    "tracking_code": transaction_obj.tracking_code,
-                    "silver_weight": round(silver_weight, 5),
-                    "wallet_balance": round(wallet.balance)
+
+                    "transaction_id":
+                        transaction_obj.id,
+
+
+                    "tracking_code":
+                        transaction_obj.tracking_code,
+
+
+                    "silver_weight":
+                        round(
+                            silver_weight,
+                            5
+                        ),
+
+
+                    "wallet_balance":
+                        round(
+                            wallet.balance
+                        )
+
                 }
             )
 
+
+
+
         return error_response(
+
             message='نوع برداشت نامعتبر است'
+
         )
-
-
 # =========================================================
 # PRODUCTS
 # =========================================================
@@ -1163,6 +1437,8 @@ class DeletePriceAlertAPIView(APIView):
         )
 
 
+
+
 # =========================================================
 # REPORTS
 # =========================================================
@@ -1171,32 +1447,40 @@ class ReportsAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    # =========================================
-    # DATE PARSER (JALALI + GREGORIAN)
-    # =========================================
+
     def parse_date(self, value):
 
         if not value:
             return None
 
         try:
+
             if "/" in value:
 
                 y, m, d = map(int, value.split("/"))
 
-                return jdatetime.date(y, m, d).togregorian()
+                return jdatetime.date(
+                    y, m, d
+                ).togregorian()
 
-            return datetime.strptime(value, "%Y-%m-%d").date()
+
+            return datetime.strptime(
+                value,
+                "%Y-%m-%d"
+            ).date()
+
 
         except Exception:
             return None
 
-    # =========================================
+
+
     def get(self, request):
 
         report_type = request.GET.get("type")
         status_filter = request.GET.get("status")
         method_filter = request.GET.get("method")
+
 
         start_date = self.parse_date(
             request.GET.get("start_date")
@@ -1206,157 +1490,167 @@ class ReportsAPIView(APIView):
             request.GET.get("end_date")
         )
 
+
+
         # =====================================================
-        # GOLD (BUY / SELL)
+        # FINANCIAL (DEPOSIT / WITHDRAW)
         # =====================================================
 
-        if report_type == "gold":
+        if report_type in [
+            "deposit",
+            "withdraw"
+        ]:
 
-            queryset = GoldTransaction.objects.filter(
-                user=request.user
-            ).order_by("-created_at")
 
+            transaction_type = (
+                "DEPOSIT"
+                if report_type == "deposit"
+                else "WITHDRAW"
+            )
+
+
+            queryset = FinancialTransaction.objects.filter(
+                user=request.user,
+                type=transaction_type
+            )
+
+
+            # method
             if method_filter:
+
                 queryset = queryset.filter(
-                    type=method_filter.upper()
+                    method__iexact=method_filter
                 )
 
+
+            # status
             if status_filter:
+
                 queryset = queryset.filter(
-                    status=status_filter
+                    status__iexact=status_filter
                 )
 
+
+            # date
             if start_date:
+
                 queryset = queryset.filter(
                     created_at__date__gte=start_date
                 )
 
+
             if end_date:
+
                 queryset = queryset.filter(
                     created_at__date__lte=end_date
                 )
+
+
+            queryset = queryset.order_by(
+                "-created_at"
+            )
+
+
+            serializer = FinancialTransactionSerializer(
+                queryset,
+                many=True
+            )
+
+
+            return success_response(
+                message=(
+                    "گزارش واریزها"
+                    if report_type == "deposit"
+                    else "گزارش برداشت‌ها"
+                ),
+                data=serializer.data
+            )
+
+
+
+        # =====================================================
+        # GOLD
+        # =====================================================
+
+        if report_type == "gold":
+
+
+            queryset = GoldTransaction.objects.filter(
+                user=request.user
+            )
+
+
+            if method_filter:
+
+                queryset = queryset.filter(
+                    type__iexact=method_filter
+                )
+
+
+            if status_filter:
+
+                queryset = queryset.filter(
+                    status__iexact=status_filter
+                )
+
+
+            if start_date:
+
+                queryset = queryset.filter(
+                    created_at__date__gte=start_date
+                )
+
+
+            if end_date:
+
+                queryset = queryset.filter(
+                    created_at__date__lte=end_date
+                )
+
+
+            queryset = queryset.order_by(
+                "-created_at"
+            )
+
 
             serializer = GoldTransactionSerializer(
                 queryset,
                 many=True
             )
 
+
             return success_response(
                 message="گزارش معاملات طلا",
                 data=serializer.data
             )
 
-        # =====================================================
-        # DEPOSIT
-        # =====================================================
 
-        elif report_type == "deposit":
-
-            queryset = FinancialTransaction.objects.filter(
-                user=request.user,
-                type="DEPOSIT"
-            ).order_by("-created_at")
-
-            if method_filter:
-
-                queryset = queryset.filter(
-                    method=method_filter.upper()
-                )
-
-            if status_filter:
-
-                queryset = queryset.filter(
-                    status=status_filter
-                )
-
-            if start_date:
-
-                queryset = queryset.filter(
-                    created_at__date__gte=start_date
-                )
-
-            if end_date:
-
-                queryset = queryset.filter(
-                    created_at__date__lte=end_date
-                )
-
-            serializer = FinancialTransactionSerializer(
-                queryset,
-                many=True
-            )
-
-            return success_response(
-                message="گزارش واریزها",
-                data=serializer.data
-            )
 
         # =====================================================
-        # WITHDRAW
+        # ORDERS
         # =====================================================
 
-        elif report_type == "withdraw":
+        if report_type == "orders":
 
-            queryset = FinancialTransaction.objects.filter(
-                user=request.user,
-                type="WITHDRAW"
-            ).order_by("-created_at")
-
-            if method_filter:
-
-                queryset = queryset.filter(
-                    method=method_filter.upper()
-                )
-
-            if status_filter:
-
-                queryset = queryset.filter(
-                    status=status_filter
-                )
-
-            if start_date:
-
-                queryset = queryset.filter(
-                    created_at__date__gte=start_date
-                )
-
-            if end_date:
-
-                queryset = queryset.filter(
-                    created_at__date__lte=end_date
-                )
-
-            serializer = FinancialTransactionSerializer(
-                queryset,
-                many=True
-            )
-
-            return success_response(
-                message="گزارش برداشت‌ها",
-                data=serializer.data
-            )
-
-        # =====================================================
-        # ORDERS (BUY / SELL)
-        # =====================================================
-
-        elif report_type == "orders":
 
             queryset = Order.objects.filter(
                 user=request.user
-            ).order_by("-created_at")
+            )
+
 
             if method_filter:
 
                 queryset = queryset.filter(
-                    payment_method=method_filter.upper()
+                    payment_method__iexact=method_filter
                 )
+
 
             if status_filter:
 
                 queryset = queryset.filter(
-                    status=status_filter
+                    status__iexact=status_filter
                 )
+
 
             if start_date:
 
@@ -1364,21 +1658,31 @@ class ReportsAPIView(APIView):
                     created_at__date__gte=start_date
                 )
 
+
             if end_date:
 
                 queryset = queryset.filter(
                     created_at__date__lte=end_date
                 )
+
+
+            queryset = queryset.order_by(
+                "-created_at"
+            )
+
 
             serializer = OrderSerializer(
                 queryset,
                 many=True
             )
 
+
             return success_response(
                 message="گزارش سفارشات",
                 data=serializer.data
             )
+
+
 
         return error_response(
             message="نوع گزارش نامعتبر است"
@@ -2262,6 +2566,72 @@ class LatestPriceAPIView(APIView):
             data=price
         )
     
+# =========================================================
+# GOLD CHART API
+# =========================================================
+
+from .utils import get_live_gold_price, get_gold_chart_data, get_gold_bubble
+
+class GoldChartAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        
+        
+        filter_type = request.GET.get('filter', '24H').upper()
+
+        if filter_type not in ['24H', 'WEEKLY', 'MONTHLY']:
+            return error_response(
+                message="فیلتر نامعتبر است. مقادیر مجاز: 24H, WEEKLY, MONTHLY"
+            )
+
+        data = get_gold_chart_data(filter_type)
+
+        live_price = get_live_gold_price()
+        if live_price:
+            data["stats"]["current_price"] = int(live_price)
+
+        bubble = get_gold_bubble()
+        data["bubble"] = bubble if bubble else {
+            "buy_price": 0,
+            "sell_price": 0,
+            "bubble_amount": 0,
+            "bubble_percent": 0,
+            "is_positive": False,
+        }
+
+        return success_response(
+            message="داده‌های نمودار طلا",
+            data=data
+        )
+# gold_app/views.py
+
+
+
+
+class GoldBannerListAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        banners = GoldBanner.objects.filter(
+            is_active=True
+        ).order_by("-id")
+
+        serializer = GoldBannerSerializer(
+            banners,
+            many=True,
+            context={"request": request}
+        )
+
+        return success_response(
+            "بنرهای طلا",
+            serializer.data
+        )
+
+
 
 
 class GoldPriceAPIView(APIView):

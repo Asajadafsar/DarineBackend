@@ -55,13 +55,13 @@ class GoldInventory(models.Model):
 
     balance = models.DecimalField(
         max_digits=20,
-        decimal_places=5,
+        decimal_places=3,
         default=0
     )
 
     blocked_balance = models.DecimalField(
         max_digits=20,
-        decimal_places=5,
+        decimal_places=3,
         default=0
     )
 
@@ -109,7 +109,7 @@ class GoldTransaction(models.Model):
 
     amount_gr = models.DecimalField(
         max_digits=20,
-        decimal_places=5
+        decimal_places=3
     )
 
     price_per_gram = models.DecimalField(
@@ -276,12 +276,12 @@ class Product(models.Model):
 
     weight = models.DecimalField(
         max_digits=20,
-        decimal_places=5
+        decimal_places=3
     )
 
     total_weight_with_fees = models.DecimalField(
         max_digits=20,
-        decimal_places=5,
+        decimal_places=3,
         default=0
     )
 
@@ -397,7 +397,7 @@ class Order(models.Model):
 
     total_gold_amount = models.DecimalField(
         max_digits=20,
-        decimal_places=5
+        decimal_places=3
     )
 
     total_toman_amount = models.DecimalField(
@@ -450,7 +450,7 @@ class OrderItem(models.Model):
 
     weight_at_time = models.DecimalField(
         max_digits=20,
-        decimal_places=5
+        decimal_places=3
     )
 
 
@@ -472,7 +472,7 @@ class PriceAlert(models.Model):
 
     target_price = models.DecimalField(
         max_digits=20,
-        decimal_places=5
+        decimal_places=3
     )
 
     alert_type = models.CharField(
@@ -506,7 +506,7 @@ class GiftCard(models.Model):
 
     weight = models.DecimalField(
         max_digits=12,
-        decimal_places=5
+        decimal_places=3
     )
 
     created_by = models.ForeignKey(
@@ -565,7 +565,7 @@ class GiftCardOrder(models.Model):
 
     weight_per_card = models.DecimalField(
         max_digits=20,
-        decimal_places=5
+        decimal_places=3
     )
 
     quantity = models.PositiveIntegerField()
@@ -815,9 +815,9 @@ class GoldOrder(models.Model):
 
     amount_toman = models.DecimalField(max_digits=20, decimal_places=0, null=True, blank=True)
 
-    gold_weight = models.DecimalField(max_digits=20, decimal_places=5, null=True, blank=True)
+    gold_weight = models.DecimalField(max_digits=20, decimal_places=3, null=True, blank=True)
 
-    estimated_weight = models.DecimalField(max_digits=20, decimal_places=5)
+    estimated_weight = models.DecimalField(max_digits=20, decimal_places=3)
 
     status = models.CharField(max_length=20, default="PENDING", choices=STATUS)
 

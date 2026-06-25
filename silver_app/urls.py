@@ -10,6 +10,7 @@ from .views import (
     # DASHBOARD & BALANCE
     # =========================
     SilverAssetValueAPIView,
+    SilverBannerListAPIView,
     SilverDashboardAPIView,
     SilverDepositInfoAPIView,
     SilverProductCategoryListAPIView,
@@ -71,7 +72,6 @@ urlpatterns = [
     # =====================================================
     # CHART
     # =====================================================
-    path("chart/", SilverChartAPIView.as_view(), name="silver-chart"),
 
     # =====================================================
     # BUY / SELL
@@ -126,5 +126,15 @@ urlpatterns = [
         SilverStatisticsAPIView.as_view(),
         name="silver-statistics"
     ),
+    
+    
+# silver_app/urls.py
+
+path(
+    "banners/",
+    SilverBannerListAPIView.as_view(),
+    name="silver-banners"
+),
+path('chart/', SilverChartAPIView.as_view(), name='silver-chart'),
 ]
 

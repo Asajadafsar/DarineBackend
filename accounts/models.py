@@ -6,6 +6,10 @@ import uuid
 
 from darine_config import settings
 
+from django.db import models
+from django.core.exceptions import ValidationError
+from django.contrib.auth.models import User
+
 
 
 class User(AbstractUser):
@@ -64,18 +68,16 @@ class OTPRequest(models.Model):
     code = models.CharField(max_length=6, verbose_name="کد تایید")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="زمان ایجاد")
     is_used = models.BooleanField(default=False, verbose_name="استفاده شده")
-    def is_expired(self):
-        # زمان حال به وقت سرور
-        now = timezone.now()
-        # کدی که ۲ دقیقه از زمان ایجادش گذشته باشد منقضی است
-        return now > self.created_at + timedelta(minutes=2)
 
     class Meta:
         verbose_name = "درخواست کد تایید"
         verbose_name_plural = "درخواست‌های کد تایید"
 
     def is_expired(self):
-        return timezone.now() > self.created_at + timedelta(minutes=2)
+        return timezone.now() > self.created_at + timedelta(minutes=10)
+
+    def __str__(self):
+        return f"{self.mobile} - {self.code}"
     
 
 def is_expired(self):
@@ -86,20 +88,71 @@ def is_expired(self):
     return now > expire_time
 
 
+# models.py
+
+
+
 class BankCard(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cards', verbose_name="کاربر")
-    card_number = models.CharField(max_length=16, verbose_name="شماره کارت")
-    bank_name = models.CharField(max_length=50, blank=True, null=True, verbose_name="نام بانک")
-    is_active = models.BooleanField(default=True, verbose_name="وضعیت فعال")
-    created_at = models.DateTimeField(auto_now_add=True)
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="cards",
+        verbose_name="کاربر"
+    )
+
+    card_number = models.CharField(
+        max_length=16,
+        null=True,
+        blank=True,
+        verbose_name="شماره کارت"
+    )
+
+    shaba_number = models.CharField(
+        max_length=16,
+        null=True,
+        blank=True,
+        verbose_name="شماره شبا"
+    )
+
+    bank_name = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name="نام بانک"
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="وضعیت فعال"
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
 
     class Meta:
-        verbose_name = "کارت بانکی"
-        verbose_name_plural = "کارت‌های بانکی"
+        verbose_name = "اطلاعات بانکی"
+        verbose_name_plural = "اطلاعات بانکی"
+
+
+    def clean(self):
+
+        if not self.card_number and not self.shaba_number:
+            raise ValidationError(
+                "شماره کارت یا شماره شبا الزامی است."
+            )
+
 
     def __str__(self):
-        return f"{self.user.mobile} - {self.card_number}"
-    
+
+        return (
+            self.card_number
+            or self.shaba_number
+            or f"BankInfo-{self.id}"
+        )
+
 
 
 class CooperationRequest(models.Model):

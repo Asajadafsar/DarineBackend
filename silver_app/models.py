@@ -52,13 +52,13 @@ class SilverInventory(models.Model):
 
     balance = models.DecimalField(
         max_digits=20,
-        decimal_places=5,
+        decimal_places=3,
         default=0
     )
 
     blocked_balance = models.DecimalField(
         max_digits=20,
-        decimal_places=5,
+        decimal_places=3,
         default=0
     )
 
@@ -105,7 +105,7 @@ class SilverTransaction(models.Model):
 
     amount_gr = models.DecimalField(
         max_digits=20,
-        decimal_places=5
+        decimal_places=3
     )
 
     price_per_gram = models.DecimalField(
@@ -277,12 +277,12 @@ class SilverProduct(models.Model):
 
     weight = models.DecimalField(
         max_digits=20,
-        decimal_places=5
+        decimal_places=3
     )
 
     total_weight_with_fees = models.DecimalField(
         max_digits=20,
-        decimal_places=5,
+        decimal_places=3,
         default=0
     )
 
@@ -402,7 +402,7 @@ class SilverOrder(models.Model):
 
     total_silver_amount = models.DecimalField(
         max_digits=20,
-        decimal_places=5
+        decimal_places=3
     )
 
     total_toman_amount = models.DecimalField(
@@ -455,7 +455,7 @@ class SilverOrderItem(models.Model):
 
     weight_at_time = models.DecimalField(
         max_digits=20,
-        decimal_places=5
+        decimal_places=3
     )
 
 

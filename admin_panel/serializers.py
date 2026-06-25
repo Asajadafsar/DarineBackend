@@ -15,6 +15,7 @@ from gold_app.models import (
     Order,
     OrderItem
 )
+from .models import AdminLog, GoldPriceOffset,SilverPriceOffset
 
 from silver_app.models import (
     SilverProduct,
@@ -30,6 +31,16 @@ from gold_app.utils import get_live_gold_price
 from silver_app.utils import get_live_silver_price
 from rest_framework import serializers
 
+
+from rest_framework import serializers
+
+from .models import AdminLog
+
+
+from rest_framework import serializers
+
+from admin_panel.models import GoldBanner
+from admin_panel.models import SilverBanner
 
 
 
@@ -63,12 +74,20 @@ class BaseModelMessageSerializer(BaseMessageSerializer):
 # =========================================================
 
 class AdminUserListSerializer(serializers.ModelSerializer):
+    created_at = serializers.DateTimeField(
+        source="date_joined",
+        read_only=True
+    )
     class Meta:
         model = User
         exclude = ["password"]
 
 
 class AdminUserDetailSerializer(serializers.ModelSerializer):
+    created_at = serializers.DateTimeField(
+        source="date_joined",
+        read_only=True
+    )
     class Meta:
         model = User
         exclude = ["password"]
@@ -597,7 +616,16 @@ class SilverOrderItemSerializer(serializers.ModelSerializer):
 
 
 class SilverOrderSerializer(serializers.ModelSerializer):
-    items = SilverOrderItemSerializer(many=True, read_only=True)
+
+    user_mobile = serializers.CharField(
+        source="user.mobile",
+        read_only=True
+    )
+
+    items = SilverOrderItemSerializer(
+        many=True,
+        read_only=True
+    )
 
     class Meta:
         model = SilverOrder
@@ -617,9 +645,82 @@ class FinancialTransactionSerializer(serializers.ModelSerializer):
 
 
 class SilverFinancialTransactionSerializer(serializers.ModelSerializer):
+
+    type_display = serializers.CharField(
+        source="get_type_display",
+        read_only=True
+    )
+
+    method_display = serializers.CharField(
+        source="get_method_display",
+        read_only=True
+    )
+
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True
+    )
+
+    user_mobile = serializers.CharField(
+        source="user.mobile",
+        read_only=True
+    )
+
+    user_card_number = serializers.SerializerMethodField()
+
+    receipt_image_url = serializers.SerializerMethodField()
+
     class Meta:
         model = SilverFinancialTransaction
-        fields = "__all__"
+        fields = [
+            "id",
+
+            "user",
+            "user_mobile",
+
+            "amount",
+
+            "type",
+            "type_display",
+
+            "method",
+            "method_display",
+
+            "status",
+            "status_display",
+
+            "receipt_image",
+            "receipt_image_url",
+
+            "user_card",
+            "user_card_number",
+
+            "tracking_code",
+
+            # 👇 اینا مهمن
+            "description",
+            "admin_note",
+
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_user_card_number(self, obj):
+        return obj.user_card.card_number if obj.user_card else None
+
+    def get_receipt_image_url(self, obj):
+
+        if not obj.receipt_image:
+            return None
+
+        request = self.context.get("request")
+
+        if request:
+            return request.build_absolute_uri(
+                obj.receipt_image.url
+            )
+
+        return f"https://api.darine.shop{obj.receipt_image.url}"
 
 
 class GoldTransactionSerializer(serializers.ModelSerializer):
@@ -708,6 +809,231 @@ class AdminDashboardSerializer(serializers.Serializer):
     recent_orders = serializers.ListField()
 
 
+
+
+
+# =========================================================
+# GOLD BANNER
+# =========================================================
+
+class GoldBannerSerializer(serializers.ModelSerializer):
+
+    image_url = serializers.SerializerMethodField()
+
+    link = serializers.URLField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        error_messages={
+            "invalid": "لینک وارد شده معتبر نیست.",
+            "blank": "لینک نمی‌تواند خالی باشد."
+        }
+    )
+
+    class Meta:
+        model = GoldBanner
+        fields = [
+            "id",
+            "image",
+            "image_url",
+            "title",
+            "link",
+            "is_active",
+            "created_at"
+        ]
+
+    def validate_link(self, value):
+
+        if value and not value.startswith(
+            ("http://", "https://")
+        ):
+            raise serializers.ValidationError(
+                "لینک باید با http:// یا https:// شروع شود."
+            )
+
+        return value
+
+    def get_image_url(self, obj):
+
+        request = self.context.get("request")
+
+        if not obj.image:
+            return None
+
+        return request.build_absolute_uri(
+            obj.image.url
+        )
+
+
+
+# =========================================================
+# SILVER BANNER
+# =========================================================
+
+class SilverBannerSerializer(serializers.ModelSerializer):
+
+    image_url = serializers.SerializerMethodField()
+
+    link = serializers.URLField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        error_messages={
+            "invalid": "لینک وارد شده معتبر نیست.",
+            "blank": "لینک نمی‌تواند خالی باشد."
+        }
+    )
+
+    class Meta:
+        model = SilverBanner
+        fields = [
+            "id",
+            "image",
+            "image_url",
+            "title",
+            "link",
+            "is_active",
+            "created_at",
+        ]
+
+    def validate_link(self, value):
+
+        if value and not value.startswith(
+            ("http://", "https://")
+        ):
+            raise serializers.ValidationError(
+                "لینک باید با http:// یا https:// شروع شود."
+            )
+
+        return value
+
+    def get_image_url(self, obj):
+
+        request = self.context.get("request")
+
+        if not obj.image:
+            return None
+
+        return request.build_absolute_uri(
+            obj.image.url
+        )
+
+class AdminLogSerializer(serializers.ModelSerializer):
+
+
+    admin_mobile = serializers.CharField(
+        source="admin.mobile",
+        read_only=True
+    )
+
+
+    user_mobile = serializers.CharField(
+        source="user.mobile",
+        read_only=True
+    )
+
+
+    action_type_display = serializers.CharField(
+        source="get_action_type_display",
+        read_only=True
+    )
+
+
+    class Meta:
+
+        model = AdminLog
+
+        fields = [
+
+            "id",
+
+            "admin",
+            "admin_mobile",
+
+            "user",
+            "user_mobile",
+
+            "action_type",
+            "action_type_display",
+
+            "model_name",
+            "object_id",
+
+            "action",
+            "description",
+
+            "created_at"
+        ]
+
+
+
+class AdminAnalyticsSerializer(serializers.Serializer):
+
+
+    users_count = serializers.IntegerField()
+
+
+    verified_users = serializers.IntegerField()
+
+
+    pending_users = serializers.IntegerField()
+
+
+    gold_buy_total = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=0
+    )
+
+
+    gold_sell_total = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=0
+    )
+
+
+    silver_buy_total = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=0
+    )
+
+
+    silver_sell_total = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=0
+    )
+
+
+    total_buy = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=0
+    )
+
+
+    total_sell = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=0
+    )
+
+
+    difference = serializers.DecimalField(
+        max_digits=30,
+        decimal_places=0
+    )
+
+
+    daily_transactions = serializers.IntegerField()
+
+
+    weekly_transactions = serializers.IntegerField()
+
+
+    monthly_transactions = serializers.IntegerField()
+
+
+    server = serializers.JSONField()
+
+
+
 class CooperationRequestListSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -715,18 +1041,130 @@ class CooperationRequestListSerializer(serializers.ModelSerializer):
         fields = "__all__"
         
         
-        
+
+
+class GoldLiveSerializer(serializers.Serializer):
+    buy_price = serializers.IntegerField()
+    sell_price = serializers.IntegerField()
+    bubble_amount = serializers.IntegerField()
+    bubble_percent = serializers.FloatField()
+    is_positive = serializers.BooleanField()
+
+
+class GoldChartSerializer(serializers.Serializer):
+    labels = serializers.ListField(child=serializers.CharField())
+    prices = serializers.ListField(child=serializers.IntegerField())
+
+
+class GoldStatsSerializer(serializers.Serializer):
+    current_price = serializers.IntegerField()
+    highest_price = serializers.IntegerField()
+    lowest_price = serializers.IntegerField()
+    change_amount = serializers.IntegerField()
+    change_percent = serializers.FloatField()
+    min_y = serializers.IntegerField()
+    max_y = serializers.IntegerField()
+
+
+class GoldChartDataSerializer(serializers.Serializer):
+    chart = GoldChartSerializer()
+    stats = GoldStatsSerializer()
+
+
+# ---
+
+class SilverLiveSerializer(serializers.Serializer):
+    silver_price = serializers.IntegerField()      
+    intrinsic_price = serializers.IntegerField()
+    bubble_percent = serializers.FloatField()
+    is_positive = serializers.BooleanField()
+
+
+class SilverChartSerializer(serializers.Serializer):
+    labels = serializers.ListField(child=serializers.CharField())
+    prices = serializers.ListField(child=serializers.IntegerField())
+
+
+class SilverStatsSerializer(serializers.Serializer):
+    current_price = serializers.IntegerField()
+    highest_price = serializers.IntegerField()
+    lowest_price = serializers.IntegerField()
+    change_amount = serializers.IntegerField()
+    change_percent = serializers.FloatField()
+    min_y = serializers.IntegerField()
+    max_y = serializers.IntegerField()
+
+
+class SilverChartDataSerializer(serializers.Serializer):
+    chart = SilverChartSerializer()
+    stats = SilverStatsSerializer()
+       
         
 class FinancialTransactionSerializer(serializers.ModelSerializer):
 
-    user_mobile = serializers.CharField(source="user.mobile", read_only=True)
-    receipt_url = serializers.SerializerMethodField()
+    type_display = serializers.CharField(
+        source="get_type_display",
+        read_only=True
+    )
+
+    method_display = serializers.CharField(
+        source="get_method_display",
+        read_only=True
+    )
+
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True
+    )
+
+    user_mobile = serializers.CharField(
+        source="user.mobile",
+        read_only=True
+    )
+
+    user_card_number = serializers.SerializerMethodField()
+
+    receipt_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = FinancialTransaction
-        fields = "__all__"
+        fields = [
+            "id",
 
-    def get_receipt_url(self, obj):
+            "user",
+            "user_mobile",
+
+            "amount",
+
+            "type",
+            "type_display",
+
+            "method",
+            "method_display",
+
+            "status",
+            "status_display",
+
+            "receipt_image",
+            "receipt_image_url",
+
+            "user_card",
+            "user_card_number",
+
+            "tracking_code",
+
+            # 👇 اینا مهمن
+            "description",
+            "admin_note",
+
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_user_card_number(self, obj):
+        return obj.user_card.card_number if obj.user_card else None
+
+    def get_receipt_image_url(self, obj):
 
         if not obj.receipt_image:
             return None
@@ -734,9 +1172,68 @@ class FinancialTransactionSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
 
         if request:
-            return request.build_absolute_uri(obj.receipt_image.url)
+            return request.build_absolute_uri(
+                obj.receipt_image.url
+            )
 
-        return obj.receipt_image.url
+        return f"https://api.darine.shop{obj.receipt_image.url}"
     
     
     
+
+# =========================================================
+# GOLD PRICE OFFSET
+# =========================================================
+
+class GoldPriceOffsetSerializer(serializers.ModelSerializer):
+    set_by_mobile = serializers.CharField(
+        source="set_by.mobile",
+        read_only=True
+    )
+
+    class Meta:
+        model = GoldPriceOffset
+        fields = [
+            "id",
+            "offset_amount",
+            "is_active",
+            "set_by_mobile",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "is_active",
+            "set_by_mobile",
+            "created_at",
+            "updated_at",
+        ]
+
+
+# =========================================================
+# SILVER PRICE OFFSET
+# =========================================================
+
+class SilverPriceOffsetSerializer(serializers.ModelSerializer):
+    set_by_mobile = serializers.CharField(
+        source="set_by.mobile",
+        read_only=True
+    )
+
+    class Meta:
+        model = SilverPriceOffset
+        fields = [
+            "id",
+            "offset_amount",
+            "is_active",
+            "set_by_mobile",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "is_active",
+            "set_by_mobile",
+            "created_at",
+            "updated_at",
+        ]

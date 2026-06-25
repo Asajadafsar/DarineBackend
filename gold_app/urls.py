@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     AssetValueAPIView,
     CoinPriceAPIView,
+    GoldBannerListAPIView,
     GoldDashboardAPIView,
     GoldDepositInfoAPIView,
     GoldLimitOrderCreateAPIView,
@@ -50,10 +51,7 @@ urlpatterns = [
         UserBalanceAPIView.as_view()
     ),
 
-    path(
-        'chart/',
-        GoldChartAPIView.as_view()
-    ),
+
 
     # GOLD
     path(
@@ -191,4 +189,14 @@ path(
     GoldStatisticsAPIView.as_view(),
     name="gold-statistics"
 ),
+
+
+# gold_app/urls.py
+
+path(
+    "banners/",
+    GoldBannerListAPIView.as_view(),
+    name="gold-banners"
+),
+path('chart/', GoldChartAPIView.as_view(), name='gold-chart'),
 ]
