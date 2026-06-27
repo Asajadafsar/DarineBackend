@@ -14,6 +14,7 @@ from .views import (
     SilverDashboardAPIView,
     SilverDepositInfoAPIView,
     SilverProductCategoryListAPIView,
+    SilverProductDetailAPIView,
     SilverStatisticsAPIView,
     SilverUserBalanceAPIView,
 
@@ -129,7 +130,11 @@ urlpatterns = [
     
     
 # silver_app/urls.py
-
+path(
+    "products/<int:product_id>/",
+    SilverProductDetailAPIView.as_view(),
+    name="silver-product-detail"
+),
 path(
     "banners/",
     SilverBannerListAPIView.as_view(),

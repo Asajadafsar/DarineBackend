@@ -3,7 +3,7 @@ from decimal import ROUND_DOWN, Decimal
 from rest_framework import serializers
 from decimal import Decimal
 from accounts.models import BankCard, ReferralEarning
-
+from .utils import get_live_silver_price
 from .models import (
     SilverWallet,
     SilverInventory,
@@ -186,6 +186,10 @@ class SilverFinancialTransactionSerializer(serializers.ModelSerializer):
 
 
 
+from decimal import Decimal
+from rest_framework import serializers
+
+
 class SilverProductSerializer(serializers.ModelSerializer):
 
     category_name = serializers.CharField(
@@ -194,6 +198,11 @@ class SilverProductSerializer(serializers.ModelSerializer):
     )
 
     image_url = serializers.SerializerMethodField()
+
+    # مقدار وزنی هر محصول با اجرت
+    product_weight_with_fee = serializers.SerializerMethodField()
+
+    # قیمت نهایی نمایش به کاربر
     total_price = serializers.SerializerMethodField()
 
     class Meta:
@@ -201,24 +210,33 @@ class SilverProductSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+
             "category",
             "category_name",
+
             "delivery_type",
+
+            # وزن خالص
             "weight",
-            "total_weight_with_fees",
-            "buy_price",
+
+            # مقدار وزنی
+            "product_weight_with_fee",
+
+            # قیمت نهایی
             "sell_price",
             "total_price",
+
             "inventory_count",
-            "image_url",   # 👈 مهم: image نه، image_url
+
+            "image_url",
+
             "description",
+
             "is_active",
-            "created_at"
+
+            "created_at",
         ]
 
-    # =========================
-    # IMAGE FIX (قطعی)
-    # =========================
     def get_image_url(self, obj):
 
         if not obj.image:
@@ -226,28 +244,46 @@ class SilverProductSerializer(serializers.ModelSerializer):
 
         request = self.context.get("request")
 
-        # حالت استاندارد Django (بهترین حالت)
         if request:
-            return request.build_absolute_uri(obj.image.url)
+            return request.build_absolute_uri(
+                obj.image.url
+            )
 
-        # fallback (اگر request خراب بود)
         return f"https://api.darine.shop{obj.image.url}"
 
-    # =========================
-    # TOTAL PRICE
-    # =========================
+    def get_product_weight_with_fee(self, obj):
+
+        try:
+
+            return float(
+                Decimal(str(obj.weight))
+                *
+                (
+                    Decimal("1")
+                    +
+                    (
+                        Decimal(str(obj.profit_percent))
+                        /
+                        Decimal("100")
+                    )
+                )
+            )
+
+        except Exception:
+            return 0
+
     def get_total_price(self, obj):
-
-        if obj.buy_price and obj.total_weight_with_fees:
-            return int(obj.buy_price * obj.total_weight_with_fees)
-
-        if obj.buy_price:
-            return int(obj.buy_price)
-
-        return 0
-
-
-
+        try:
+            live_price = get_live_silver_price()
+            if not live_price:
+                return int(obj.sell_price or 0)
+            total_price = (
+                Decimal(str(obj.total_weight_with_fees))
+                * Decimal(str(live_price))
+            )
+            return int(total_price)
+        except Exception:
+            return int(obj.sell_price or 0)
 
 
 # =========================================================

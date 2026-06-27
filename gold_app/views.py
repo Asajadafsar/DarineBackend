@@ -1169,7 +1169,38 @@ class ProductCategoryListAPIView(APIView):
         )
 
 
+# =========================================================
+# PRODUCT DETAIL
+# =========================================================
 
+class ProductDetailAPIView(APIView):
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, product_id):
+
+        product = Product.objects.filter(
+            id=product_id,
+            is_active=True
+        ).select_related(
+            "category"
+        ).first()
+
+        if not product:
+            return error_response(
+                message="محصول یافت نشد",
+                status_code=404
+            )
+
+        serializer = ProductSerializer(
+            product,
+            context={"request": request}
+        )
+
+        return success_response(
+            message="اطلاعات محصول دریافت شد",
+            data=serializer.data
+        )
 
 
 class UserAddressListAPIView(APIView):

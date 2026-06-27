@@ -125,11 +125,11 @@ class AdminBaseViewSet(ModelViewSet):
 # USERS
 # =========================================================
 
+
 class UserAdminViewSet(AdminBaseViewSet):
     queryset = User.objects.all().order_by("-id")
 
     def get_queryset(self):
-
         qs = super().get_queryset()
 
         mobile = self.request.GET.get("mobile")
@@ -166,23 +166,18 @@ class UserAdminViewSet(AdminBaseViewSet):
             qs = qs.order_by(ordering_map[ordering])
 
         return qs
-    
-    queryset = User.objects.all().order_by("-id")
 
     # ======================
     # LIST
     # ======================
     def list(self, request):
         users = self.get_queryset()
-
         results = []
 
         for user in users:
             fee, _ = UserFee.objects.get_or_create(user=user)
-
             data = AdminUserListSerializer(user).data
             data["fees"] = UserFeeSerializer(fee).data
-
             results.append(data)
 
         return success_response("لیست کاربران", {
@@ -195,7 +190,6 @@ class UserAdminViewSet(AdminBaseViewSet):
     # ======================
     def retrieve(self, request, pk=None):
         user = get_object_or_404(User, pk=pk)
-
         fee, _ = UserFee.objects.get_or_create(user=user)
 
         data = AdminUserDetailSerializer(user).data
@@ -209,9 +203,6 @@ class UserAdminViewSet(AdminBaseViewSet):
     def update(self, request, pk=None, *args, **kwargs):
         user = get_object_or_404(User, pk=pk)
 
-        # ----------------------
-        # USER UPDATE
-        # ----------------------
         serializer = AdminUserUpdateSerializer(
             user,
             data=request.data,
@@ -220,16 +211,9 @@ class UserAdminViewSet(AdminBaseViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-        # ----------------------
-        # FEES UPDATE (FIXED FLEXIBLE INPUT)
-        # ----------------------
-
         fee, _ = UserFee.objects.get_or_create(user=user)
-
-        # 1) nested mode
         fee_data = request.data.get("fees")
 
-        # 2) flat mode fallback
         if fee_data is None:
             fee_data = {
                 key: request.data.get(key)
@@ -242,7 +226,6 @@ class UserAdminViewSet(AdminBaseViewSet):
                 if request.data.get(key) is not None
             }
 
-        # فقط اگر چیزی برای آپدیت وجود داشت
         if fee_data:
             fee_serializer = UserFeeUpdateSerializer(
                 fee,
@@ -252,9 +235,6 @@ class UserAdminViewSet(AdminBaseViewSet):
             fee_serializer.is_valid(raise_exception=True)
             fee_serializer.save()
 
-        # ----------------------
-        # FORCE SYNC
-        # ----------------------
         user.refresh_from_db()
 
         return success_response("آپدیت انجام شد", {
@@ -274,7 +254,36 @@ class UserAdminViewSet(AdminBaseViewSet):
             "is_active": user.is_active
         })
 
+    # =========================================================
+    # BULK UPDATE FEES
+    # =========================================================
+    @action(detail=False, methods=["post"], url_path="bulk-update-fees")
+    def bulk_update_fees(self, request):
+        user_ids = request.data.get("user_ids", [])
+        
+        if not user_ids or not isinstance(user_ids, list):
+            return error_response("لطفاً لیست آیدی کاربران (user_ids) را به صورت آرایه ارسال کنید.")
 
+        update_data = {}
+        for key in ["gold_buy_fee", "gold_sell_fee", "silver_buy_fee", "silver_sell_fee"]:
+            if request.data.get(key) is not None:
+                update_data[key] = request.data.get(key)
+
+        if not update_data:
+            return error_response("هیچ کارمزدی جهت بروزرسانی ارسال نشده است.")
+
+        with transaction.atomic():
+            existing_user_ids = User.objects.filter(id__in=user_ids).values_list('id', flat=True)
+            
+            for u_id in existing_user_ids:
+                UserFee.objects.get_or_create(user_id=u_id)
+
+            updated_count = UserFee.objects.filter(user_id__in=existing_user_ids).update(**update_data)
+
+        return success_response(
+            f"کارمزد تعداد {updated_count} کاربر با موفقیت به صورت گروهی ویرایش شد.",
+            {"updated_count": updated_count}
+        )
 
 class CooperationRequestAdminViewSet(AdminBaseViewSet):
 
@@ -3236,9 +3245,9 @@ class BuySellChartAPIView(APIView):
             result
         )
 
-
-
-
+from rest_framework.decorators import action
+from rest_framework import status
+from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from .sms_service import send_admin_note_sms
 
 STATUS_FA = {
@@ -3301,17 +3310,17 @@ class DepositAdminViewSet(AdminBaseViewSet):
         obj = self.get_object()
         return success_response("جزئیات واریز", FinancialTransactionSerializer(obj, context={"request": request}).data)
 
-    @action(detail=True, methods=["post"])
-    def change_status(self, request, pk=None):
+    def partial_update(self, request, *args, **kwargs):
         obj = self.get_object()
 
-        ser = StatusUpdateSerializer(data=request.data)
+        ser = StatusUpdateSerializer(data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
 
-        new_status = ser.validated_data["status"]
+        new_status = ser.validated_data.get("status")
         admin_note = ser.validated_data.get("admin_note", "")
 
-        obj.status = new_status
+        if new_status:
+            obj.status = new_status
         if admin_note:
             obj.admin_note = admin_note
         obj.save()
@@ -3323,7 +3332,8 @@ class DepositAdminViewSet(AdminBaseViewSet):
                 note=admin_note
             )
 
-        msg = f"وضعیت واریز به {STATUS_FA.get(new_status, new_status)} تغییر کرد"
+        status_text = STATUS_FA.get(new_status, new_status) if new_status else "ویرایش شده"
+        msg = f"وضعیت واریز به {status_text} تغییر کرد"
         if sms_sent is False:
             msg += " (ارسال پیامک ناموفق بود)"
 
@@ -3387,17 +3397,17 @@ class WithdrawAdminViewSet(AdminBaseViewSet):
         obj = self.get_object()
         return success_response("جزئیات برداشت", FinancialTransactionSerializer(obj, context={"request": request}).data)
 
-    @action(detail=True, methods=["post"])
-    def change_status(self, request, pk=None):
+    def partial_update(self, request, *args, **kwargs):
         obj = self.get_object()
 
-        ser = StatusUpdateSerializer(data=request.data)
+        ser = StatusUpdateSerializer(data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
 
-        new_status = ser.validated_data["status"]
+        new_status = ser.validated_data.get("status")
         admin_note = ser.validated_data.get("admin_note", "")
 
-        obj.status = new_status
+        if new_status:
+            obj.status = new_status
         if admin_note:
             obj.admin_note = admin_note
         obj.save()
@@ -3409,7 +3419,8 @@ class WithdrawAdminViewSet(AdminBaseViewSet):
                 note=admin_note
             )
 
-        msg = f"وضعیت برداشت به {STATUS_FA.get(new_status, new_status)} تغییر کرد"
+        status_text = STATUS_FA.get(new_status, new_status) if new_status else "ویرایش شده"
+        msg = f"وضعیت برداشت به {status_text} تغییر کرد"
         if sms_sent is False:
             msg += " (ارسال پیامک ناموفق بود)"
 
@@ -3473,17 +3484,17 @@ class SilverDepositAdminViewSet(AdminBaseViewSet):
         obj = self.get_object()
         return success_response("جزئیات واریز نقره", SilverFinancialTransactionSerializer(obj, context={"request": request}).data)
 
-    @action(detail=True, methods=["post"])
-    def change_status(self, request, pk=None):
+    def partial_update(self, request, *args, **kwargs):
         obj = self.get_object()
 
-        ser = StatusUpdateSerializer(data=request.data)
+        ser = StatusUpdateSerializer(data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
 
-        new_status = ser.validated_data["status"]
+        new_status = ser.validated_data.get("status")
         admin_note = ser.validated_data.get("admin_note", "")
 
-        obj.status = new_status
+        if new_status:
+            obj.status = new_status
         if admin_note:
             obj.admin_note = admin_note
         obj.save()
@@ -3495,7 +3506,8 @@ class SilverDepositAdminViewSet(AdminBaseViewSet):
                 note=admin_note
             )
 
-        msg = f"وضعیت واریز نقره به {STATUS_FA.get(new_status, new_status)} تغییر کرد"
+        status_text = STATUS_FA.get(new_status, new_status) if new_status else "ویرایش شده"
+        msg = f"وضعیت واریز نقره به {status_text} تغییر کرد"
         if sms_sent is False:
             msg += " (ارسال پیامک ناموفق بود)"
 
@@ -3559,17 +3571,17 @@ class SilverWithdrawAdminViewSet(AdminBaseViewSet):
         obj = self.get_object()
         return success_response("جزئیات برداشت نقره", SilverFinancialTransactionSerializer(obj, context={"request": request}).data)
 
-    @action(detail=True, methods=["post"])
-    def change_status(self, request, pk=None):
+    def partial_update(self, request, *args, **kwargs):
         obj = self.get_object()
 
-        ser = StatusUpdateSerializer(data=request.data)
+        ser = StatusUpdateSerializer(data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
 
-        new_status = ser.validated_data["status"]
+        new_status = ser.validated_data.get("status")
         admin_note = ser.validated_data.get("admin_note", "")
 
-        obj.status = new_status
+        if new_status:
+            obj.status = new_status
         if admin_note:
             obj.admin_note = admin_note
         obj.save()
@@ -3581,7 +3593,8 @@ class SilverWithdrawAdminViewSet(AdminBaseViewSet):
                 note=admin_note
             )
 
-        msg = f"وضعیت برداشت نقره به {STATUS_FA.get(new_status, new_status)} تغییر کرد"
+        status_text = STATUS_FA.get(new_status, new_status) if new_status else "ویرایش شده"
+        msg = f"وضعیت برداشت نقره به {status_text} تغییر کرد"
         if sms_sent is False:
             msg += " (ارسال پیامک ناموفق بود)"
 
@@ -3592,8 +3605,6 @@ class SilverWithdrawAdminViewSet(AdminBaseViewSet):
                 "sms_sent": sms_sent,
             }
         )
-        
-        
         
         
 class GoldAdminViewSet(AdminBaseViewSet):
@@ -3682,77 +3693,108 @@ class SilverAdminViewSet(AdminBaseViewSet):
         )
         
         
-        
-        
+ # =========================================================
 
+
+# =========================================================
 # GOLD PRICE OFFSET
 # =========================================================
 
 class GoldPriceOffsetAdminViewSet(AdminBaseViewSet):
-    http_method_names = ["get", "post", "delete"]
-    queryset = GoldPriceOffset.objects.none()
+
+    queryset = GoldPriceOffset.objects.all().order_by("-id")
     serializer_class = GoldPriceOffsetSerializer
+    http_method_names = ["get", "post", "patch", "delete"]
 
-    # ----------------------
-    # GET
-    # ----------------------
+    # ======================
+    # LIST
+    # ======================
     def list(self, request):
-        offset = GoldPriceOffset.objects.filter(
-            is_active=True
-        ).first()
-
-        if not offset or offset.offset_amount == 0:
-            return success_response(
-                "offset فعالی وجود ندارد - قیمت مستقیم از API",
-                {
-                    "has_offset": False,
-                    "offset": None
-                }
-            )
-
+        qs = self.get_queryset()
         return success_response(
-            "offset فعال است",
+            "لیست Offset های طلا",
             {
-                "has_offset": True,
-                "offset": GoldPriceOffsetSerializer(offset).data
+                "total_results": qs.count(),
+                "results": self.serializer_class(qs, many=True, context={"request": request}).data
             }
         )
 
-    # ----------------------
-    # POST → ست offset
-    # ----------------------
+    # ======================
+    # RETRIEVE
+    # ======================
+    def retrieve(self, request, pk=None):
+        obj = self.get_object()
+        return success_response(
+            "جزئیات Offset طلا",
+            self.serializer_class(obj, context={"request": request}).data
+        )
+
+    # ======================
+    # CREATE
+    # ======================
     def create(self, request):
-        serializer = GoldPriceOffsetSerializer(
-            data=request.data
-        )
-        serializer.is_valid(raise_exception=True)
-        serializer.save(
+        ser = self.serializer_class(data=request.data, context={"request": request})
+        ser.is_valid(raise_exception=True)
+
+        # گرفتن مقدار واقعی فرستاده شده؛ اگر نبود پیش‌فرض True
+        is_active_val = request.data.get("is_active", True)
+        if isinstance(is_active_val, str):
+            is_active_val = is_active_val.lower() == "true"
+
+        obj = ser.save(
             set_by=request.user,
-            is_active=True
+            is_active=is_active_val
         )
+        
+        # برای اطمینان ملخی در صورتی که سریالایزر فیلد را نادیده گرفته باشد:
+        if obj.is_active != is_active_val:
+            obj.is_active = is_active_val
+            obj.save()
 
         return success_response(
-            "offset طلا ست شد",
-            {
-                "has_offset": True,
-                "offset": serializer.data
-            }
+            "Offset طلا ثبت شد",
+            self.serializer_class(obj, context={"request": request}).data
         )
 
-    # ----------------------
-    # DELETE → ریست به صفر
-    # ----------------------
-    def destroy(self, request, pk=None):
-        GoldPriceOffset.objects.filter(
-            is_active=True
-        ).update(
-            is_active=False,
-            offset_amount=0
+    # ======================
+    # PATCH
+    # ======================
+    def partial_update(self, request, *args, **kwargs):
+        obj = self.get_object()
+
+        ser = self.serializer_class(
+            obj,
+            data=request.data,
+            partial=True,
+            context={"request": request}
         )
+        ser.is_valid(raise_exception=True)
+        obj = ser.save()
+
+        # ⚡ راهکار اصلی: اگر فیلد در بدنه درخواست بود، مستقیماً روی مدل اوررایدش کن
+        if "is_active" in request.data:
+            val = request.data.get("is_active")
+            # تبدیل حالت‌های استرینگ احتمالی مثل "false" به وضعیت بولین واقعی
+            if isinstance(val, str):
+                obj.is_active = val.lower() == "true"
+            else:
+                obj.is_active = bool(val)
+            obj.save()
+
+        obj.refresh_from_db()
 
         return success_response(
-            "offset ریست شد - قیمت مستقیم از API"
+            "Offset طلا بروزرسانی شد",
+            self.serializer_class(obj, context={"request": request}).data
         )
+
+    # ======================
+    # DELETE
+    # ======================
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        obj.delete()
+        return success_response("Offset طلا حذف شد")
 
 
 # =========================================================
@@ -3760,58 +3802,94 @@ class GoldPriceOffsetAdminViewSet(AdminBaseViewSet):
 # =========================================================
 
 class SilverPriceOffsetAdminViewSet(AdminBaseViewSet):
-    http_method_names = ["get", "post", "delete"]
-    queryset = SilverPriceOffset.objects.none()
+
+    queryset = SilverPriceOffset.objects.all().order_by("-id")
     serializer_class = SilverPriceOffsetSerializer
+    http_method_names = ["get", "post", "patch", "delete"]
 
+    # ======================
+    # LIST
+    # ======================
     def list(self, request):
-        offset = SilverPriceOffset.objects.filter(
-            is_active=True
-        ).first()
-
-        if not offset or offset.offset_amount == 0:
-            return success_response(
-                "offset فعالی وجود ندارد - قیمت مستقیم از API",
-                {
-                    "has_offset": False,
-                    "offset": None
-                }
-            )
-
+        qs = self.get_queryset()
         return success_response(
-            "offset فعال است",
+            "لیست Offset های نقره",
             {
-                "has_offset": True,
-                "offset": SilverPriceOffsetSerializer(offset).data
+                "total_results": qs.count(),
+                "results": self.serializer_class(qs, many=True, context={"request": request}).data
             }
         )
 
+    # ======================
+    # RETRIEVE
+    # ======================
+    def retrieve(self, request, pk=None):
+        obj = self.get_object()
+        return success_response(
+            "جزئیات Offset نقره",
+            self.serializer_class(obj, context={"request": request}).data
+        )
+
+    # ======================
+    # CREATE
+    # ======================
     def create(self, request):
-        serializer = SilverPriceOffsetSerializer(
-            data=request.data
-        )
-        serializer.is_valid(raise_exception=True)
-        serializer.save(
+        ser = self.serializer_class(data=request.data, context={"request": request})
+        ser.is_valid(raise_exception=True)
+
+        is_active_val = request.data.get("is_active", True)
+        if isinstance(is_active_val, str):
+            is_active_val = is_active_val.lower() == "true"
+
+        obj = ser.save(
             set_by=request.user,
-            is_active=True
+            is_active=is_active_val
         )
+
+        if obj.is_active != is_active_val:
+            obj.is_active = is_active_val
+            obj.save()
 
         return success_response(
-            "offset نقره ست شد",
-            {
-                "has_offset": True,
-                "offset": serializer.data
-            }
+            "Offset نقره ثبت شد",
+            self.serializer_class(obj, context={"request": request}).data
         )
 
-    def destroy(self, request, pk=None):
-        SilverPriceOffset.objects.filter(
-            is_active=True
-        ).update(
-            is_active=False,
-            offset_amount=0
+    # ======================
+    # PATCH
+    # ======================
+    def partial_update(self, request, *args, **kwargs):
+        obj = self.get_object()
+
+        ser = self.serializer_class(
+            obj,
+            data=request.data,
+            partial=True,
+            context={"request": request}
         )
+        ser.is_valid(raise_exception=True)
+        obj = ser.save()
+
+        # ⚡ راهکار اصلی: اگر فیلد در بدنه درخواست بود، مستقیماً روی مدل اوررایدش کن
+        if "is_active" in request.data:
+            val = request.data.get("is_active")
+            if isinstance(val, str):
+                obj.is_active = val.lower() == "true"
+            else:
+                obj.is_active = bool(val)
+            obj.save()
+
+        obj.refresh_from_db()
 
         return success_response(
-            "offset ریست شد - قیمت مستقیم از API"
+            "Offset نقره بروزرسانی شد",
+            self.serializer_class(obj, context={"request": request}).data
         )
+
+    # ======================
+    # DELETE
+    # ======================
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        obj.delete()
+        return success_response("Offset نقره حذف شد")

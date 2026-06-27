@@ -216,46 +216,63 @@ class ProductSerializer(serializers.ModelSerializer):
         if price is None:
             return None
 
-        price = Decimal(str(price))
-        weight = Decimal(str(obj.weight))
-        profit_percent = Decimal(str(obj.profit_percent or 0))
-
-        base = weight * price
-        profit = (base * profit_percent) / Decimal("100")
-
-        return int(base + profit)
+        return int(
+            Decimal(str(obj.total_weight_with_fees))
+            *
+            Decimal(str(price))
+        )
 
     def get_profit_amount(self, obj):
 
-        price = get_live_gold_price()
+        try:
 
-        if price is None:
-            return None
+            return float(
+                Decimal(str(obj.total_weight_with_fees))
+                -
+                Decimal(str(obj.weight))
+            )
 
-        price = Decimal(str(price))
-        weight = Decimal(str(obj.weight))
-        profit_percent = Decimal(str(obj.profit_percent or 0))
+        except Exception:
+            return 0
 
-        base = weight * price
-        profit = (base * profit_percent) / Decimal("100")
+    def to_representation(self, instance):
 
-        return int(profit)
+        data = super().to_representation(instance)
 
-    def get_category_name(self, obj):
-        return obj.category.name if obj.category else None
+        data["category_name"] = self.get_category_name(instance)
+
+        return data
+
     
+from decimal import Decimal
+from rest_framework import serializers
+
 class ProductCreateUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Product
         fields = "__all__"
+        read_only_fields = (
+            "total_weight_with_fees",
+            "buy_price",
+            "sell_price",
+        )
 
     def validate(self, attrs):
 
         instance = self.instance
 
-        weight = attrs.get("weight", getattr(instance, "weight", None))
-        profit_percent = attrs.get(
+        weight = attrs.get(
+            "weight",
+            getattr(instance, "weight", None)
+        )
+
+        inventory_count = attrs.get(
+            "inventory_count",
+            getattr(instance, "inventory_count", 1)
+        )
+
+        fee_percent = attrs.get(
             "profit_percent",
             getattr(instance, "profit_percent", 0)
         )
@@ -265,31 +282,52 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
                 "weight": "وزن الزامی است"
             })
 
-        price_data = get_live_gold_price()
+        gold_price = get_live_gold_price()
 
-        if price_data is None:
+        if gold_price is None:
             raise serializers.ValidationError({
                 "price": "قیمت طلا دریافت نشد"
             })
 
-        # ✅ SAFE conversion
-        price = Decimal(str(price_data))
         weight = Decimal(str(weight))
-        profit_percent = Decimal(str(profit_percent))
+        inventory_count = Decimal(str(inventory_count))
+        fee_percent = Decimal(str(fee_percent))
+        gold_price = Decimal(str(gold_price))
 
-        base_price = weight * price
-        profit_amount = (base_price * profit_percent) / Decimal("100")
-        total_price = base_price + profit_amount
+        # مقدار وزنی هر محصول
+        product_weight_with_fee = (
+            weight *
+            (
+                Decimal("1")
+                +
+                (fee_percent / Decimal("100"))
+            )
+        )
 
-        attrs["buy_price"] = int(base_price)
-        attrs["sell_price"] = int(total_price)
-        attrs["total_weight_with_fees"] = weight
+        # مقدار وزنی کل موجودی
+        total_weight_with_fees = (
+            inventory_count *
+            product_weight_with_fee
+        )
+
+        # قیمت خرید کل موجودی
+        buy_price = (
+            inventory_count *
+            weight *
+            gold_price
+        )
+
+        # قیمت فروش کل موجودی
+        sell_price = (
+            total_weight_with_fees *
+            gold_price
+        )
+
+        attrs["total_weight_with_fees"] = total_weight_with_fees
+        attrs["buy_price"] = int(buy_price)
+        attrs["sell_price"] = int(sell_price)
 
         return attrs
-
-
-
-
 # =========================================================
 # PRODUCT (SILVER)
 # =========================================================
@@ -315,13 +353,18 @@ class SilverProductSerializer(serializers.ModelSerializer):
         return obj.category.name if obj.category else None
 
     def get_image_url(self, obj):
+
+        if not obj.image:
+            return None
+
         request = self.context.get("request")
 
-        if obj.image:
-            url = obj.image.url
-            return request.build_absolute_uri(url) if request else url
+        if request:
+            return request.build_absolute_uri(
+                obj.image.url
+            )
 
-        return None
+        return obj.image.url
 
     def get_total_price(self, obj):
 
@@ -330,47 +373,63 @@ class SilverProductSerializer(serializers.ModelSerializer):
         if price is None:
             return None
 
-        price = Decimal(str(price))
-        weight = Decimal(str(obj.weight))
-        profit_percent = Decimal(str(obj.profit_percent or 0))
-
-        base = weight * price
-        profit = (base * profit_percent) / Decimal("100")
-
-        return int(base + profit)
+        return int(
+            Decimal(str(obj.total_weight_with_fees))
+            *
+            Decimal(str(price))
+        )
 
     def get_profit_amount(self, obj):
 
-        price = get_live_silver_price()
+        try:
 
-        if price is None:
-            return None
+            return float(
+                Decimal(str(obj.total_weight_with_fees))
+                -
+                Decimal(str(obj.weight))
+            )
 
-        price = Decimal(str(price))
-        weight = Decimal(str(obj.weight))
-        profit_percent = Decimal(str(obj.profit_percent or 0))
-
-        base = weight * price
-
-        return int((base * profit_percent) / Decimal("100"))
+        except Exception:
+            return 0
 
     def to_representation(self, instance):
+
         data = super().to_representation(instance)
+
         data["category_name"] = self.get_category_name(instance)
+
         return data
+
+
+from decimal import Decimal
+from rest_framework import serializers
 
 class SilverProductCreateUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SilverProduct
         fields = "__all__"
+        read_only_fields = (
+            "total_weight_with_fees",
+            "buy_price",
+            "sell_price",
+        )
 
     def validate(self, attrs):
 
         instance = self.instance
 
-        weight = attrs.get("weight", getattr(instance, "weight", None))
-        profit_percent = attrs.get(
+        weight = attrs.get(
+            "weight",
+            getattr(instance, "weight", None)
+        )
+
+        inventory_count = attrs.get(
+            "inventory_count",
+            getattr(instance, "inventory_count", 1)
+        )
+
+        fee_percent = attrs.get(
             "profit_percent",
             getattr(instance, "profit_percent", 0)
         )
@@ -380,43 +439,52 @@ class SilverProductCreateUpdateSerializer(serializers.ModelSerializer):
                 "weight": "وزن الزامی است"
             })
 
-        price = get_live_silver_price()
+        silver_price = get_live_silver_price()
 
-        if not price:
+        if silver_price is None:
             raise serializers.ValidationError({
                 "price": "قیمت نقره دریافت نشد"
             })
 
-        price = Decimal(str(price))
         weight = Decimal(str(weight))
-        profit_percent = Decimal(str(profit_percent))
+        inventory_count = Decimal(str(inventory_count))
+        fee_percent = Decimal(str(fee_percent))
+        silver_price = Decimal(str(silver_price))
 
-        # ======================
-        # BASE PRICE
-        # ======================
-        base_price = weight * price
+        # مقدار وزنی هر محصول
+        product_weight_with_fee = (
+            weight *
+            (
+                Decimal("1")
+                +
+                (fee_percent / Decimal("100"))
+            )
+        )
 
-        # ======================
-        # PROFIT
-        # ======================
-        profit_amount = (base_price * profit_percent) / Decimal("100")
+        # مقدار وزنی کل موجودی
+        total_weight_with_fees = (
+            inventory_count *
+            product_weight_with_fee
+        )
 
-        # ======================
-        # FINAL PRICE (TOTAL)
-        # ======================
-        total_price = base_price + profit_amount
+        # قیمت خرید کل موجودی
+        buy_price = (
+            inventory_count *
+            weight *
+            silver_price
+        )
 
-        # ======================
-        # SAVE ONLY DB FIELDS
-        # ======================
-        attrs["buy_price"] = int(base_price)
-        attrs["sell_price"] = int(total_price)
-        attrs["total_weight_with_fees"] = weight
+        # قیمت فروش کل موجودی
+        sell_price = (
+            total_weight_with_fees *
+            silver_price
+        )
+
+        attrs["total_weight_with_fees"] = total_weight_with_fees
+        attrs["buy_price"] = int(buy_price)
+        attrs["sell_price"] = int(sell_price)
 
         return attrs
-
-
-
 
 
 

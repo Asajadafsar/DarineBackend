@@ -3,6 +3,7 @@
 from rest_framework import serializers
 from decimal import Decimal
 
+from .utils import get_live_gold_price
 from accounts.models import BankCard, ReferralEarning
 
 from .models import (
@@ -196,6 +197,9 @@ class FinancialTransactionSerializer(serializers.ModelSerializer):
 # =========================================================
 # PRODUCT
 # =========================================================
+from decimal import Decimal
+from rest_framework import serializers
+
 
 class ProductSerializer(serializers.ModelSerializer):
 
@@ -204,6 +208,12 @@ class ProductSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    image_url = serializers.SerializerMethodField()
+
+    # مقدار وزنی هر محصول با اجرت
+    product_weight_with_fee = serializers.SerializerMethodField()
+
+    # قیمت نهایی نمایش به کاربر
     total_price = serializers.SerializerMethodField()
 
     class Meta:
@@ -211,32 +221,81 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+
             "category",
             "category_name",
+
             "delivery_type",
+
+            # وزن خالص
             "weight",
-            "total_weight_with_fees",
-            "buy_price",
+
+            # مقدار وزنی
+            "product_weight_with_fee",
+
+            # قیمت نهایی
             "sell_price",
             "total_price",
+
             "inventory_count",
+
             "image",
+            "image_url",
+
             "description",
+
             "is_active",
-            "created_at"
+
+            "created_at",
         ]
 
+    def get_image_url(self, obj):
+
+        if not obj.image:
+            return None
+
+        request = self.context.get("request")
+
+        if request:
+            return request.build_absolute_uri(
+                obj.image.url
+            )
+
+        return obj.image.url
+
+    def get_product_weight_with_fee(self, obj):
+
+        try:
+
+            return float(
+                Decimal(str(obj.weight))
+                *
+                (
+                    Decimal("1")
+                    +
+                    (
+                        Decimal(str(obj.profit_percent))
+                        /
+                        Decimal("100")
+                    )
+                )
+            )
+
+        except Exception:
+            return 0
+
     def get_total_price(self, obj):
-
-        if obj.buy_price and obj.total_weight_with_fees:
-            return int(obj.buy_price * obj.total_weight_with_fees)
-
-        if obj.buy_price:
-            return int(obj.buy_price)
-
-        return 0
-
-
+        try:
+            live_price = get_live_gold_price()
+            if not live_price:
+                return int(obj.sell_price or 0)
+            total_price = (
+                Decimal(str(obj.total_weight_with_fees))
+                * Decimal(str(live_price))
+            )
+            return int(total_price)
+        except Exception:
+            return int(obj.sell_price or 0)
 
 
 

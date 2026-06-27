@@ -14,6 +14,7 @@ from .views import (
     ParsianPriceAPIView,
     PhysicalOrderAPIView,
     ProductCategoryListAPIView,
+    ProductDetailAPIView,
     UserAddressCreateAPIView,
     UserAddressListAPIView,
     UserBalanceAPIView,
@@ -80,6 +81,11 @@ urlpatterns = [
         'products/',
         ProductListAPIView.as_view()
     ),
+    path(
+    "products/<int:product_id>/",
+    ProductDetailAPIView.as_view(),
+    name="product-detail"
+),
     path("gold-limit-order/", GoldLimitOrderCreateAPIView.as_view()),
     path("prices/", LatestPriceAPIView.as_view()),
      path(
