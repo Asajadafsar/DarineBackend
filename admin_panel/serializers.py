@@ -5,6 +5,7 @@ import uuid
 from accounts.models import CooperationRequest, User, UserFee
 
 from gold_app.models import (
+    OrderStatusHistory,
     Product,
     ProductCategory,
     GoldBankInfo,
@@ -15,9 +16,10 @@ from gold_app.models import (
     Order,
     OrderItem
 )
-from .models import AdminLog, GoldPriceOffset,SilverPriceOffset
+from .models import AdminLog, GoldAnnouncement, GoldPriceOffset, SilverAnnouncement,SilverPriceOffset
 
 from silver_app.models import (
+    SilverOrderStatusHistory,
     SilverProduct,
     SilverProductCategory,
     SilverBankInfo,
@@ -73,26 +75,61 @@ class BaseModelMessageSerializer(BaseMessageSerializer):
 # USER
 # =========================================================
 
+import jdatetime
+from rest_framework import serializers
+
+
 class AdminUserListSerializer(serializers.ModelSerializer):
+
     created_at = serializers.DateTimeField(
         source="date_joined",
         read_only=True
     )
+
+    birth_date = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         exclude = ["password"]
+
+    def get_birth_date(self, obj):
+
+        if not obj.birth_date:
+            return None
+
+        return jdatetime.date.fromgregorian(
+            date=obj.birth_date
+        ).strftime("%Y/%m/%d")
+
+
+import jdatetime
+from rest_framework import serializers
 
 
 class AdminUserDetailSerializer(serializers.ModelSerializer):
+
     created_at = serializers.DateTimeField(
         source="date_joined",
         read_only=True
     )
+
+    birth_date = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         exclude = ["password"]
 
+    def get_birth_date(self, obj):
 
+        if not obj.birth_date:
+            return None
+
+        return jdatetime.date.fromgregorian(
+            date=obj.birth_date
+        ).strftime("%Y/%m/%d")
+        
+        
+    
 class AdminUserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -181,6 +218,10 @@ class ProductCategorySerializer(serializers.ModelSerializer):
 
 
 
+from decimal import Decimal
+from rest_framework import serializers
+
+
 class ProductSerializer(serializers.ModelSerializer):
 
     image_url = serializers.SerializerMethodField()
@@ -203,33 +244,41 @@ class ProductSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
 
         if request:
-            return request.build_absolute_uri(
-                obj.image.url
-            )
+            return request.build_absolute_uri(obj.image.url)
 
         return obj.image.url
 
     def get_total_price(self, obj):
 
-        price = get_live_gold_price()
+        gold_price = get_live_gold_price()
 
-        if price is None:
+        if gold_price is None:
             return None
 
+        weight = Decimal(str(obj.weight))
+        profit_percent = Decimal(str(obj.profit_percent))
+
+        # وزن پس از اعمال سود
+        final_weight = weight * (
+            Decimal("1") +
+            (profit_percent / Decimal("100"))
+        )
+
+        # قیمت نهایی
         return int(
-            Decimal(str(obj.total_weight_with_fees))
-            *
-            Decimal(str(price))
+            final_weight *
+            Decimal(str(gold_price))
         )
 
     def get_profit_amount(self, obj):
 
         try:
+            weight = Decimal(str(self.weight))
+            profit_percent = Decimal(str(obj.profit_percent))
 
             return float(
-                Decimal(str(obj.total_weight_with_fees))
-                -
-                Decimal(str(obj.weight))
+                weight *
+                (profit_percent / Decimal("100"))
             )
 
         except Exception:
@@ -238,7 +287,6 @@ class ProductSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
 
         data = super().to_representation(instance)
-
         data["category_name"] = self.get_category_name(instance)
 
         return data
@@ -246,6 +294,10 @@ class ProductSerializer(serializers.ModelSerializer):
     
 from decimal import Decimal
 from rest_framework import serializers
+
+from decimal import Decimal
+from rest_framework import serializers
+
 
 class ProductCreateUpdateSerializer(serializers.ModelSerializer):
 
@@ -267,11 +319,6 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
             getattr(instance, "weight", None)
         )
 
-        inventory_count = attrs.get(
-            "inventory_count",
-            getattr(instance, "inventory_count", 1)
-        )
-
         fee_percent = attrs.get(
             "profit_percent",
             getattr(instance, "profit_percent", 0)
@@ -290,34 +337,25 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
             })
 
         weight = Decimal(str(weight))
-        inventory_count = Decimal(str(inventory_count))
         fee_percent = Decimal(str(fee_percent))
         gold_price = Decimal(str(gold_price))
 
-        # مقدار وزنی هر محصول
-        product_weight_with_fee = (
+        # وزن نهایی پس از اعمال سود
+        total_weight_with_fees = (
             weight *
             (
                 Decimal("1")
-                +
-                (fee_percent / Decimal("100"))
+                + (fee_percent / Decimal("100"))
             )
         )
 
-        # مقدار وزنی کل موجودی
-        total_weight_with_fees = (
-            inventory_count *
-            product_weight_with_fee
-        )
-
-        # قیمت خرید کل موجودی
+        # قیمت خرید یک محصول
         buy_price = (
-            inventory_count *
             weight *
             gold_price
         )
 
-        # قیمت فروش کل موجودی
+        # قیمت فروش یک محصول
         sell_price = (
             total_weight_with_fees *
             gold_price
@@ -328,6 +366,7 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         attrs["sell_price"] = int(sell_price)
 
         return attrs
+
 # =========================================================
 # PRODUCT (SILVER)
 # =========================================================
@@ -336,6 +375,10 @@ class SilverProductCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = SilverProductCategory
         fields = "__all__"
+
+
+from decimal import Decimal
+from rest_framework import serializers
 
 
 class SilverProductSerializer(serializers.ModelSerializer):
@@ -360,33 +403,41 @@ class SilverProductSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
 
         if request:
-            return request.build_absolute_uri(
-                obj.image.url
-            )
+            return request.build_absolute_uri(obj.image.url)
 
         return obj.image.url
 
     def get_total_price(self, obj):
 
-        price = get_live_silver_price()
+        silver_price = get_live_silver_price()
 
-        if price is None:
+        if silver_price is None:
             return None
 
+        weight = Decimal(str(obj.weight))
+        profit_percent = Decimal(str(obj.profit_percent))
+
+        # وزن پس از اعمال سود
+        final_weight = weight * (
+            Decimal("1") +
+            (profit_percent / Decimal("100"))
+        )
+
+        # قیمت نهایی
         return int(
-            Decimal(str(obj.total_weight_with_fees))
-            *
-            Decimal(str(price))
+            final_weight *
+            Decimal(str(silver_price))
         )
 
     def get_profit_amount(self, obj):
 
         try:
+            weight = Decimal(str(obj.weight))
+            profit_percent = Decimal(str(obj.profit_percent))
 
             return float(
-                Decimal(str(obj.total_weight_with_fees))
-                -
-                Decimal(str(obj.weight))
+                weight *
+                (profit_percent / Decimal("100"))
             )
 
         except Exception:
@@ -399,10 +450,14 @@ class SilverProductSerializer(serializers.ModelSerializer):
         data["category_name"] = self.get_category_name(instance)
 
         return data
-
+    
 
 from decimal import Decimal
 from rest_framework import serializers
+
+from decimal import Decimal
+from rest_framework import serializers
+
 
 class SilverProductCreateUpdateSerializer(serializers.ModelSerializer):
 
@@ -424,11 +479,6 @@ class SilverProductCreateUpdateSerializer(serializers.ModelSerializer):
             getattr(instance, "weight", None)
         )
 
-        inventory_count = attrs.get(
-            "inventory_count",
-            getattr(instance, "inventory_count", 1)
-        )
-
         fee_percent = attrs.get(
             "profit_percent",
             getattr(instance, "profit_percent", 0)
@@ -447,34 +497,25 @@ class SilverProductCreateUpdateSerializer(serializers.ModelSerializer):
             })
 
         weight = Decimal(str(weight))
-        inventory_count = Decimal(str(inventory_count))
         fee_percent = Decimal(str(fee_percent))
         silver_price = Decimal(str(silver_price))
 
-        # مقدار وزنی هر محصول
-        product_weight_with_fee = (
+        # وزن نهایی پس از اعمال سود
+        total_weight_with_fees = (
             weight *
             (
                 Decimal("1")
-                +
-                (fee_percent / Decimal("100"))
+                + (fee_percent / Decimal("100"))
             )
         )
 
-        # مقدار وزنی کل موجودی
-        total_weight_with_fees = (
-            inventory_count *
-            product_weight_with_fee
-        )
-
-        # قیمت خرید کل موجودی
+        # قیمت خرید یک محصول
         buy_price = (
-            inventory_count *
             weight *
             silver_price
         )
 
-        # قیمت فروش کل موجودی
+        # قیمت فروش یک محصول
         sell_price = (
             total_weight_with_fees *
             silver_price
@@ -653,13 +694,34 @@ class SilverBankInfoCreateUpdateSerializer(serializers.ModelSerializer):
 
 
 
-
-
-# ORDERS
+# =========================================================
+# GOLD ORDERS
 # =========================================================
 
+class OrderStatusHistorySerializer(serializers.ModelSerializer):
+
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True
+    )
+
+    class Meta:
+        model = OrderStatusHistory
+        fields = [
+            "id",
+            "status",
+            "status_display",
+            "description",
+            "created_at",
+        ]
+
+
 class OrderItemSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(source="product.name", read_only=True)
+
+    product_name = serializers.CharField(
+        source="product.name",
+        read_only=True
+    )
 
     class Meta:
         model = OrderItem
@@ -667,16 +729,70 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    user_mobile = serializers.CharField(source="user.mobile", read_only=True)
-    items = OrderItemSerializer(many=True, read_only=True)
+
+    user_mobile = serializers.CharField(
+        source="user.mobile",
+        read_only=True
+    )
+
+    payment_method_display = serializers.CharField(
+        source="get_payment_method_display",
+        read_only=True
+    )
+
+    delivery_type_display = serializers.CharField(
+        source="get_delivery_type_display",
+        read_only=True
+    )
+
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True
+    )
+
+    items = OrderItemSerializer(
+        many=True,
+        read_only=True
+    )
+
+    status_history = OrderStatusHistorySerializer(
+        many=True,
+        read_only=True
+    )
 
     class Meta:
         model = Order
         fields = "__all__"
 
 
+# =========================================================
+# SILVER ORDERS
+# =========================================================
+
+class SilverOrderStatusHistorySerializer(serializers.ModelSerializer):
+
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True
+    )
+
+    class Meta:
+        model = SilverOrderStatusHistory
+        fields = [
+            "id",
+            "status",
+            "status_display",
+            "description",
+            "created_at",
+        ]
+
+
 class SilverOrderItemSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(source="product.name", read_only=True)
+
+    product_name = serializers.CharField(
+        source="product.name",
+        read_only=True
+    )
 
     class Meta:
         model = SilverOrderItem
@@ -690,7 +806,27 @@ class SilverOrderSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    payment_method_display = serializers.CharField(
+        source="get_payment_method_display",
+        read_only=True
+    )
+
+    delivery_type_display = serializers.CharField(
+        source="get_delivery_type_display",
+        read_only=True
+    )
+
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True
+    )
+
     items = SilverOrderItemSerializer(
+        many=True,
+        read_only=True
+    )
+
+    status_history = SilverOrderStatusHistorySerializer(
         many=True,
         read_only=True
     )
@@ -698,7 +834,8 @@ class SilverOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = SilverOrder
         fields = "__all__"
-
+        
+        
 
 # =========================================================
 # TRANSACTIONS
@@ -986,53 +1123,6 @@ class SilverBannerSerializer(serializers.ModelSerializer):
             obj.image.url
         )
 
-class AdminLogSerializer(serializers.ModelSerializer):
-
-
-    admin_mobile = serializers.CharField(
-        source="admin.mobile",
-        read_only=True
-    )
-
-
-    user_mobile = serializers.CharField(
-        source="user.mobile",
-        read_only=True
-    )
-
-
-    action_type_display = serializers.CharField(
-        source="get_action_type_display",
-        read_only=True
-    )
-
-
-    class Meta:
-
-        model = AdminLog
-
-        fields = [
-
-            "id",
-
-            "admin",
-            "admin_mobile",
-
-            "user",
-            "user_mobile",
-
-            "action_type",
-            "action_type_display",
-
-            "model_name",
-            "object_id",
-
-            "action",
-            "description",
-
-            "created_at"
-        ]
-
 
 
 class AdminAnalyticsSerializer(serializers.Serializer):
@@ -1277,7 +1367,52 @@ class GoldPriceOffsetSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+# =========================================================
+# GOLD ANNOUNCEMENT
+# =========================================================
 
+class GoldAnnouncementSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = GoldAnnouncement
+
+        fields = (
+            "id",
+            "title",
+            "description",
+            "link",
+            "created_at",
+        )
+
+        read_only_fields = (
+            "id",
+            "created_at",
+        )
+
+
+# =========================================================
+# SILVER ANNOUNCEMENT
+# =========================================================
+
+class SilverAnnouncementSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = SilverAnnouncement
+
+        fields = (
+            "id",
+            "title",
+            "description",
+            "link",
+            "created_at",
+        )
+
+        read_only_fields = (
+            "id",
+            "created_at",
+        )
+        
+    
 # =========================================================
 # SILVER PRICE OFFSET
 # =========================================================
@@ -1305,3 +1440,115 @@ class SilverPriceOffsetSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+        
+        
+        
+        
+from rest_framework import serializers
+
+from admin_panel.models import AdminLog
+
+
+# =========================================================
+# LIST
+# =========================================================
+
+class AdminLogListSerializer(serializers.ModelSerializer):
+
+    user_mobile = serializers.SerializerMethodField()
+
+    admin_mobile = serializers.SerializerMethodField()
+
+
+    class Meta:
+
+        model = AdminLog
+
+        fields = (
+
+            "id",
+
+            "created_at",
+
+            "action_type",
+
+            "action",
+
+            "level",
+
+            "success",
+
+            "response_status",
+
+            "ip_address",
+
+            "method",
+
+            "endpoint",
+
+            "tracking_code",
+
+            "user_mobile",
+
+            "admin_mobile",
+        )
+
+
+    def get_user_mobile(self, obj):
+
+        if obj.user:
+
+            return obj.user.mobile
+
+        return None
+
+
+    def get_admin_mobile(self, obj):
+
+        if obj.admin:
+
+            return obj.admin.mobile
+
+        return None
+    
+class AdminLogDetailSerializer(serializers.ModelSerializer):
+
+    user_mobile = serializers.SerializerMethodField()
+
+    admin_mobile = serializers.SerializerMethodField()
+
+
+    class Meta:
+
+        model = AdminLog
+
+        fields = "__all__"
+
+
+    def get_user_mobile(self, obj):
+
+        if obj.user:
+
+            return obj.user.mobile
+
+        return None
+
+
+    def get_admin_mobile(self, obj):
+
+        if obj.admin:
+
+            return obj.admin.mobile
+
+        return None
+    
+    
+class AdminLogCreateSerializer(serializers.ModelSerializer):
+
+    class Meta:
+
+        model = AdminLog
+
+        exclude = (
+            "created_at",
+        )

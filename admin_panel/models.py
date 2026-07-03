@@ -2,92 +2,401 @@ from django.db import models
 from accounts.models import User
 from darine_config import settings
 
+# admin_panel/models.py
+
+from django.db import models
+from django.conf import settings
+
 
 class AdminLog(models.Model):
 
-    ACTION_TYPES = (
-
-        ("BUY_GOLD", "خرید طلا"),
-        ("SELL_GOLD", "فروش طلا"),
-
-        ("BUY_SILVER", "خرید نقره"),
-        ("SELL_SILVER", "فروش نقره"),
-
-        ("DEPOSIT", "واریز"),
-        ("WITHDRAW", "برداشت"),
-
-        ("USER_REGISTER", "ثبت نام کاربر"),
-        ("USER_VERIFY", "احراز هویت"),
-
-        ("ORDER", "سفارش"),
-
-        ("ADMIN", "فعالیت ادمین"),
+    ACTION_TYPE = (
+        ("AUTH", "Authentication"),
+        ("USER", "User"),
+        ("ADMIN", "Admin"),
+        ("GOLD", "Gold"),
+        ("SILVER", "Silver"),
+        ("WALLET", "Wallet"),
+        ("ORDER", "Order"),
+        ("PAYMENT", "Payment"),
+        ("PRICE", "Price"),
+        ("PRODUCT", "Product"),
+        ("GIFT_CARD", "Gift Card"),
+        ("SETTING", "Setting"),
+        ("SECURITY", "Security"),
+        ("SERVER", "Server"),
+        ("SYSTEM", "System"),
+        ("OTHER", "Other"),
     )
 
-
-    admin = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="admin_action_logs"
+    METHOD = (
+        ("GET", "GET"),
+        ("POST", "POST"),
+        ("PUT", "PUT"),
+        ("PATCH", "PATCH"),
+        ("DELETE", "DELETE"),
     )
 
+    LEVEL = (
+        ("INFO", "Info"),
+        ("WARNING", "Warning"),
+        ("ERROR", "Error"),
+        ("CRITICAL", "Critical"),
+    )
+
+    # ============================
+    # USER
+    # ============================
 
     user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="user_action_logs"
+        related_name="user_logs"
     )
 
+    admin = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="admin_logs"
+    )
+
+    # ============================
+    # ACTION
+    # ============================
 
     action_type = models.CharField(
-        max_length=50,
-        choices=ACTION_TYPES
+        max_length=30,
+        choices=ACTION_TYPE,
+        db_index=True
     )
-
 
     action = models.CharField(
-        max_length=255
-    )
-
-
-    model_name = models.CharField(
         max_length=255,
-        null=True,
-        blank=True
+        db_index=True
     )
-
-
-    object_id = models.PositiveBigIntegerField(
-        null=True,
-        blank=True
-    )
-
 
     description = models.TextField(
-        null=True,
-        blank=True
+        blank=True,
+        null=True
     )
 
+    level = models.CharField(
+        max_length=20,
+        choices=LEVEL,
+        default="INFO"
+    )
+
+    # ============================
+    # MODEL
+    # ============================
+
+    app_name = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True
+    )
+
+    model_name = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True
+    )
+
+    object_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True
+    )
+
+    # ============================
+    # REQUEST
+    # ============================
+
+    method = models.CharField(
+        max_length=10,
+        choices=METHOD,
+        blank=True,
+        null=True
+    )
+
+    endpoint = models.CharField(
+        max_length=300,
+        blank=True,
+        null=True
+    )
+
+    request_data = models.JSONField(
+        blank=True,
+        null=True
+    )
+
+    response_data = models.JSONField(
+        blank=True,
+        null=True
+    )
+
+    response_status = models.PositiveIntegerField(
+        blank=True,
+        null=True
+    )
+
+    duration_ms = models.PositiveIntegerField(
+        blank=True,
+        null=True
+    )
+
+    # ============================
+    # CLIENT
+    # ============================
+
+    ip_address = models.GenericIPAddressField(
+        blank=True,
+        null=True
+    )
+
+    forwarded_ip = models.GenericIPAddressField(
+        blank=True,
+        null=True
+    )
+
+    user_agent = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    browser = models.CharField(
+        max_length=150,
+        blank=True,
+        null=True
+    )
+
+    browser_version = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True
+    )
+
+    os = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True
+    )
+
+    device = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True
+    )
+
+    device_type = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True
+    )
+
+    # ============================
+    # BEFORE / AFTER
+    # ============================
+
+    old_data = models.JSONField(
+        blank=True,
+        null=True
+    )
+
+    new_data = models.JSONField(
+        blank=True,
+        null=True
+    )
+
+    changed_fields = models.JSONField(
+        blank=True,
+        null=True
+    )
+
+    # ============================
+    # SECURITY
+    # ============================
+
+    success = models.BooleanField(
+        default=True
+    )
+
+    error_message = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    # ============================
+    # EXTRA
+    # ============================
+
+    tracking_code = models.CharField(
+        max_length=150,
+        blank=True,
+        null=True,
+        db_index=True
+    )
+
+    session_key = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True
+    )
+
+    extra = models.JSONField(
+        blank=True,
+        null=True
+    )
 
     created_at = models.DateTimeField(
-        auto_now_add=True
+        auto_now_add=True,
+        db_index=True
     )
 
-
     class Meta:
+        ordering = ["-created_at"]
 
-        ordering = [
-            "-created_at"
+        indexes = [
+
+            models.Index(
+                fields=["created_at"]
+            ),
+
+            models.Index(
+                fields=["action_type"]
+            ),
+
+            models.Index(
+                fields=["action"]
+            ),
+
+            models.Index(
+                fields=["user"]
+            ),
+
+            models.Index(
+                fields=["admin"]
+            ),
+
+            models.Index(
+                fields=["tracking_code"]
+            ),
+
+            models.Index(
+                fields=["response_status"]
+            ),
+
+            models.Index(
+                fields=["success"]
+            ),
         ]
-
 
     def __str__(self):
 
+        if self.user:
+            return f"{self.action} - {self.user.mobile}"
+
+        if self.admin:
+            return f"{self.action} - {self.admin.mobile}"
+
         return self.action
+# class AdminLog(models.Model):
+
+#     ACTION_TYPES = (
+
+#         ("BUY_GOLD", "خرید طلا"),
+#         ("SELL_GOLD", "فروش طلا"),
+
+#         ("BUY_SILVER", "خرید نقره"),
+#         ("SELL_SILVER", "فروش نقره"),
+
+#         ("DEPOSIT", "واریز"),
+#         ("WITHDRAW", "برداشت"),
+
+#         ("USER_REGISTER", "ثبت نام کاربر"),
+#         ("USER_VERIFY", "احراز هویت"),
+
+#         ("ORDER", "سفارش"),
+
+#         ("ADMIN", "فعالیت ادمین"),
+#     )
+
+
+#     admin = models.ForeignKey(
+#         User,
+#         on_delete=models.CASCADE,
+#         null=True,
+#         blank=True,
+#         related_name="admin_action_logs"
+#     )
+
+
+#     user = models.ForeignKey(
+#         User,
+#         on_delete=models.CASCADE,
+#         null=True,
+#         blank=True,
+#         related_name="user_action_logs"
+#     )
+
+
+#     action_type = models.CharField(
+#         max_length=50,
+#         choices=ACTION_TYPES
+#     )
+
+
+#     action = models.CharField(
+#         max_length=255
+#     )
+
+
+#     model_name = models.CharField(
+#         max_length=255,
+#         null=True,
+#         blank=True
+#     )
+    
+#     ip_address = models.GenericIPAddressField(
+#         null=True,
+#         blank=True,
+#         verbose_name="IP Address"
+#     )
+#     created_at = models.DateTimeField(
+#         auto_now_add=True
+#     )
+
+#     object_id = models.PositiveBigIntegerField(
+#         null=True,
+#         blank=True
+#     )
+
+
+#     description = models.TextField(
+#         null=True,
+#         blank=True
+#     )
+
+
+#     created_at = models.DateTimeField(
+#         auto_now_add=True
+#     )
+
+
+#     class Meta:
+
+#         ordering = [
+#             "-created_at"
+#         ]
+
+
+#     def __str__(self):
+
+#         return self.action
     
     
     
@@ -244,3 +553,73 @@ class SilverPriceOffset(models.Model):
 
     def __str__(self):
         return f"نقره offset: {self.offset_amount}"
+    
+    
+    
+    
+# =========================================================
+# GOLD ANNOUNCEMENT
+# =========================================================
+
+class GoldAnnouncement(models.Model):
+
+    title = models.CharField(
+        max_length=255,
+        verbose_name="عنوان"
+    )
+
+    description = models.TextField(
+        verbose_name="توضیحات"
+    )
+
+    link = models.URLField(
+        blank=True,
+        null=True,
+        verbose_name="لینک"
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "اطلاعیه طلا"
+        verbose_name_plural = "اطلاعیه‌های طلا"
+
+    def __str__(self):
+        return self.title
+
+
+# =========================================================
+# SILVER ANNOUNCEMENT
+# =========================================================
+
+class SilverAnnouncement(models.Model):
+
+    title = models.CharField(
+        max_length=255,
+        verbose_name="عنوان"
+    )
+
+    description = models.TextField(
+        verbose_name="توضیحات"
+    )
+
+    link = models.URLField(
+        blank=True,
+        null=True,
+        verbose_name="لینک"
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "اطلاعیه نقره"
+        verbose_name_plural = "اطلاعیه‌های نقره"
+
+    def __str__(self):
+        return self.title

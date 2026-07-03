@@ -52,7 +52,7 @@ from silver_app.models import (
 )
 
 from .models import AdminLog
-from .serializers import AdminLogSerializer
+# from .serializers import AdminLogSerializer
 # admin_panel/views.py
 
 from datetime import timedelta
@@ -284,6 +284,8 @@ class UserAdminViewSet(AdminBaseViewSet):
             f"کارمزد تعداد {updated_count} کاربر با موفقیت به صورت گروهی ویرایش شد.",
             {"updated_count": updated_count}
         )
+
+
 
 class CooperationRequestAdminViewSet(AdminBaseViewSet):
 
@@ -889,6 +891,8 @@ class GiftCardAdminViewSet(AdminBaseViewSet):
             GiftCardSerializer(obj).data
         )
 
+
+
 # =========================================================
 # ORDERS
 # =========================================================
@@ -896,6 +900,7 @@ class GiftCardAdminViewSet(AdminBaseViewSet):
 class OrderAdminViewSet(AdminBaseViewSet):
 
     queryset = Order.objects.all().order_by("-id")
+    serializer_class = OrderSerializer
 
     def get_queryset(self):
 
@@ -917,10 +922,12 @@ class OrderAdminViewSet(AdminBaseViewSet):
             qs = qs.filter(
                 status=status
             )
+
         if tracking_code:
             qs = qs.filter(
                 tracking_code__icontains=tracking_code
             )
+
         if start_date:
             qs = qs.filter(
                 created_at__date__gte=start_date
@@ -930,25 +937,34 @@ class OrderAdminViewSet(AdminBaseViewSet):
             qs = qs.filter(
                 created_at__date__lte=end_date
             )
-        allowed_ordering = ["id", "-id", "created_at", "-created_at","status", "-status",]
+
+        allowed_ordering = [
+            "id", "-id",
+            "created_at", "-created_at",
+            "status", "-status",
+        ]
+
         if ordering in allowed_ordering:
-            
             qs = qs.order_by(ordering)
+
         return qs
-    queryset = Order.objects.all().order_by("-id")
-    serializer_class = OrderSerializer
 
     # ======================
     # LIST
     # ======================
     def list(self, request):
+
         qs = self.get_queryset()
 
         return success_response(
             "لیست سفارش‌ها",
             {
                 "total_results": qs.count(),
-                "results": self.serializer_class(qs, many=True).data
+                "results": self.serializer_class(
+                    qs,
+                    many=True,
+                    context={"request": request}
+                ).data
             }
         )
 
@@ -956,36 +972,64 @@ class OrderAdminViewSet(AdminBaseViewSet):
     # RETRIEVE
     # ======================
     def retrieve(self, request, pk=None):
+
         obj = self.get_object()
 
         return success_response(
             "جزئیات سفارش",
-            self.serializer_class(obj).data
+            self.serializer_class(
+                obj,
+                context={"request": request}
+            ).data
         )
 
     # ======================
     # CHANGE STATUS
     # ======================
     @action(detail=True, methods=["post"])
+    @transaction.atomic
     def change_status(self, request, pk=None):
-        obj = self.get_object()
 
-        ser = StatusUpdateSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
+        order = self.get_object()
 
-        obj.status = ser.validated_data["status"]
-        obj.save()
-        obj.refresh_from_db()
+        serializer = StatusUpdateSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        order.status = serializer.validated_data["status"]
+
+        order.save(
+            update_fields=["status"]
+        )
+
+        OrderStatusHistory.objects.create(
+            order=order,
+            status=serializer.validated_data["status"],
+            description=serializer.validated_data.get(
+                "description",
+                ""
+            )
+        )
+
+        order.refresh_from_db()
 
         return success_response(
             "وضعیت سفارش تغییر کرد",
-            self.serializer_class(obj).data
+            self.serializer_class(
+                order,
+                context={"request": request}
+            ).data
         )
-    
+        
 
-# =========================================================
+
 # SILVER ORDER
 # =========================================================
+
 class SilverOrderAdminViewSet(AdminBaseViewSet):
 
     queryset = SilverOrder.objects.all().order_by("-id")
@@ -1005,26 +1049,31 @@ class SilverOrderAdminViewSet(AdminBaseViewSet):
         end_date = self.request.GET.get("end_date")
         ordering = self.request.GET.get("ordering")
 
-        # search user mobile
         if search:
-            qs = qs.filter(user__mobile__icontains=search)
+            qs = qs.filter(
+                user__mobile__icontains=search
+            )
 
-        # status filter
         if status:
-            qs = qs.filter(status=status)
+            qs = qs.filter(
+                status=status
+            )
 
-        # tracking code
         if tracking_code:
-            qs = qs.filter(tracking_code__icontains=tracking_code)
+            qs = qs.filter(
+                tracking_code__icontains=tracking_code
+            )
 
-        # date filters
         if start_date:
-            qs = qs.filter(created_at__date__gte=start_date)
+            qs = qs.filter(
+                created_at__date__gte=start_date
+            )
 
         if end_date:
-            qs = qs.filter(created_at__date__lte=end_date)
+            qs = qs.filter(
+                created_at__date__lte=end_date
+            )
 
-        # ordering whitelist
         allowed_ordering = [
             "id", "-id",
             "created_at", "-created_at",
@@ -1047,17 +1096,15 @@ class SilverOrderAdminViewSet(AdminBaseViewSet):
 
         qs = self.get_queryset()
 
-        ser = self.serializer_class(
-            qs,
-            many=True,
-            context={"request": request}
-        )
-
         return success_response(
             "لیست سفارشات نقره",
             {
                 "total_results": qs.count(),
-                "results": ser.data
+                "results": self.serializer_class(
+                    qs,
+                    many=True,
+                    context={"request": request}
+                ).data
             }
         )
 
@@ -1080,171 +1127,44 @@ class SilverOrderAdminViewSet(AdminBaseViewSet):
     # CHANGE STATUS
     # ======================
     @action(detail=True, methods=["post"])
+    @transaction.atomic
     def change_status(self, request, pk=None):
 
-        obj = self.get_object()
+        order = self.get_object()
 
-        ser = StatusUpdateSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
+        serializer = StatusUpdateSerializer(
+            data=request.data
+        )
 
-        obj.status = ser.validated_data["status"]
-        obj.save()
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        order.status = serializer.validated_data["status"]
+
+        order.save(
+            update_fields=["status"]
+        )
+
+        SilverOrderStatusHistory.objects.create(
+            order=order,
+            status=serializer.validated_data["status"],
+            description=serializer.validated_data.get(
+                "description",
+                ""
+            )
+        )
+
+        order.refresh_from_db()
 
         return success_response(
             "وضعیت سفارش نقره تغییر کرد",
-            self.serializer_class(obj).data
-        )
-        
-        
+            self.serializer_class(
+                order,
+                context={"request": request}
+            ).data
+        ) 
 
-# =========================================================
-# DASHBOARD
-# =========================================================
-
-# class DashboardAdminViewSet(ViewSet):
-
-#     permission_classes = [IsAdminRole]
-
-#     def list(self, request):
-
-#         users_count = User.objects.count()
-
-#         verified_users = User.objects.filter(
-#             auth_status="verified"
-#         ).count()
-
-#         pending_users = User.objects.filter(
-#             auth_status="pending"
-#         ).count()
-
-#         gold_products = Product.objects.count()
-
-#         silver_products = SilverProduct.objects.count()
-
-#         gold_orders = Order.objects.count()
-
-#         silver_orders = SilverOrder.objects.count()
-
-#         pending_orders = (
-#             Order.objects.filter(status="PENDING").count()
-#             +
-#             SilverOrder.objects.filter(status="PENDING").count()
-#         )
-
-#         gold_transactions = GoldTransaction.objects.count()
-
-#         silver_transactions = SilverTransaction.objects.count()
-
-#         total_wallet_balance = (
-#             Wallet.objects.aggregate(
-#                 total=Sum("balance")
-#             )["total"]
-#             or 0
-#         )
-
-#         total_silver_wallet_balance = (
-#             SilverWallet.objects.aggregate(
-#                 total=Sum("balance")
-#             )["total"]
-#             or 0
-#         )
-
-#         total_gold_inventory = (
-#             GoldInventory.objects.aggregate(
-#                 total=Sum("balance")
-#             )["total"]
-#             or 0
-#         )
-
-#         total_silver_inventory = (
-#             SilverInventory.objects.aggregate(
-#                 total=Sum("balance")
-#             )["total"]
-#             or 0
-#         )
-
-#         total_deposit_amount = (
-#             FinancialTransaction.objects.filter(
-#                 type="DEPOSIT",
-#                 status="COMPLETED"
-#             ).aggregate(
-#                 total=Sum("amount")
-#             )["total"]
-#             or 0
-#         )
-
-#         pending_withdraw_amount = (
-#             FinancialTransaction.objects.filter(
-#                 type="WITHDRAW",
-#                 status="PENDING"
-#             ).aggregate(
-#                 total=Sum("amount")
-#             )["total"]
-#             or 0
-#         )
-
-#         recent_users = list(
-#             User.objects.order_by("-id")[:10]
-#             .values(
-#                 "id",
-#                 "first_name",
-#                 "last_name",
-#                 "mobile"
-#             )
-#         )
-
-#         recent_orders = list(
-#             Order.objects.order_by("-id")[:10]
-#             .values(
-#                 "id",
-#                 "tracking_code",
-#                 "status"
-#             )
-#         )
-
-#         return success_response(
-
-#             message="داشبورد",
-
-#             data={
-
-#                 "users_count": users_count,
-
-#                 "verified_users": verified_users,
-
-#                 "pending_users": pending_users,
-
-#                 "gold_products": gold_products,
-
-#                 "silver_products": silver_products,
-
-#                 "gold_orders": gold_orders,
-
-#                 "silver_orders": silver_orders,
-
-#                 "pending_orders": pending_orders,
-
-#                 "gold_transactions": gold_transactions,
-
-#                 "silver_transactions": silver_transactions,
-
-#                 "total_wallet_balance": total_wallet_balance,
-
-#                 "total_silver_wallet_balance": total_silver_wallet_balance,
-
-#                 "total_gold_inventory": total_gold_inventory,
-
-#                 "total_silver_inventory": total_silver_inventory,
-
-#                 "total_deposit_amount": total_deposit_amount,
-
-#                 "pending_withdraw_amount": pending_withdraw_amount,
-
-#                 "recent_users": recent_users,
-
-#                 "recent_orders": recent_orders,
-#             }
-#         )
 
 
 
@@ -1519,7 +1439,7 @@ from silver_app.models import (
 )
 
 from .models import AdminLog
-from .serializers import AdminLogSerializer
+# from .serializers import AdminLogSerializer
 from .utils import create_admin_log
 
 
@@ -1540,9 +1460,24 @@ class IsAdminRole(IsAuthenticated):
 
 
 
-# =====================================================
-# DASHBOARD + ANALYTICS
-# =====================================================
+from datetime import timedelta
+
+import psutil
+
+from django.db.models import Sum
+from django.utils import timezone
+
+from rest_framework.response import Response
+from rest_framework.viewsets import ViewSet
+
+from accounts.models import User
+from gold_app.models import Wallet
+from gold_app.models import GoldTransaction
+from silver_app.models import SilverWallet
+from silver_app.models import SilverTransaction
+
+from admin_panel.permissions import IsAdminRole
+
 
 class AdminAnalyticsViewSet(ViewSet):
 
@@ -1554,7 +1489,7 @@ class AdminAnalyticsViewSet(ViewSet):
 
         today = now.date()
         week = now - timedelta(days=7)
-        month = now - timedelta(days=30)
+        month = now -timedelta(days=30)
 
         # -----------------
         # GOLD
@@ -1594,7 +1529,6 @@ class AdminAnalyticsViewSet(ViewSet):
 
         total_buy = gold_buy + silver_buy
         total_sell = gold_sell + silver_sell
-
         difference = total_buy - total_sell
 
         # -----------------
@@ -1602,33 +1536,21 @@ class AdminAnalyticsViewSet(ViewSet):
         # -----------------
 
         daily = (
-            GoldTransaction.objects.filter(
-                created_at__date=today
-            ).count()
+            GoldTransaction.objects.filter(created_at__date=today).count()
             +
-            SilverTransaction.objects.filter(
-                created_at__date=today
-            ).count()
+            SilverTransaction.objects.filter(created_at__date=today).count()
         )
 
         weekly = (
-            GoldTransaction.objects.filter(
-                created_at__gte=week
-            ).count()
+            GoldTransaction.objects.filter(created_at__gte=week).count()
             +
-            SilverTransaction.objects.filter(
-                created_at__gte=week
-            ).count()
+            SilverTransaction.objects.filter(created_at__gte=week).count()
         )
 
         monthly = (
-            GoldTransaction.objects.filter(
-                created_at__gte=month
-            ).count()
+            GoldTransaction.objects.filter(created_at__gte=month).count()
             +
-            SilverTransaction.objects.filter(
-                created_at__gte=month
-            ).count()
+            SilverTransaction.objects.filter(created_at__gte=month).count()
         )
 
         # -----------------
@@ -1659,18 +1581,30 @@ class AdminAnalyticsViewSet(ViewSet):
         # SERVER STATUS
         # -----------------
 
+        vm = psutil.virtual_memory()
+        disk = psutil.disk_usage("/")
+
         server = {
-            "cpu": psutil.cpu_percent(),
-            "ram": psutil.virtual_memory().percent,
-            "disk": psutil.disk_usage("/").percent,
+            "cpu": round(psutil.cpu_percent(interval=1), 1),
+
+            "ram": {
+                "total_gb": round(vm.total / 1024 ** 3, 2),
+                "used_gb": round(vm.used / 1024 ** 3, 2),
+                "free_gb": round(vm.available / 1024 ** 3, 2),
+                "percent": round(vm.percent, 1),
+            },
+
+            "disk": {
+                "total_gb": round(disk.total / 1024 ** 3, 2),
+                "used_gb": round(disk.used / 1024 ** 3, 2),
+                "free_gb": round(disk.free / 1024 ** 3, 2),
+                "percent": round(disk.percent, 1),
+            }
         }
 
         return Response({
-
             "success": True,
-
             "message": "داشبورد",
-
             "data": {
 
                 "users": users,
@@ -1705,77 +1639,6 @@ class AdminAnalyticsViewSet(ViewSet):
                 "server": server,
             }
         })
-
-# # =====================================================
-# # ADMIN LOG
-# # =====================================================
-
-
-# class AdminLogViewSet(ViewSet):
-
-#     permission_classes=[IsAdminRole]
-
-
-#     def list(self,request):
-
-
-#         qs = AdminLog.objects.all()
-
-
-
-#         search=request.GET.get("search")
-
-#         action=request.GET.get("action_type")
-
-
-
-#         if search:
-
-#             qs=qs.filter(
-
-#                 Q(action__icontains=search)
-#                 |
-#                 Q(description__icontains=search)
-
-#             )
-
-
-
-#         if action:
-
-#             qs=qs.filter(
-#                 action_type=action
-#             )
-
-
-
-#         serializer=AdminLogSerializer(
-#             qs,
-#             many=True
-#         )
-
-
-#         return Response({
-
-#             "count":qs.count(),
-
-#             "results":serializer.data
-#         })
-
-
-
-
-#     def retrieve(self,request,pk=None):
-
-
-#         obj=AdminLog.objects.get(
-#             id=pk
-#         )
-
-
-#         return Response(
-#             AdminLogSerializer(obj).data
-#         )
 
 
 
@@ -1827,43 +1690,55 @@ class AdminLogCreateTestView(ViewSet):
         })
         
  
+# admin_panel/views/admin_log.py
+
+from django.db.models import Q
+
+from rest_framework.decorators import action
+
+from admin_panel.models import AdminLog
+from admin_panel.permissions import IsAdminRole
+
+from admin_panel.views import success_response
+from admin_panel.serializers import (
+    AdminLogListSerializer,
+    AdminLogDetailSerializer,
+)
+from .serializers import (
+    AdminLogListSerializer,
+    AdminLogDetailSerializer,
+)
+
 
 class AdminLogViewSet(AdminBaseViewSet):
 
+    permission_classes = [IsAdminRole]
 
     queryset = AdminLog.objects.all()
 
+    serializer_class = AdminLogListSerializer
 
-    serializer_class = AdminLogSerializer
+    ordering = ["-created_at"]
 
+
+    def get_serializer_class(self):
+
+        if self.action == "retrieve":
+
+            return AdminLogDetailSerializer
+
+        return AdminLogListSerializer
 
 
     def get_queryset(self):
 
         qs = super().get_queryset()
 
+        # ==========================
+        # SEARCH
+        # ==========================
 
-
-        search = self.request.GET.get(
-            "search"
-        )
-
-
-        action_type = self.request.GET.get(
-            "action_type"
-        )
-
-
-        start = self.request.GET.get(
-            "start_date"
-        )
-
-
-        end = self.request.GET.get(
-            "end_date"
-        )
-
-
+        search = self.request.GET.get("search")
 
         if search:
 
@@ -1883,9 +1758,25 @@ class AdminLogViewSet(AdminBaseViewSet):
 
                 Q(admin__mobile__icontains=search)
 
+                |
+
+                Q(ip_address__icontains=search)
+
+                |
+
+                Q(endpoint__icontains=search)
+
+                |
+
+                Q(tracking_code__icontains=search)
+
             )
 
+        # ==========================
+        # FILTERS
+        # ==========================
 
+        action_type = self.request.GET.get("action_type")
 
         if action_type:
 
@@ -1894,6 +1785,69 @@ class AdminLogViewSet(AdminBaseViewSet):
             )
 
 
+        level = self.request.GET.get("level")
+
+        if level:
+
+            qs = qs.filter(
+                level=level
+            )
+
+
+        success = self.request.GET.get("success")
+
+        if success is not None:
+
+            if success.lower() == "true":
+
+                qs = qs.filter(
+                    success=True
+                )
+
+            elif success.lower() == "false":
+
+                qs = qs.filter(
+                    success=False
+                )
+
+
+        method = self.request.GET.get("method")
+
+        if method:
+
+            qs = qs.filter(
+                method=method.upper()
+            )
+
+
+        status = self.request.GET.get("status")
+
+        if status:
+
+            qs = qs.filter(
+                response_status=status
+            )
+
+
+        user = self.request.GET.get("user")
+
+        if user:
+
+            qs = qs.filter(
+                user_id=user
+            )
+
+
+        admin = self.request.GET.get("admin")
+
+        if admin:
+
+            qs = qs.filter(
+                admin_id=admin
+            )
+
+
+        start = self.request.GET.get("start_date")
 
         if start:
 
@@ -1901,6 +1855,8 @@ class AdminLogViewSet(AdminBaseViewSet):
                 created_at__date__gte=start
             )
 
+
+        end = self.request.GET.get("end_date")
 
         if end:
 
@@ -1912,61 +1868,82 @@ class AdminLogViewSet(AdminBaseViewSet):
         return qs
 
 
+    def list(self, request):
 
+        queryset = self.filter_queryset(
+            self.get_queryset()
+        )
 
-    def list(
-        self,
-        request
-    ):
+        page = self.paginate_queryset(
+            queryset
+        )
 
+        if page is not None:
 
-        qs = self.get_queryset()
+            serializer = self.get_serializer(
+                page,
+                many=True
+            )
 
+            return self.get_paginated_response(
+                serializer.data
+            )
 
+        serializer = self.get_serializer(
+            queryset,
+            many=True
+        )
 
         return success_response(
 
-            "لاگ ها",
+            "لیست لاگ ها",
 
             {
 
-                "total_results":
-                    qs.count(),
+                "total_results": queryset.count(),
 
+                "results": serializer.data
 
-                "results":
-                    self.serializer_class(
-                        qs,
-                        many=True
-                    ).data
             }
+
         )
 
 
-
-
-    def retrieve(
-        self,
-        request,
-        pk=None
-    ):
-
+    def retrieve(self, request, pk=None):
 
         obj = self.get_object()
 
-
+        serializer = self.get_serializer(obj)
 
         return success_response(
 
             "جزئیات لاگ",
 
-            self.serializer_class(
-                obj
-            ).data
+            serializer.data
+
         )
 
 
+    @action(
+        detail=False,
+        methods=["delete"],
+        permission_classes=[IsAdminRole]
+    )
+    def clear(self, request):
 
+        deleted = AdminLog.objects.all().delete()
+
+        return success_response(
+
+            "تمام لاگ‌ها حذف شدند.",
+
+            {
+
+                "deleted": deleted[0]
+
+            }
+
+        )
 
 
 
@@ -2977,6 +2954,297 @@ class SilverBankAdminViewSet(AdminBaseViewSet):
         )
         
 
+# =========================================================
+# GOLD ANNOUNCEMENTS
+# =========================================================
+
+class GoldAnnouncementAdminViewSet(AdminBaseViewSet):
+
+    queryset = GoldAnnouncement.objects.all().order_by("-id")
+
+    def get_queryset(self):
+
+        qs = super().get_queryset()
+
+        search = self.request.GET.get("search")
+        ordering = self.request.GET.get("ordering")
+
+        if search:
+            qs = qs.filter(
+                Q(title__icontains=search) |
+                Q(description__icontains=search)
+            )
+
+        allowed_ordering = [
+            "id",
+            "-id",
+            "created_at",
+            "-created_at",
+            "title",
+            "-title",
+        ]
+
+        if ordering in allowed_ordering:
+            qs = qs.order_by(ordering)
+
+        return qs
+
+    # ======================
+    # LIST
+    # ======================
+
+    def list(self, request):
+
+        announcements = self.get_queryset()
+
+        results = []
+
+        for item in announcements:
+            results.append(
+                GoldAnnouncementSerializer(item).data
+            )
+
+        return success_response(
+            "لیست اطلاعیه‌های طلا",
+            {
+                "total_results": len(results),
+                "results": results
+            }
+        )
+
+    # ======================
+    # RETRIEVE
+    # ======================
+
+    def retrieve(self, request, pk=None):
+
+        obj = get_object_or_404(
+            GoldAnnouncement,
+            pk=pk
+        )
+
+        return success_response(
+            "جزئیات اطلاعیه",
+            GoldAnnouncementSerializer(obj).data
+        )
+
+    # ======================
+    # CREATE
+    # ======================
+
+    def create(self, request):
+
+        serializer = GoldAnnouncementSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        obj = serializer.save()
+
+        return success_response(
+            "اطلاعیه ایجاد شد",
+            GoldAnnouncementSerializer(obj).data
+        )
+
+    # ======================
+    # UPDATE
+    # ======================
+
+    def update(self, request, pk=None, *args, **kwargs):
+
+        obj = get_object_or_404(
+            GoldAnnouncement,
+            pk=pk
+        )
+
+        serializer = GoldAnnouncementSerializer(
+            obj,
+            data=request.data,
+            partial=True
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        serializer.save()
+
+        obj.refresh_from_db()
+
+        return success_response(
+            "اطلاعیه ویرایش شد",
+            {
+                "results": GoldAnnouncementSerializer(obj).data
+            }
+        )
+
+    # ======================
+    # DELETE
+    # ======================
+
+    def destroy(self, request, pk=None):
+
+        obj = get_object_or_404(
+            GoldAnnouncement,
+            pk=pk
+        )
+
+        obj.delete()
+
+        return success_response(
+            "اطلاعیه حذف شد"
+        )
+
+
+
+
+# =========================================================
+# SILVER ANNOUNCEMENTS
+# =========================================================
+
+class SilverAnnouncementAdminViewSet(AdminBaseViewSet):
+
+    queryset = SilverAnnouncement.objects.all().order_by("-id")
+
+    def get_queryset(self):
+
+        qs = super().get_queryset()
+
+        search = self.request.GET.get("search")
+        ordering = self.request.GET.get("ordering")
+
+        if search:
+            qs = qs.filter(
+                Q(title__icontains=search) |
+                Q(description__icontains=search)
+            )
+
+        allowed_ordering = [
+            "id",
+            "-id",
+            "created_at",
+            "-created_at",
+            "title",
+            "-title",
+        ]
+
+        if ordering in allowed_ordering:
+            qs = qs.order_by(ordering)
+
+        return qs
+
+    # ======================
+    # LIST
+    # ======================
+
+    def list(self, request):
+
+        announcements = self.get_queryset()
+
+        results = []
+
+        for item in announcements:
+            results.append(
+                SilverAnnouncementSerializer(item).data
+            )
+
+        return success_response(
+            "لیست اطلاعیه‌های نقره",
+            {
+                "total_results": len(results),
+                "results": results
+            }
+        )
+
+    # ======================
+    # RETRIEVE
+    # ======================
+
+    def retrieve(self, request, pk=None):
+
+        obj = get_object_or_404(
+            SilverAnnouncement,
+            pk=pk
+        )
+
+        return success_response(
+            "جزئیات اطلاعیه",
+            SilverAnnouncementSerializer(obj).data
+        )
+
+    # ======================
+    # CREATE
+    # ======================
+
+    def create(self, request):
+
+        serializer = SilverAnnouncementSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        obj = serializer.save()
+
+        return success_response(
+            "اطلاعیه ایجاد شد",
+            SilverAnnouncementSerializer(obj).data
+        )
+
+    # ======================
+    # UPDATE
+    # ======================
+
+    def update(self, request, pk=None, *args, **kwargs):
+
+        obj = get_object_or_404(
+            SilverAnnouncement,
+            pk=pk
+        )
+
+        serializer = SilverAnnouncementSerializer(
+            obj,
+            data=request.data,
+            partial=True
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        serializer.save()
+
+        obj.refresh_from_db()
+
+        return success_response(
+            "اطلاعیه ویرایش شد",
+            {
+                "results": SilverAnnouncementSerializer(obj).data
+            }
+        )
+
+    # ======================
+    # DELETE
+    # ======================
+
+    def destroy(self, request, pk=None):
+
+        obj = get_object_or_404(
+            SilverAnnouncement,
+            pk=pk
+        )
+
+        obj.delete()
+
+        return success_response(
+            "اطلاعیه حذف شد"
+        )
+
 
 
 from django.db.models import Sum
@@ -3259,18 +3527,28 @@ STATUS_FA = {
 }
 
 
+
 # =========================================================
 # DEPOSIT
 # =========================================================
 
 class DepositAdminViewSet(AdminBaseViewSet):
 
-    queryset = FinancialTransaction.objects.filter(type="DEPOSIT").order_by("-id")
+    queryset = FinancialTransaction.objects.filter(
+        type="DEPOSIT"
+    ).order_by("-id")
+
     serializer_class = FinancialTransactionSerializer
-    parser_classes = (MultiPartParser, FormParser)
+
+    parser_classes = (
+        MultiPartParser,
+        FormParser
+    )
 
     def get_queryset(self):
+
         qs = super().get_queryset()
+
         search = self.request.GET.get("search")
         status = self.request.GET.get("status")
         tracking_code = self.request.GET.get("tracking_code")
@@ -3281,69 +3559,267 @@ class DepositAdminViewSet(AdminBaseViewSet):
         ordering = self.request.GET.get("ordering")
 
         if search:
-            qs = qs.filter(user__mobile__icontains=search)
-        if status:
-            qs = qs.filter(status=status)
-        if user_id:
-            qs = qs.filter(user_id=user_id)
-        if method:
-            qs = qs.filter(method=method)
-        if tracking_code:
-            qs = qs.filter(tracking_code__icontains=tracking_code)
-        if start_date:
-            qs = qs.filter(created_at__date__gte=start_date)
-        if end_date:
-            qs = qs.filter(created_at__date__lte=end_date)
+            qs = qs.filter(
+                user__mobile__icontains=search
+            )
 
-        allowed_ordering = ["id", "-id", "amount", "-amount", "status", "-status", "created_at", "-created_at", "updated_at", "-updated_at"]
+        if status:
+            qs = qs.filter(
+                status=status
+            )
+
+        if user_id:
+            qs = qs.filter(
+                user_id=user_id
+            )
+
+        if method:
+            qs = qs.filter(
+                method=method
+            )
+
+        if tracking_code:
+            qs = qs.filter(
+                tracking_code__icontains=tracking_code
+            )
+
+        if start_date:
+            qs = qs.filter(
+                created_at__date__gte=start_date
+            )
+
+        if end_date:
+            qs = qs.filter(
+                created_at__date__lte=end_date
+            )
+
+        allowed_ordering = [
+
+            "id",
+            "-id",
+
+            "amount",
+            "-amount",
+
+            "status",
+            "-status",
+
+            "created_at",
+            "-created_at",
+
+            "updated_at",
+            "-updated_at"
+
+        ]
+
         if ordering in allowed_ordering:
             qs = qs.order_by(ordering)
 
         return qs
 
+
     def list(self, request):
+
         qs = self.get_queryset()
-        ser = FinancialTransactionSerializer(qs, many=True, context={"request": request})
-        return success_response("لیست واریزها", {"total_results": qs.count(), "results": ser.data})
+
+        serializer = FinancialTransactionSerializer(
+            qs,
+            many=True,
+            context={
+                "request": request
+            }
+        )
+
+        return success_response(
+
+            "لیست واریزها",
+
+            {
+
+                "total_results": qs.count(),
+
+                "results": serializer.data
+
+            }
+
+        )
+
 
     def retrieve(self, request, pk=None):
-        obj = self.get_object()
-        return success_response("جزئیات واریز", FinancialTransactionSerializer(obj, context={"request": request}).data)
 
+        obj = self.get_object()
+
+        serializer = FinancialTransactionSerializer(
+            obj,
+            context={
+                "request": request
+            }
+        )
+
+        return success_response(
+            "جزئیات واریز",
+            serializer.data
+        )
+
+
+    @transaction.atomic
     def partial_update(self, request, *args, **kwargs):
+
         obj = self.get_object()
 
-        ser = StatusUpdateSerializer(data=request.data, partial=True)
-        ser.is_valid(raise_exception=True)
+        serializer = StatusUpdateSerializer(
+            data=request.data,
+            partial=True
+        )
 
-        new_status = ser.validated_data.get("status")
-        admin_note = ser.validated_data.get("admin_note", "")
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        new_status = serializer.validated_data.get(
+            "status"
+        )
+
+        admin_note = serializer.validated_data.get(
+            "admin_note",
+            ""
+        )
+
+        previous_status = obj.status
+
+        wallet, _ = Wallet.objects.get_or_create(
+            user=obj.user
+        )
+
+        # =====================================
+        # تایید واریز
+        # =====================================
+
+        if (
+            previous_status != "COMPLETED"
+            and
+            new_status == "COMPLETED"
+        ):
+
+            wallet.accessible_toman += obj.amount
+
+            wallet.save(
+                update_fields=[
+                    "accessible_toman",
+                    "updated_at"
+                ]
+            )
+
+        # =====================================
+        # ذخیره وضعیت
+        # =====================================
 
         if new_status:
             obj.status = new_status
+
         if admin_note:
             obj.admin_note = admin_note
+
         obj.save()
 
+        # =====================================
+        # ارسال پیامک
+        # =====================================
+
         sms_sent = None
+
         if admin_note:
+
             sms_sent = send_admin_note_sms(
+
                 mobile=obj.user.mobile,
+
                 note=admin_note
+
             )
 
-        status_text = STATUS_FA.get(new_status, new_status) if new_status else "ویرایش شده"
-        msg = f"وضعیت واریز به {status_text} تغییر کرد"
+        status_text = STATUS_FA.get(
+            new_status,
+            new_status
+        ) if new_status else "ویرایش شده"
+
+        message = f"وضعیت واریز به {status_text} تغییر کرد"
+
         if sms_sent is False:
-            msg += " (ارسال پیامک ناموفق بود)"
+            message += " (ارسال پیامک ناموفق بود)"
+
+        # =====================================
+        # ثبت لاگ ادمین
+        # =====================================
+
+        create_admin_log(
+
+            request=request,
+
+            admin=request.user,
+
+            user=obj.user,
+
+            action_type="DEPOSIT_UPDATE",
+
+            action="تغییر وضعیت واریز",
+
+            model_name="FinancialTransaction",
+
+            object_id=obj.id,
+
+            tracking_code=obj.tracking_code,
+
+            response_status=200,
+
+            description=f"""
+
+کد پیگیری:
+{obj.tracking_code}
+
+وضعیت قبلی:
+{previous_status}
+
+وضعیت جدید:
+{obj.status}
+
+مبلغ:
+{obj.amount:,}
+
+موجودی قابل استفاده:
+{wallet.accessible_toman:,}
+
+"""
+
+        )
 
         return success_response(
-            msg,
+
+            message,
+
             {
-                "transaction": FinancialTransactionSerializer(obj).data,
-                "sms_sent": sms_sent,
+
+                "transaction": FinancialTransactionSerializer(
+                    obj
+                ).data,
+
+                "wallet": {
+
+                    "accessible_toman": wallet.accessible_toman,
+
+                    "blocked_toman": wallet.blocked_toman,
+
+                    "toman_total": wallet.toman_total
+
+                },
+
+                "sms_sent": sms_sent
+
             }
+
         )
+
+
 
 
 # =========================================================
@@ -3433,18 +3909,30 @@ class WithdrawAdminViewSet(AdminBaseViewSet):
         )
 
 
+
+
 # =========================================================
 # SILVER DEPOSIT
 # =========================================================
 
 class SilverDepositAdminViewSet(AdminBaseViewSet):
 
-    queryset = SilverFinancialTransaction.objects.filter(type="DEPOSIT").order_by("-id")
+    queryset = SilverFinancialTransaction.objects.filter(
+        type="DEPOSIT"
+    ).order_by("-id")
+
     serializer_class = SilverFinancialTransactionSerializer
-    parser_classes = (JSONParser, MultiPartParser, FormParser)
+
+    parser_classes = (
+        JSONParser,
+        MultiPartParser,
+        FormParser
+    )
 
     def get_queryset(self):
+
         qs = super().get_queryset()
+
         search = self.request.GET.get("search")
         status = self.request.GET.get("status")
         tracking_code = self.request.GET.get("tracking_code")
@@ -3455,69 +3943,267 @@ class SilverDepositAdminViewSet(AdminBaseViewSet):
         ordering = self.request.GET.get("ordering")
 
         if search:
-            qs = qs.filter(user__mobile__icontains=search)
-        if status:
-            qs = qs.filter(status=status)
-        if user_id:
-            qs = qs.filter(user_id=user_id)
-        if method:
-            qs = qs.filter(method=method)
-        if tracking_code:
-            qs = qs.filter(tracking_code__icontains=tracking_code)
-        if start_date:
-            qs = qs.filter(created_at__date__gte=start_date)
-        if end_date:
-            qs = qs.filter(created_at__date__lte=end_date)
+            qs = qs.filter(
+                user__mobile__icontains=search
+            )
 
-        allowed_ordering = ["id", "-id", "amount", "-amount", "status", "-status", "created_at", "-created_at", "updated_at", "-updated_at"]
+        if status:
+            qs = qs.filter(
+                status=status
+            )
+
+        if user_id:
+            qs = qs.filter(
+                user_id=user_id
+            )
+
+        if method:
+            qs = qs.filter(
+                method=method
+            )
+
+        if tracking_code:
+            qs = qs.filter(
+                tracking_code__icontains=tracking_code
+            )
+
+        if start_date:
+            qs = qs.filter(
+                created_at__date__gte=start_date
+            )
+
+        if end_date:
+            qs = qs.filter(
+                created_at__date__lte=end_date
+            )
+
+        allowed_ordering = [
+
+            "id",
+            "-id",
+
+            "amount",
+            "-amount",
+
+            "status",
+            "-status",
+
+            "created_at",
+            "-created_at",
+
+            "updated_at",
+            "-updated_at"
+
+        ]
+
         if ordering in allowed_ordering:
             qs = qs.order_by(ordering)
 
         return qs
 
+
     def list(self, request):
+
         qs = self.get_queryset()
-        ser = SilverFinancialTransactionSerializer(qs, many=True, context={"request": request})
-        return success_response("لیست واریزهای نقره", {"total_results": qs.count(), "results": ser.data})
+
+        serializer = SilverFinancialTransactionSerializer(
+            qs,
+            many=True,
+            context={
+                "request": request
+            }
+        )
+
+        return success_response(
+
+            "لیست واریزهای نقره",
+
+            {
+
+                "total_results": qs.count(),
+
+                "results": serializer.data
+
+            }
+
+        )
+
 
     def retrieve(self, request, pk=None):
-        obj = self.get_object()
-        return success_response("جزئیات واریز نقره", SilverFinancialTransactionSerializer(obj, context={"request": request}).data)
 
+        obj = self.get_object()
+
+        serializer = SilverFinancialTransactionSerializer(
+            obj,
+            context={
+                "request": request
+            }
+        )
+
+        return success_response(
+
+            "جزئیات واریز نقره",
+
+            serializer.data
+
+        )
+
+
+    @transaction.atomic
     def partial_update(self, request, *args, **kwargs):
+
         obj = self.get_object()
 
-        ser = StatusUpdateSerializer(data=request.data, partial=True)
-        ser.is_valid(raise_exception=True)
+        serializer = StatusUpdateSerializer(
+            data=request.data,
+            partial=True
+        )
 
-        new_status = ser.validated_data.get("status")
-        admin_note = ser.validated_data.get("admin_note", "")
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        new_status = serializer.validated_data.get(
+            "status"
+        )
+
+        admin_note = serializer.validated_data.get(
+            "admin_note",
+            ""
+        )
+
+        previous_status = obj.status
+
+        wallet, _ = SilverWallet.objects.get_or_create(
+            user=obj.user
+        )
+
+        # =====================================
+        # تایید واریز
+        # =====================================
+
+        if (
+            previous_status != "COMPLETED"
+            and
+            new_status == "COMPLETED"
+        ):
+
+            wallet.balance += obj.amount
+
+            wallet.save(
+                update_fields=[
+                    "balance",
+                    "updated_at"
+                ]
+            )
+
+        # =====================================
+        # ذخیره وضعیت
+        # =====================================
 
         if new_status:
             obj.status = new_status
+
         if admin_note:
             obj.admin_note = admin_note
+
         obj.save()
 
+        # =====================================
+        # ارسال پیامک
+        # =====================================
+
         sms_sent = None
+
         if admin_note:
+
             sms_sent = send_admin_note_sms(
+
                 mobile=obj.user.mobile,
+
                 note=admin_note
+
             )
 
-        status_text = STATUS_FA.get(new_status, new_status) if new_status else "ویرایش شده"
-        msg = f"وضعیت واریز نقره به {status_text} تغییر کرد"
+        status_text = STATUS_FA.get(
+            new_status,
+            new_status
+        ) if new_status else "ویرایش شده"
+
+        message = f"وضعیت واریز نقره به {status_text} تغییر کرد"
+
         if sms_sent is False:
-            msg += " (ارسال پیامک ناموفق بود)"
+            message += " (ارسال پیامک ناموفق بود)"
+
+        # =====================================
+        # ثبت لاگ ادمین
+        # =====================================
+
+        create_admin_log(
+
+            request=request,
+
+            admin=request.user,
+
+            user=obj.user,
+
+            action_type="SILVER_DEPOSIT_UPDATE",
+
+            action="تغییر وضعیت واریز نقره",
+
+            model_name="SilverFinancialTransaction",
+
+            object_id=obj.id,
+
+            tracking_code=obj.tracking_code,
+
+            response_status=200,
+
+            description=f"""
+
+کد پیگیری:
+{obj.tracking_code}
+
+وضعیت قبلی:
+{previous_status}
+
+وضعیت جدید:
+{obj.status}
+
+مبلغ:
+{obj.amount:,}
+
+موجودی کیف پول:
+{wallet.balance:,}
+
+"""
+
+        )
 
         return success_response(
-            msg,
+
+            message,
+
             {
-                "transaction": SilverFinancialTransactionSerializer(obj).data,
-                "sms_sent": sms_sent,
+
+                "transaction": SilverFinancialTransactionSerializer(
+                    obj
+                ).data,
+
+                "wallet": {
+
+                    "balance": wallet.balance,
+
+                    "blocked_balance": wallet.blocked_balance
+
+                },
+
+                "sms_sent": sms_sent
+
             }
+
         )
+
 
 
 # =========================================================
@@ -3694,6 +4380,7 @@ class SilverAdminViewSet(AdminBaseViewSet):
         
         
  # =========================================================
+
 
 
 # =========================================================

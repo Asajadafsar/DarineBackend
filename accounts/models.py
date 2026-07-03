@@ -109,7 +109,7 @@ class BankCard(models.Model):
     )
 
     shaba_number = models.CharField(
-        max_length=16,
+        max_length=24,
         null=True,
         blank=True,
         verbose_name="شماره شبا"
@@ -193,55 +193,110 @@ class ReferralEarning(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="referrals"
+        related_name="generated_referral_earnings"
     )
 
-    amount = models.DecimalField(max_digits=20, decimal_places=0)
+    source_type = models.CharField(
+        max_length=10,
+        choices=TYPE_CHOICES
+    )
 
-    source_type = models.CharField(max_length=10, choices=TYPE_CHOICES)
+    transaction_amount = models.DecimalField(
+        max_digits=20,
+        decimal_places=0
+    )
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    commission_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2
+    )
 
+    commission_amount = models.DecimalField(
+        max_digits=20,
+        decimal_places=0
+    )
+
+    marketer_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2
+    )
+
+    profit = models.DecimalField(
+        max_digits=20,
+        decimal_places=0
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    def __str__(self):
+        return f"{self.referrer.mobile} -> {self.user.mobile}"
+
+
+from django.db import models
 
 
 class FeeSetting(models.Model):
 
-    # کارمزد معاملات
-    gold_fee = models.DecimalField(
+    # =========================
+    # DEFAULT BUY/SELL FEES
+    # =========================
+
+    gold_buy_fee = models.DecimalField(
         max_digits=5,
-        decimal_places=4,
-        default=0.0099
+        decimal_places=2,
+        default=1.00,
+        help_text="درصد کارمزد خرید طلا"
     )
 
-    silver_fee = models.DecimalField(
+    gold_sell_fee = models.DecimalField(
         max_digits=5,
-        decimal_places=4,
-        default=0.01
+        decimal_places=2,
+        default=1.00,
+        help_text="درصد کارمزد فروش طلا"
     )
 
-    # درصد سود معرف
+    silver_buy_fee = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=1.00,
+        help_text="درصد کارمزد خرید نقره"
+    )
+
+    silver_sell_fee = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=1.00,
+        help_text="درصد کارمزد فروش نقره"
+    )
+
+    # =========================
+    # REFERRAL PERCENT
+    # =========================
+
     gold_referral_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
-        default=20.00
+        default=20.00,
+        help_text="درصد سود معرف از کارمزد طلا"
     )
 
     silver_referral_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
-        default=10.00
+        default=20.00,
+        help_text="درصد سود معرف از کارمزد نقره"
     )
 
-    updated_at = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
 
     def __str__(self):
         return "Fee Settings"
     
-
-
-# accounts/models.py
-
-
+    
 class UserFee(models.Model):
 
     user = models.OneToOneField(
@@ -250,42 +305,33 @@ class UserFee(models.Model):
         related_name="fee"
     )
 
-    # =========================
-    # GOLD FEES (default 0.99%)
-    # =========================
     gold_buy_fee = models.DecimalField(
-        max_digits=6,
-        decimal_places=4,
-        default=0.0099,
-        help_text="کارمزد خرید طلا (0.99%)"
+        max_digits=5,
+        decimal_places=2,
+        default=1.00
     )
 
     gold_sell_fee = models.DecimalField(
-        max_digits=6,
-        decimal_places=4,
-        default=0.0099,
-        help_text="کارمزد فروش طلا (0.99%)"
+        max_digits=5,
+        decimal_places=2,
+        default=1.00
     )
 
-    # =========================
-    # SILVER FEES (default 0.99%)
-    # =========================
     silver_buy_fee = models.DecimalField(
-        max_digits=6,
-        decimal_places=4,
-        default=0.0099,
-        help_text="کارمزد خرید نقره (0.99%)"
+        max_digits=5,
+        decimal_places=2,
+        default=1.00
     )
 
     silver_sell_fee = models.DecimalField(
-        max_digits=6,
-        decimal_places=4,
-        default=0.0099,
-        help_text="کارمزد فروش نقره (0.99%)"
+        max_digits=5,
+        decimal_places=2,
+        default=1.00
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
 
     def __str__(self):
-        return f"Fees - {self.user.mobile}"
+        return self.user.mobile

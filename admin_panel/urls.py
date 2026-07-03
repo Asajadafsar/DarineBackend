@@ -15,12 +15,14 @@ from admin_panel.views import (
     DepositAdminViewSet,
     GiftCardAdminViewSet,
     GoldAdminViewSet,
+    GoldAnnouncementAdminViewSet,
     GoldBankAdminViewSet,
     GoldBannerAdminViewSet,
     GoldPriceOffsetAdminViewSet,
     OrderAdminViewSet,
     ProductAdminViewSet,
     SilverAdminViewSet,
+    SilverAnnouncementAdminViewSet,
     SilverBankAdminViewSet,
     SilverBannerAdminViewSet,
     SilverDepositAdminViewSet,
@@ -63,5 +65,15 @@ urlpatterns = [
     path("analytics/purchase-chart/", AnalyticsPurchaseChartAPIView.as_view(), name="analytics-purchase-chart"),
     path("analytics/buy-sell-chart/", BuySellChartAPIView.as_view(), name="buy-sell-chart"),
 ]
+router.register(
+    r"gold-announcements",
+    GoldAnnouncementAdminViewSet,
+    basename="gold-announcements"
+)
 
+router.register(
+    r"silver-announcements",
+    SilverAnnouncementAdminViewSet,
+    basename="silver-announcements"
+)
 urlpatterns += router.urls

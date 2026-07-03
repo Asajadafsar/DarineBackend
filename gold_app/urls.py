@@ -1,8 +1,10 @@
 from django.urls import path
 
+
 from .views import (
     AssetValueAPIView,
     CoinPriceAPIView,
+    GoldAnnouncementAPIView,
     GoldBannerListAPIView,
     GoldDashboardAPIView,
     GoldDepositInfoAPIView,
@@ -13,8 +15,11 @@ from .views import (
     LatestPriceAPIView,
     ParsianPriceAPIView,
     PhysicalOrderAPIView,
+    PriceAlertLogAPIView,
+    PriceAlertReportAPIView,
     ProductCategoryListAPIView,
     ProductDetailAPIView,
+    TogglePriceAlertAPIView,
     UserAddressCreateAPIView,
     UserAddressListAPIView,
     UserBalanceAPIView,
@@ -204,5 +209,42 @@ path(
     GoldBannerListAPIView.as_view(),
     name="gold-banners"
 ),
+
+
+    path(
+        "announcements/",
+        GoldAnnouncementAPIView.as_view(),
+        name="gold-announcements"
+    ),
+
 path('chart/', GoldChartAPIView.as_view(), name='gold-chart'),
+
+
+    path(
+        "price-alert/",
+        PriceAlertAPIView.as_view()
+    ),
+
+    path(
+        "price-alert/<int:pk>/",
+        DeletePriceAlertAPIView.as_view()
+    ),
+
+    path(
+        "price-alert/<int:pk>/toggle/",
+        TogglePriceAlertAPIView.as_view()
+    ),
+
+    path(
+        "price-alert/report/",
+        PriceAlertReportAPIView.as_view()
+    ),
+
+    path(
+        "price-alert/logs/",
+        PriceAlertLogAPIView.as_view()
+    ),
+
+
+
 ]

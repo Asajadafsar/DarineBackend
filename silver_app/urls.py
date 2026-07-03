@@ -9,6 +9,7 @@ from .views import (
     # =========================
     # DASHBOARD & BALANCE
     # =========================
+    SilverAnnouncementAPIView,
     SilverAssetValueAPIView,
     SilverBannerListAPIView,
     SilverDashboardAPIView,
@@ -140,6 +141,13 @@ path(
     SilverBannerListAPIView.as_view(),
     name="silver-banners"
 ),
+
+
 path('chart/', SilverChartAPIView.as_view(), name='silver-chart'),
+    path(
+        "announcements/",
+        SilverAnnouncementAPIView.as_view(),
+        name="silver-announcements"
+    ),
 ]
 

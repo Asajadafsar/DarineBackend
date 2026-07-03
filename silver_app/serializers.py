@@ -5,6 +5,7 @@ from decimal import Decimal
 from accounts.models import BankCard, ReferralEarning
 from .utils import get_live_silver_price
 from .models import (
+    SilverOrderStatusHistory,
     SilverWallet,
     SilverInventory,
     SilverTransaction,
@@ -285,6 +286,29 @@ class SilverProductSerializer(serializers.ModelSerializer):
         except Exception:
             return int(obj.sell_price or 0)
 
+# =========================================================
+# ORDER STATUS HISTORY
+# =========================================================
+
+class SilverOrderStatusHistorySerializer(serializers.ModelSerializer):
+
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True
+    )
+
+    class Meta:
+        model = SilverOrderStatusHistory
+        fields = [
+            "status",
+            "status_display",
+            "description",
+            "created_at",
+        ]
+
+
+
+
 
 # =========================================================
 # ORDER ITEM
@@ -312,36 +336,72 @@ class SilverOrderItemSerializer(serializers.ModelSerializer):
 # ORDER (CHECKOUT)
 # =========================================================
 
+
 class SilverOrderSerializer(serializers.ModelSerializer):
 
-    items = SilverOrderItemSerializer(many=True, read_only=True)
+    items = SilverOrderItemSerializer(
+        many=True,
+        read_only=True
+    )
 
-    payment_method_display = serializers.CharField(source="get_payment_method_display", read_only=True)
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
-    delivery_type_display = serializers.CharField(source="get_delivery_type_display", read_only=True)
+    payment_method_display = serializers.CharField(
+        source="get_payment_method_display",
+        read_only=True
+    )
+
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True
+    )
+
+    delivery_type_display = serializers.CharField(
+        source="get_delivery_type_display",
+        read_only=True
+    )
+
+    status_history = SilverOrderStatusHistorySerializer(
+        many=True,
+        read_only=True
+    )
 
     class Meta:
         model = SilverOrder
         fields = [
             "id",
+
             "province",
             "city",
             "address",
             "postal_code",
             "plaque",
             "unit",
+
             "payment_method",
             "payment_method_display",
+
             "delivery_type",
             "delivery_type_display",
+
             "status",
             "status_display",
+
             "total_silver_amount",
             "total_toman_amount",
+
             "tracking_code",
+
             "created_at",
-            "items"
+
+            "admin_note",
+
+            "items",
+
+            "status_history",
         ]
+
+
+
+
 
 
 # =========================================================

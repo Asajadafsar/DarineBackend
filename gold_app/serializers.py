@@ -10,6 +10,7 @@ from .models import (
     GoldInventory,
     GoldOrder,
     GoldTransaction,
+    OrderStatusHistory,
     ProductCategory,
     UserAddress,
     Wallet,
@@ -298,6 +299,27 @@ class ProductSerializer(serializers.ModelSerializer):
             return int(obj.sell_price or 0)
 
 
+# =========================================================
+# ORDER STATUS HISTORY
+# =========================================================
+
+class OrderStatusHistorySerializer(serializers.ModelSerializer):
+
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True
+    )
+
+    class Meta:
+        model = OrderStatusHistory
+        fields = [
+            "status",
+            "status_display",
+            "description",
+            "created_at",
+        ]
+        
+        
 
 # =========================================================
 # ORDER ITEM
@@ -325,9 +347,16 @@ class OrderItemSerializer(serializers.ModelSerializer):
 # ORDER
 # =========================================================
 
+# =========================================================
+# ORDER
+# =========================================================
+
 class OrderSerializer(serializers.ModelSerializer):
 
-    items = OrderItemSerializer(many=True, read_only=True)
+    items = OrderItemSerializer(
+        many=True,
+        read_only=True
+    )
 
     payment_method_display = serializers.CharField(
         source="get_payment_method_display",
@@ -344,29 +373,46 @@ class OrderSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    status_history = OrderStatusHistorySerializer(
+        many=True,
+        read_only=True
+    )
+
     class Meta:
         model = Order
         fields = [
             "id",
+
             "province",
             "city",
             "address",
             "postal_code",
             "plaque",
             "unit",
+
             "payment_method",
             "payment_method_display",
+
             "delivery_type",
             "delivery_type_display",
+
             "status",
             "status_display",
+
             "total_gold_amount",
             "total_toman_amount",
-            "tracking_code",
-            "created_at",
-            "items"
-        ]
 
+            "tracking_code",
+
+            "created_at",
+
+            "admin_note",
+
+            "items",
+
+            "status_history",
+        ]
+        
 
 # =========================================================
 # GIFT CARD
@@ -388,40 +434,114 @@ class GiftCardSerializer(serializers.ModelSerializer):
 
 
 
+
 # =========================================================
 # PRICE ALERT SERIALIZER
 # =========================================================
+
+from rest_framework import serializers
+
+from .models import (
+    PriceAlert,
+    PriceAlertLog,
+)
+
 
 class PriceAlertSerializer(serializers.ModelSerializer):
 
     target_price = serializers.DecimalField(
         max_digits=20,
-        decimal_places=5
+        decimal_places=3
     )
 
     alert_type = serializers.ChoiceField(
-        choices=[
-            ('ABOVE', 'بالاتر'),
-            ('BELOW', 'پایین‌تر'),
-        ]
+        choices=PriceAlert.ALERT_CHOICES
     )
+
+    max_notifications = serializers.IntegerField(
+        min_value=1,
+        max_value=1000,
+        error_messages={
+            "required": "تعداد دفعات ارسال الزامی است.",
+            "min_value": "حداقل تعداد ۱ است.",
+            "max_value": "حداکثر تعداد ۱۰۰۰ است.",
+        }
+    )
+
+    remaining_notifications = serializers.SerializerMethodField()
 
     class Meta:
         model = PriceAlert
         fields = [
-            'id',
-            'target_price',
-            'alert_type',
-            'is_active',
-            'created_at'
+            "id",
+            "target_price",
+            "alert_type",
+            "max_notifications",
+            "sent_notifications",
+            "remaining_notifications",
+            "status",
+            "is_active",
+            "triggered",
+            "last_triggered_price",
+            "last_triggered_at",
+            "created_at",
+            "updated_at",
         ]
 
         read_only_fields = [
-            'id',
-            'created_at'
+            "id",
+            "sent_notifications",
+            "remaining_notifications",
+            "status",
+            "triggered",
+            "is_active",
+            "last_triggered_price",
+            "last_triggered_at",
+            "created_at",
+            "updated_at",
         ]
 
+    def get_remaining_notifications(self, obj):
+        return max(
+            obj.max_notifications - obj.sent_notifications,
+            0
+        )
 
+    def validate_target_price(self, value):
+
+        if value <= 0:
+            raise serializers.ValidationError(
+                "قیمت هدف باید بزرگتر از صفر باشد."
+            )
+
+        return value
+
+    def validate_max_notifications(self, value):
+
+        if value < 1:
+            raise serializers.ValidationError(
+                "تعداد دفعات باید حداقل ۱ باشد."
+            )
+
+        return value
+
+
+# =========================================================
+# PRICE ALERT LOG SERIALIZER
+# =========================================================
+
+class PriceAlertLogSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = PriceAlertLog
+        fields = [
+            "id",
+            "price",
+            "sms_cost",
+            "sms_status",
+            "sms_response",
+            "created_at",
+        ]
 
 # =========================================================
 # GIFT CARD ORDER SERIALIZER
@@ -803,92 +923,126 @@ class DepositSerializer(serializers.Serializer):
         return attrs
 
 
+from rest_framework import serializers
+from decimal import Decimal
+
+
 # =========================================================
-# BUY GOLD
+# BUY GOLD SERIALIZER FIX
 # =========================================================
 
 from rest_framework import serializers
+from decimal import Decimal, InvalidOperation
+from rest_framework import serializers
 from decimal import Decimal
+
 
 class BuyGoldSerializer(serializers.Serializer):
 
     payment_method = serializers.ChoiceField(
         choices=[
-            ('WALLET', 'کیف پول'),
-            ('GATEWAY', 'درگاه پرداخت')
+            ("WALLET", "کیف پول"),
+            ("GATEWAY", "درگاه")
         ]
     )
 
     toman = serializers.DecimalField(
-        max_digits=20,
+        max_digits=25,
         decimal_places=2,
         required=False,
         allow_null=True
     )
 
     weight = serializers.DecimalField(
-    max_digits=20,
-    decimal_places=4,
-    required=False,
-    allow_null=True
+        max_digits=20,
+        decimal_places=3,
+        required=False,
+        allow_null=True
     )
 
-    # =========================
-    # CALCULATED FIELDS
-    # =========================
-    fee = None
-    fee_rate = None
-    total_toman = None
-    final_weight = None
 
     def validate(self, attrs):
 
-        toman = attrs.get('toman')
-        weight = attrs.get('weight')
+        toman = attrs.get("toman")
+        weight = attrs.get("weight")
 
-        if not toman and not weight:
-            raise serializers.ValidationError({
-                "message": "مبلغ یا وزن الزامی است"
-            })
+        if toman is None and weight is None:
+            raise serializers.ValidationError(
+                "مبلغ یا وزن الزامی است"
+            )
 
-        request = self.context.get("request")
-        user = request.user
 
-        # =========================
-        # FEE FROM USER SETTINGS
-        # =========================
-        user_fee = getattr(user, "fee", None)
-        fee_rate = user_fee.gold_buy_fee if user_fee else Decimal("0.0099")
+        gold_price = Decimal(
+            str(self.context["gold_price"])
+        )
 
-        attrs["fee_rate"] = fee_rate
+        user = self.context["request"].user
 
-        gold_price = self.context.get("gold_price")
 
-        # =========================
-        # CALCULATION
-        # =========================
-        if toman:
+        user_fee = getattr(
+            user,
+            "fee",
+            None
+        )
 
-            total_toman = Decimal(str(toman))
-            fee = total_toman * fee_rate
-            net = total_toman - fee
+        fee_rate = (
+            user_fee.gold_buy_fee
+            if user_fee
+            else Decimal("0.0099")
+        )
 
-            weight = net / gold_price
+
+        if toman is not None:
+
+            toman = Decimal(str(toman))
+
+            if toman <= 0:
+                raise serializers.ValidationError(
+                    "مبلغ نامعتبر است"
+                )
+
+
+            fee = toman * fee_rate
+
+            pure = toman - fee
+
+            final_weight = pure / gold_price
+
+            total_toman = toman
+
 
         else:
 
             weight = Decimal(str(weight))
+
+            if weight <= 0:
+                raise serializers.ValidationError(
+                    "وزن نامعتبر است"
+                )
+
+
             pure = weight * gold_price
 
             fee = pure * fee_rate
+
             total_toman = pure + fee
 
+            final_weight = weight
+
+
+
         attrs["fee"] = fee
+        attrs["fee_rate"] = fee_rate
         attrs["total_toman"] = total_toman
-        attrs["final_weight"] = weight
+
+        # مهم
+        attrs["final_weight"] = final_weight.quantize(
+            Decimal("0.001")
+        )
+
 
         return attrs
-    
+
 
 
 # =========================================================
@@ -904,6 +1058,7 @@ class SellGoldSerializer(serializers.Serializer):
         allow_null=True
     )
 
+
     weight = serializers.DecimalField(
         max_digits=20,
         decimal_places=4,
@@ -911,52 +1066,98 @@ class SellGoldSerializer(serializers.Serializer):
         allow_null=True
     )
 
+
     fee = None
     fee_rate = None
     final_amount = None
     final_weight = None
 
+
+
     def validate(self, attrs):
 
-        if not attrs.get('toman') and not attrs.get('weight'):
-            raise serializers.ValidationError({
-                "message": "مبلغ یا وزن الزامی است"
-            })
+        toman = attrs.get("toman")
+        weight = attrs.get("weight")
+
+
+        if toman is None and weight is None:
+            raise serializers.ValidationError(
+                "مبلغ یا وزن الزامی است"
+            )
+
+
+        if toman is not None and Decimal(toman) <= 0:
+            raise serializers.ValidationError(
+                "مبلغ نامعتبر است"
+            )
+
+
+        if weight is not None and Decimal(weight) <= 0:
+            raise serializers.ValidationError(
+                "وزن طلا نامعتبر است"
+            )
+
 
         request = self.context.get("request")
         user = request.user
 
+
         user_fee = getattr(user, "fee", None)
-        fee_rate = user_fee.gold_sell_fee if user_fee else Decimal("0.0099")
+
+
+        fee_rate = (
+            user_fee.gold_sell_fee
+            if user_fee
+            else Decimal("0.0099")
+        )
+
+
+        gold_price = Decimal(
+            str(self.context.get("gold_price"))
+        )
+
 
         attrs["fee_rate"] = fee_rate
 
-        gold_price = self.context.get("gold_price")
 
-        if attrs.get("toman"):
 
-            toman = Decimal(str(attrs["toman"]))
+        if toman is not None:
 
-            final_weight = toman / gold_price
+            toman = Decimal(toman)
+
+            final_weight = (
+                toman / gold_price
+            )
+
             fee = toman * fee_rate
-            final_amount = toman - fee
+
+            final_amount = (
+                toman - fee
+            )
+
 
         else:
 
-            final_weight = Decimal(str(attrs["weight"]))
+            final_weight = Decimal(weight)
 
-            pure = final_weight * gold_price
+            pure = (
+                final_weight * gold_price
+            )
+
             fee = pure * fee_rate
-            final_amount = pure - fee
+
+            final_amount = (
+                pure - fee
+            )
+
+
 
         attrs["fee"] = fee
-        attrs["final_amount"] = final_amount
         attrs["final_weight"] = final_weight
+        attrs["final_amount"] = final_amount
+
 
         return attrs
-
-
-
 
 # =========================================================
 # WITHDRAW

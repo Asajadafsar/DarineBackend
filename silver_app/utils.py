@@ -1,5 +1,6 @@
 import uuid
 import logging
+import jdatetime
 import requests
 
 from decimal import Decimal
@@ -86,6 +87,60 @@ def save_silver_price_history():
     return True
 
 
+from datetime import timedelta
+from django.utils import timezone
+
+
+def calculate_silver_price_changes(current_price):
+
+    now = timezone.now()
+
+    day = (
+        SilverPriceHistory.objects.filter(
+            created_at__lte=now - timedelta(hours=24)
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+    week = (
+        SilverPriceHistory.objects.filter(
+            created_at__lte=now - timedelta(days=7)
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+    month = (
+        SilverPriceHistory.objects.filter(
+            created_at__lte=now - timedelta(days=30)
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+    def calc(old):
+
+        if old is None or current_price == 0:
+            return 0
+
+        return round(
+            (
+                (current_price - float(old.price))
+                / current_price
+            ) * 100,
+            2
+        )
+
+    return {
+        "daily": calc(day),
+        "weekly": calc(week),
+        "monthly": calc(month),
+    }
+
+
+
+
 # =========================================================
 # SILVER CHART DATA
 # =========================================================
@@ -102,32 +157,21 @@ from django.db.models.functions import (
 
 from .models import SilverPriceHistory
 
-
-def get_silver_chart_data(filter_type='24H'):
+def get_silver_chart_data(filter_type="24H"):
 
     now = timezone.now()
 
     if filter_type == "24H":
         start_date = now - timedelta(hours=24)
-
-        # مهم
         trunc_fn = TruncMinute
-
-        label_format = "%H:%M"
 
     elif filter_type == "WEEKLY":
         start_date = now - timedelta(days=7)
-
         trunc_fn = TruncHour
-
-        label_format = "%m/%d %H:%M"
 
     else:
         start_date = now - timedelta(days=30)
-
         trunc_fn = TruncDate
-
-        label_format = "%m/%d"
 
     queryset = (
         SilverPriceHistory.objects
@@ -151,16 +195,17 @@ def get_silver_chart_data(filter_type='24H'):
         if item["avg_price"] is None:
             continue
 
+        local_dt = timezone.localtime(item["period"])
+
+        labels.append(
+            local_dt.isoformat(timespec="seconds")
+        )
+
         prices.append(
             int(item["avg_price"])
         )
 
-        labels.append(
-            item["period"].strftime(label_format)
-        )
-
     if not prices:
-
         return {
             "chart": {
                 "labels": [],
@@ -172,6 +217,9 @@ def get_silver_chart_data(filter_type='24H'):
                 "lowest_price": 0,
                 "change_percent": 0,
                 "change_amount": 0,
+                "daily_change_percent": 0,
+                "weekly_change_percent": 0,
+                "monthly_change_percent": 0,
                 "min_y": 0,
                 "max_y": 0
             }
@@ -182,12 +230,17 @@ def get_silver_chart_data(filter_type='24H'):
     lowest_price = min(prices)
     first_price = prices[0]
 
+    changes = calculate_silver_price_changes(current_price)
+
     change_amount = current_price - first_price
 
-    change_percent = round(
-        ((current_price - first_price) / first_price) * 100,
-        2
-    ) if first_price else 0
+    change_percent = (
+        round(
+            ((current_price - first_price) / first_price) * 100,
+            2
+        )
+        if first_price else 0
+    )
 
     price_range = highest_price - lowest_price
 
@@ -208,48 +261,66 @@ def get_silver_chart_data(filter_type='24H'):
             "lowest_price": lowest_price,
             "change_amount": change_amount,
             "change_percent": change_percent,
-            "min_y": max(
-                0,
-                lowest_price - padding
-            ),
+            "daily_change_percent": changes["daily"],
+            "weekly_change_percent": changes["weekly"],
+            "monthly_change_percent": changes["monthly"],
+            "min_y": max(0, lowest_price - padding),
             "max_y": highest_price + padding
         }
     }
 
 
+
 def get_silver_bubble():
-    """
-    حباب نقره نسبت به طلا
-    نسبت تاریخی طلا به نقره: 65
-    """
-    from gold_app.utils import get_live_gold_price
 
-    silver_price = get_live_silver_price()  # تومان per gram
-    gold_price = get_live_gold_price()      # تومان per gram
+    try:
 
-    if not silver_price or not gold_price:
+        from gold_app.utils import get_world_prices
+
+        world = get_world_prices()
+
+        if not world:
+            return None
+
+        market_price = get_live_silver_price()
+
+        if not market_price:
+            return None
+
+        intrinsic = (
+            world["silver_ounce"]
+            * world["usdt"]
+        ) / Decimal("31.1035")
+
+        bubble_amount = market_price - intrinsic
+
+        bubble_percent = round(
+            (
+                bubble_amount
+                / intrinsic
+            ) * 100,
+            2
+        )
+
+        return {
+
+            "market_price": int(market_price),
+
+            "intrinsic_price": int(intrinsic),
+
+            "bubble_amount": int(bubble_amount),
+
+            "bubble_percent": float(bubble_percent),
+
+            "is_positive": bubble_amount > 0
+
+        }
+
+    except Exception as e:
+
+        logger.error(e)
+
         return None
-
-    # نسبت تاریخی طلا به نقره
-    HISTORICAL_RATIO = Decimal("65")
-
-    # قیمت ذاتی نقره بر اساس قیمت طلا
-    intrinsic_price = gold_price / HISTORICAL_RATIO
-
-    # حباب
-    bubble_percent = round(
-        ((silver_price - intrinsic_price) / intrinsic_price) * 100,
-        2
-    )
-
-    return {
-        "silver_price": int(silver_price),
-        "intrinsic_price": int(intrinsic_price),
-        "bubble_percent": float(bubble_percent),
-        "is_positive": bubble_percent > 0,  # مثبت = حباب دارد، منفی = زیر ارزش
-    }
-
-
 
 
 # =========================================================

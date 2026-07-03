@@ -15,16 +15,20 @@ class SilverWallet(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='silver_wallet'
+        related_name="silver_wallet"
     )
 
-    balance = models.DecimalField(
+    # ===========================
+    # TOMAN
+    # ===========================
+
+    accessible_toman = models.DecimalField(
         max_digits=20,
         decimal_places=0,
         default=0
     )
 
-    blocked_balance = models.DecimalField(
+    blocked_toman = models.DecimalField(
         max_digits=20,
         decimal_places=0,
         default=0
@@ -34,9 +38,15 @@ class SilverWallet(models.Model):
         auto_now=True
     )
 
+    @property
+    def toman_total(self):
+        return (
+            self.accessible_toman +
+            self.blocked_toman
+        )
+
     def __str__(self):
         return self.user.mobile
-
 
 # =========================================================
 # SILVER INVENTORY
@@ -47,10 +57,10 @@ class SilverInventory(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='silver_inventory'
+        related_name="silver_inventory"
     )
 
-    balance = models.DecimalField(
+    accessible_balance = models.DecimalField(
         max_digits=20,
         decimal_places=3,
         default=0
@@ -66,10 +76,15 @@ class SilverInventory(models.Model):
         auto_now=True
     )
 
+    @property
+    def total_balance(self):
+        return (
+            self.accessible_balance +
+            self.blocked_balance
+        )
+
     def __str__(self):
         return self.user.mobile
-
-
 # =========================================================
 # SILVER TRANSACTION
 # =========================================================
@@ -113,7 +128,36 @@ class SilverTransaction(models.Model):
         decimal_places=0
     )
 
+    # مبلغ کارمزد
     fee = models.DecimalField(
+        max_digits=20,
+        decimal_places=0,
+        default=0
+    )
+
+    # درصد کارمزد همان لحظه
+    commission_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0
+    )
+
+    # مبلغ کارمزد همان لحظه
+    commission_amount = models.DecimalField(
+        max_digits=20,
+        decimal_places=0,
+        default=0
+    )
+
+    # درصد سود معرف همان لحظه
+    marketer_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0
+    )
+
+    # مبلغ سود معرف همان لحظه
+    profit = models.DecimalField(
         max_digits=20,
         decimal_places=0,
         default=0
@@ -141,7 +185,8 @@ class SilverTransaction(models.Model):
     updated_at = models.DateTimeField(
         auto_now=True
     )
-
+    
+    
 
 # =========================================================
 # FINANCIAL TRANSACTION
@@ -331,24 +376,28 @@ class SilverProduct(models.Model):
 # ORDER
 # =========================================================
 
+# =========================================================
+# ORDER
+# =========================================================
+
 class SilverOrder(models.Model):
 
     PAYMENT_CHOICES = (
-        ('SILVER', 'نقره'),
-        ('TOMAN', 'کیف پول'),
+        ("SILVER", "نقره"),
+        ("TOMAN", "کیف پول"),
     )
 
     DELIVERY_CHOICES = (
-        ('HOME', 'ارسال'),
-        ('IN_PERSON', 'حضوری'),
+        ("HOME", "ارسال"),
+        ("IN_PERSON", "حضوری"),
     )
 
     STATUS_CHOICES = (
-        ('PENDING', 'در انتظار'),
-        ('PROCESSING', 'در حال پردازش'),
-        ('SHIPPED', 'ارسال شده'),
-        ('COMPLETED', 'تکمیل شده'),
-        ('CANCELLED', 'لغو شده'),
+        ("REQUESTED", "درخواست سفارش"),
+        ("PREPARING", "در حال آماده‌سازی"),
+        ("DELIVERING", "در حال تحویل"),
+        ("DELIVERED", "تحویل داده شد"),
+        ("CANCELLED", "لغو شده"),
     )
 
     user = models.ForeignKey(
@@ -397,7 +446,7 @@ class SilverOrder(models.Model):
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
-        default='PENDING'
+        default="REQUESTED"
     )
 
     total_silver_amount = models.DecimalField(
@@ -415,6 +464,11 @@ class SilverOrder(models.Model):
         unique=True
     )
 
+    admin_note = models.TextField(
+        blank=True,
+        null=True
+    )
+
     description = models.TextField(
         blank=True,
         null=True
@@ -428,7 +482,8 @@ class SilverOrder(models.Model):
         auto_now=True
     )
 
-
+    def __str__(self):
+        return self.tracking_code
 # =========================================================
 # ORDER ITEM
 # =========================================================
@@ -458,7 +513,50 @@ class SilverOrderItem(models.Model):
         decimal_places=3
     )
 
+# =========================================================
+# ORDER STATUS HISTORY
+# =========================================================
 
+class SilverOrderStatusHistory(models.Model):
+
+    STATUS_CHOICES = (
+        ("REQUESTED", "درخواست سفارش"),
+        ("PREPARING", "در حال آماده‌سازی"),
+        ("DELIVERING", "در حال تحویل"),
+        ("DELIVERED", "تحویل داده شد"),
+        ("CANCELLED", "لغو شده"),
+    )
+
+    order = models.ForeignKey(
+        SilverOrder,
+        on_delete=models.CASCADE,
+        related_name="status_history"
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    class Meta:
+        ordering = ["created_at"]
+        verbose_name = "مرحله سفارش نقره"
+        verbose_name_plural = "مراحل سفارش نقره"
+
+    def __str__(self):
+        return (
+            f"{self.order.tracking_code} - "
+            f"{self.get_status_display()}"
+        )
 # =========================================================
 # RECENT TRANSACTION
 # =========================================================
