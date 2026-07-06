@@ -2,4 +2,4 @@ from django.apps import AppConfig
 
 
 class GoldAppConfig(AppConfig):
-    name = 'gold_app'
+    name = "gold_app"

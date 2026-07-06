@@ -6,30 +6,30 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('gold_app', '0019_rename_balance_wallet_accessible_toman_and_more'),
+        ("gold_app", "0019_rename_balance_wallet_accessible_toman_and_more"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='goldinventory',
-            name='balance',
+            model_name="goldinventory",
+            name="balance",
         ),
         migrations.RemoveField(
-            model_name='wallet',
-            name='accessible_gold',
+            model_name="wallet",
+            name="accessible_gold",
         ),
         migrations.RemoveField(
-            model_name='wallet',
-            name='blocked_gold',
+            model_name="wallet",
+            name="blocked_gold",
         ),
         migrations.AddField(
-            model_name='goldinventory',
-            name='accessible_balance',
+            model_name="goldinventory",
+            name="accessible_balance",
             field=models.DecimalField(decimal_places=3, default=0, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='goldinventory',
-            name='blocked_balance',
+            model_name="goldinventory",
+            name="blocked_balance",
             field=models.DecimalField(decimal_places=3, default=0, max_digits=20),
         ),
     ]

@@ -6,13 +6,18 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('admin_panel', '0007_remove_manualsilverprice_set_by_goldpriceoffset_and_more'),
+        (
+            "admin_panel",
+            "0007_remove_manualsilverprice_set_by_goldpriceoffset_and_more",
+        ),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='adminlog',
-            name='ip_address',
-            field=models.GenericIPAddressField(blank=True, null=True, verbose_name='IP Address'),
+            model_name="adminlog",
+            name="ip_address",
+            field=models.GenericIPAddressField(
+                blank=True, null=True, verbose_name="IP Address"
+            ),
         ),
     ]

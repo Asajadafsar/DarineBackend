@@ -1,22 +1,18 @@
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.exceptions import AuthenticationFailed
 
 
 class CookieJWTAuthentication(JWTAuthentication):
 
     def authenticate(self, request):
 
-        access_token = request.COOKIES.get("accessToken")
+        token = request.COOKIES.get("accessToken")
 
-        if access_token is None:
+        if not token:
             return None
 
-        try:
-            validated_token = self.get_validated_token(access_token)
+        validated = self.get_validated_token(token)
 
-            user = self.get_user(validated_token)
-
-            return (user, validated_token)
-
-        except Exception:
-            raise AuthenticationFailed("Invalid token")
+        return (
+            self.get_user(validated),
+            validated,
+        )

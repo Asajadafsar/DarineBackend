@@ -2,4 +2,4 @@ from django.apps import AppConfig
 
 
 class SilverAppConfig(AppConfig):
-    name = 'silver_app'
+    name = "silver_app"

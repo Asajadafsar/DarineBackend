@@ -7,34 +7,56 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0007_userfee'),
+        ("accounts", "0007_userfee"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='userfee',
-            name='created_at',
-            field=models.DateTimeField(auto_now_add=True, default=django.utils.timezone.now),
+            model_name="userfee",
+            name="created_at",
+            field=models.DateTimeField(
+                auto_now_add=True, default=django.utils.timezone.now
+            ),
             preserve_default=False,
         ),
         migrations.AlterField(
-            model_name='userfee',
-            name='gold_buy_fee',
-            field=models.DecimalField(decimal_places=4, default=0.0099, help_text='کارمزد خرید طلا (0.99%)', max_digits=6),
+            model_name="userfee",
+            name="gold_buy_fee",
+            field=models.DecimalField(
+                decimal_places=4,
+                default=0.0099,
+                help_text="کارمزد خرید طلا (0.99%)",
+                max_digits=6,
+            ),
         ),
         migrations.AlterField(
-            model_name='userfee',
-            name='gold_sell_fee',
-            field=models.DecimalField(decimal_places=4, default=0.0099, help_text='کارمزد فروش طلا (0.99%)', max_digits=6),
+            model_name="userfee",
+            name="gold_sell_fee",
+            field=models.DecimalField(
+                decimal_places=4,
+                default=0.0099,
+                help_text="کارمزد فروش طلا (0.99%)",
+                max_digits=6,
+            ),
         ),
         migrations.AlterField(
-            model_name='userfee',
-            name='silver_buy_fee',
-            field=models.DecimalField(decimal_places=4, default=0.0099, help_text='کارمزد خرید نقره (0.99%)', max_digits=6),
+            model_name="userfee",
+            name="silver_buy_fee",
+            field=models.DecimalField(
+                decimal_places=4,
+                default=0.0099,
+                help_text="کارمزد خرید نقره (0.99%)",
+                max_digits=6,
+            ),
         ),
         migrations.AlterField(
-            model_name='userfee',
-            name='silver_sell_fee',
-            field=models.DecimalField(decimal_places=4, default=0.0099, help_text='کارمزد فروش نقره (0.99%)', max_digits=6),
+            model_name="userfee",
+            name="silver_sell_fee",
+            field=models.DecimalField(
+                decimal_places=4,
+                default=0.0099,
+                help_text="کارمزد فروش نقره (0.99%)",
+                max_digits=6,
+            ),
         ),
     ]

@@ -6,22 +6,29 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0009_remove_cooperationrequest_email_and_more'),
+        ("accounts", "0009_remove_cooperationrequest_email_and_more"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='bankcard',
-            options={'verbose_name': 'اطلاعات بانکی', 'verbose_name_plural': 'اطلاعات بانکی'},
+            name="bankcard",
+            options={
+                "verbose_name": "اطلاعات بانکی",
+                "verbose_name_plural": "اطلاعات بانکی",
+            },
         ),
         migrations.AddField(
-            model_name='bankcard',
-            name='shaba_number',
-            field=models.CharField(blank=True, max_length=26, null=True, verbose_name='شماره شبا'),
+            model_name="bankcard",
+            name="shaba_number",
+            field=models.CharField(
+                blank=True, max_length=26, null=True, verbose_name="شماره شبا"
+            ),
         ),
         migrations.AlterField(
-            model_name='bankcard',
-            name='card_number',
-            field=models.CharField(blank=True, max_length=16, null=True, verbose_name='شماره کارت'),
+            model_name="bankcard",
+            name="card_number",
+            field=models.CharField(
+                blank=True, max_length=16, null=True, verbose_name="شماره کارت"
+            ),
         ),
     ]

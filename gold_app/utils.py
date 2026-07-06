@@ -2,32 +2,25 @@
 
 import uuid
 import logging
-import jdatetime
 import requests
 from decimal import Decimal, ROUND_DOWN
-from decimal import Decimal
 from datetime import timedelta
 
 from django.utils import timezone
 
 from .models import GoldPriceHistory
 
-
 logger = logging.getLogger(__name__)
+
 
 def round_gold(value):
     try:
         return float(
-            Decimal(str(value)).quantize(
-                Decimal("0.001"),
-                rounding=ROUND_DOWN
-            )
+            Decimal(str(value)).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
         )
     except:
         return 0
 
-from decimal import Decimal
-import requests
 
 ABAN_URL = "https://api.abantether.com/api/v2/manager/coins"
 
@@ -64,20 +57,13 @@ def get_world_prices():
 
                 gold_ounce = Decimal(str(coin["tether_price"]))
 
-        silver_res = requests.get(
-            SILVER_OUNCE_URL,
-            timeout=10
-        )
+        silver_res = requests.get(SILVER_OUNCE_URL, timeout=10)
 
         silver_res.raise_for_status()
 
         silver_json = silver_res.json()
 
-        silver_ounce = Decimal(
-            str(
-                silver_json["data"][0]["close"]
-            )
-        )
+        silver_ounce = Decimal(str(silver_json["data"][0]["close"]))
 
         return {
             "usdt": usdt,
@@ -92,16 +78,13 @@ def get_world_prices():
         return None
 
 
-
 # =========================================================
 # GOLD PRICE
 # =========================================================
 
+
 def get_live_gold_price():
-    url = (
-        "https://api.wallgold.ir/api/v1/"
-        "price?side=buy&symbol=GLD_18C_750TMN"
-    )
+    url = "https://api.wallgold.ir/api/v1/" "price?side=buy&symbol=GLD_18C_750TMN"
 
     try:
         response = requests.get(url, timeout=10)
@@ -112,11 +95,11 @@ def get_live_gold_price():
 
         data = response.json()
 
-        if not data.get('success'):
+        if not data.get("success"):
             logger.error("Gold API success=False")
             return None
 
-        price = Decimal(str(data['result']['price']))
+        price = Decimal(str(data["result"]["price"]))
 
     except Exception as e:
         logger.error(f"Gold Price Error: {str(e)}")
@@ -125,18 +108,20 @@ def get_live_gold_price():
     # offset
     try:
         from admin_panel.models import GoldPriceOffset
-        offset = GoldPriceOffset.objects.filter(
-            is_active=True
-        ).first()
+
+        offset = GoldPriceOffset.objects.filter(is_active=True).first()
         if offset:
             price = price + offset.offset_amount
     except Exception:
         pass
 
     return price
+
+
 # =========================================================
 # SAVE HISTORY
 # =========================================================
+
 
 def save_gold_price_history():
     price = get_live_gold_price()
@@ -155,36 +140,24 @@ def save_gold_price_history():
     return True
 
 
-
-
-from datetime import timedelta
-from django.utils import timezone
-
-
 def calculate_gold_price_changes(current_price):
 
     now = timezone.now()
 
     day = (
-        GoldPriceHistory.objects.filter(
-            created_at__lte=now - timedelta(hours=24)
-        )
+        GoldPriceHistory.objects.filter(created_at__lte=now - timedelta(hours=24))
         .order_by("-created_at")
         .first()
     )
 
     week = (
-        GoldPriceHistory.objects.filter(
-            created_at__lte=now - timedelta(days=7)
-        )
+        GoldPriceHistory.objects.filter(created_at__lte=now - timedelta(days=7))
         .order_by("-created_at")
         .first()
     )
 
     month = (
-        GoldPriceHistory.objects.filter(
-            created_at__lte=now - timedelta(days=30)
-        )
+        GoldPriceHistory.objects.filter(created_at__lte=now - timedelta(days=30))
         .order_by("-created_at")
         .first()
     )
@@ -194,19 +167,15 @@ def calculate_gold_price_changes(current_price):
         if old is None or current_price == 0:
             return 0
 
-        return round(
-            (
-                (current_price - float(old.price))
-                / current_price
-            ) * 100,
-            2
-        )
+        return round(((current_price - float(old.price)) / current_price) * 100, 2)
 
     return {
         "daily": calc(day),
         "weekly": calc(week),
         "monthly": calc(month),
     }
+
+
 # =========================================================
 # GOLD CHART DATA
 # =========================================================
@@ -217,32 +186,57 @@ from django.db.models.functions import TruncHour, TruncMinute, TruncDate
 
 from django.db.models import Avg
 from django.db.models.functions import TruncHour, TruncMinute, TruncDate
+from datetime import timedelta
+from django.utils import timezone
+
+from datetime import timedelta, datetime
+
+from django.utils import timezone
+from django.db.models import Avg
+from django.db.models.functions import TruncHour, TruncDate
+
+from .models import GoldPriceHistory
+from .utils import calculate_gold_price_changes
+
 
 def get_gold_chart_data(filter_type="24H"):
 
     now = timezone.now()
+    current_tz = timezone.get_current_timezone()
+
+    # =====================================================
+    # TIME FRAME + GROUPING STRATEGY
+    # =====================================================
 
     if filter_type == "24H":
         start_date = now - timedelta(hours=24)
-        trunc_fn = TruncMinute
+        trunc_fn = TruncHour
+        is_hourly = True
 
     elif filter_type == "WEEKLY":
         start_date = now - timedelta(days=7)
-        trunc_fn = TruncHour
+        trunc_fn = TruncHour   # 👈 اصلاح مهم
 
-    else:
+        is_hourly = True
+
+    elif filter_type == "MONTHLY":
         start_date = now - timedelta(days=30)
         trunc_fn = TruncDate
+        is_hourly = False
+
+    else:
+        start_date = now - timedelta(hours=24)
+        trunc_fn = TruncHour
+        is_hourly = True
+
+    # =====================================================
+    # QUERY
+    # =====================================================
 
     queryset = (
         GoldPriceHistory.objects
         .filter(created_at__gte=start_date)
-        .annotate(
-            period=trunc_fn(
-                "created_at",
-                tzinfo=timezone.get_current_timezone()
-            )
-        )
+        .annotate(period=trunc_fn("created_at"))
         .values("period")
         .annotate(avg_price=Avg("price"))
         .order_by("period")
@@ -251,40 +245,70 @@ def get_gold_chart_data(filter_type="24H"):
     labels = []
     prices = []
 
+    # =====================================================
+    # FORMAT PERIOD (FIX TIMEZONE BUG)
+    # =====================================================
+
     for item in queryset:
 
         if item["avg_price"] is None:
             continue
 
-        local_dt = timezone.localtime(item["period"])
+        period = item["period"]
 
-        labels.append(
-            local_dt.isoformat(timespec="seconds")
-        )
+        # -----------------------------
+        # FIX: date vs datetime handling
+        # -----------------------------
+        if isinstance(period, datetime):
 
-        prices.append(
-            int(item["avg_price"])
-        )
+            if timezone.is_naive(period):
+                period = timezone.make_aware(period, current_tz)
+            else:
+                period = timezone.localtime(period)
+
+        else:
+            # date -> datetime
+            period = datetime.combine(period, datetime.min.time())
+            period = timezone.make_aware(period, current_tz)
+
+        # =================================================
+        # LABEL FORMAT
+        # =================================================
+
+        if is_hourly:
+            labels.append(period.isoformat(timespec="seconds"))
+        else:
+            labels.append(period.strftime("%Y-%m-%d"))
+
+        prices.append(int(item["avg_price"]))
+
+    # =====================================================
+    # EMPTY SAFE RESPONSE
+    # =====================================================
 
     if not prices:
         return {
             "chart": {
                 "labels": [],
-                "prices": []
+                "prices": [],
             },
             "stats": {
                 "current_price": 0,
                 "highest_price": 0,
                 "lowest_price": 0,
-                "change_percent": 0,
                 "change_amount": 0,
+                "change_percent": 0,
                 "daily_change_percent": 0,
                 "weekly_change_percent": 0,
                 "monthly_change_percent": 0,
                 "min_y": 0,
-                "max_y": 0
-            }
+                "max_y": 0,
+            },
         }
+
+    # =====================================================
+    # STATS
+    # =====================================================
 
     current_price = prices[-1]
     highest_price = max(prices)
@@ -296,15 +320,11 @@ def get_gold_chart_data(filter_type="24H"):
     change_amount = current_price - first_price
 
     change_percent = (
-        round(
-            ((current_price - first_price) / first_price) * 100,
-            2
-        )
+        round(((current_price - first_price) / first_price) * 100, 2)
         if first_price else 0
     )
 
     price_range = highest_price - lowest_price
-
     padding = (
         int(price_range * 0.1)
         if price_range
@@ -314,7 +334,7 @@ def get_gold_chart_data(filter_type="24H"):
     return {
         "chart": {
             "labels": labels,
-            "prices": prices
+            "prices": prices,
         },
         "stats": {
             "current_price": current_price,
@@ -326,10 +346,9 @@ def get_gold_chart_data(filter_type="24H"):
             "weekly_change_percent": changes["weekly"],
             "monthly_change_percent": changes["monthly"],
             "min_y": max(0, lowest_price - padding),
-            "max_y": highest_price + padding
-        }
+            "max_y": highest_price + padding,
+        },
     }
-
 
 def get_gold_bubble():
 
@@ -345,34 +364,20 @@ def get_gold_bubble():
         if not market_price:
             return None
 
-        intrinsic = (
-            world["gold_ounce"]
-            * world["usdt"]
-            * Decimal("0.750")
-        ) / Decimal("31.1035")
+        intrinsic = (world["gold_ounce"] * world["usdt"] * Decimal("0.750")) / Decimal(
+            "31.1035"
+        )
 
         bubble_amount = market_price - intrinsic
 
-        bubble_percent = round(
-            (
-                bubble_amount
-                / intrinsic
-            ) * 100,
-            2
-        )
+        bubble_percent = round((bubble_amount / intrinsic) * 100, 2)
 
         return {
-
             "market_price": int(market_price),
-
             "intrinsic_price": int(intrinsic),
-
             "bubble_amount": int(bubble_amount),
-
             "bubble_percent": float(bubble_percent),
-
-            "is_positive": bubble_amount > 0
-
+            "is_positive": bubble_amount > 0,
         }
 
     except Exception as e:
@@ -382,31 +387,20 @@ def get_gold_bubble():
         return None
 
 
-
-
-
-
 # =========================================================
 # FILTER DATE
 # =========================================================
 
-def filter_by_date(
-    queryset,
-    start_date=None,
-    end_date=None
-):
+
+def filter_by_date(queryset, start_date=None, end_date=None):
 
     if start_date:
 
-        queryset = queryset.filter(
-            created_at__date__gte=start_date
-        )
+        queryset = queryset.filter(created_at__date__gte=start_date)
 
     if end_date:
 
-        queryset = queryset.filter(
-            created_at__date__lte=end_date
-        )
+        queryset = queryset.filter(created_at__date__lte=end_date)
 
     return queryset
 
@@ -415,16 +409,12 @@ def filter_by_date(
 # FILTER STATUS
 # =========================================================
 
-def filter_by_status(
-    queryset,
-    status=None
-):
+
+def filter_by_status(queryset, status=None):
 
     if status:
 
-        queryset = queryset.filter(
-            status=status
-        )
+        queryset = queryset.filter(status=status)
 
     return queryset
 
@@ -433,23 +423,18 @@ def filter_by_status(
 # TRACKING CODE
 # =========================================================
 
-def generate_tracking_code(
-    prefix='GLD'
-):
 
-    random_part = str(
-        uuid.uuid4()
-    ).split('-')[0]
+def generate_tracking_code(prefix="GLD"):
 
-    return (
-        f"{prefix}-"
-        f"{random_part.upper()}"
-    )
+    random_part = str(uuid.uuid4()).split("-")[0]
+
+    return f"{prefix}-" f"{random_part.upper()}"
 
 
 # =========================================================
 # BUY CALC (SAFE - NO UNPACK)
 # =========================================================
+
 
 def calculate_buy_gold(toman_amount=None, weight_amount=None, fee_rate=Decimal("0.01")):
     price = get_live_gold_price()
@@ -470,7 +455,7 @@ def calculate_buy_gold(toman_amount=None, weight_amount=None, fee_rate=Decimal("
             "price_per_gram": int(price),
             "weight": round_gold(weight),
             "fee": round(fee),
-            "total_toman": round(total_toman)
+            "total_toman": round(total_toman),
         }
 
     weight = Decimal(str(weight_amount))
@@ -479,10 +464,10 @@ def calculate_buy_gold(toman_amount=None, weight_amount=None, fee_rate=Decimal("
     total = base + fee
 
     return {
-        "price_per_gram":  int(price),
+        "price_per_gram": int(price),
         "weight": round_gold(weight),
         "fee": round(fee),
-        "total_toman":  round(total)
+        "total_toman": round(total),
     }
 
 
@@ -490,89 +475,60 @@ def calculate_buy_gold(toman_amount=None, weight_amount=None, fee_rate=Decimal("
 # SELL GOLD CALC
 # =========================================================
 
+
 def calculate_sell_gold(
-    toman_amount=None,
-    weight_amount=None,
-    fee_rate=Decimal('0.01')
+    toman_amount=None, weight_amount=None, fee_rate=Decimal("0.01")
 ):
 
-    price_per_gram = (
-        get_live_gold_price()
-    )
+    price_per_gram = get_live_gold_price()
 
     if not price_per_gram:
         return None
 
     if toman_amount:
 
-        total_toman = Decimal(
-            str(toman_amount)
-        )
+        total_toman = Decimal(str(toman_amount))
 
-        weight = (
-            total_toman / price_per_gram
-        )
+        weight = total_toman / price_per_gram
 
-        fee = (
-            total_toman * fee_rate
-        )
+        fee = total_toman * fee_rate
 
-        final_amount = (
-            total_toman - fee
-        )
+        final_amount = total_toman - fee
 
     else:
 
-        weight = Decimal(
-            str(weight_amount)
-        )
+        weight = Decimal(str(weight_amount))
 
-        pure_price = (
-            weight * price_per_gram
-        )
+        pure_price = weight * price_per_gram
 
-        fee = (
-            pure_price * fee_rate
-        )
+        fee = pure_price * fee_rate
 
-        final_amount = (
-            pure_price - fee
-        )
+        final_amount = pure_price - fee
 
     return {
-    "price_per_gram": int(price_per_gram),
-    "weight": round_gold(weight),
-    "fee": round(fee),
-    "final_amount": round(final_amount)
-}
+        "price_per_gram": int(price_per_gram),
+        "weight": round_gold(weight),
+        "fee": round(fee),
+        "final_amount": round(final_amount),
+    }
 
 
 # =========================================================
 # MONEY FORMAT
 # =========================================================
 
+
 def format_money(amount):
 
     try:
 
-        return "{:,}".format(
-            int(amount)
-        )
+        return "{:,}".format(int(amount))
 
     except Exception:
 
         return "0"
-    
 
 
-
-
-
-
-
-
-
-import requests
 import logging
 import re
 

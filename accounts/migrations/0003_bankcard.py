@@ -8,23 +8,50 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0002_user_birth_date_user_referral_code_user_referred_by'),
+        ("accounts", "0002_user_birth_date_user_referral_code_user_referred_by"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='BankCard',
+            name="BankCard",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('card_number', models.CharField(max_length=16, verbose_name='شماره کارت')),
-                ('bank_name', models.CharField(blank=True, max_length=50, null=True, verbose_name='نام بانک')),
-                ('is_active', models.BooleanField(default=True, verbose_name='وضعیت فعال')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='cards', to=settings.AUTH_USER_MODEL, verbose_name='کاربر')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "card_number",
+                    models.CharField(max_length=16, verbose_name="شماره کارت"),
+                ),
+                (
+                    "bank_name",
+                    models.CharField(
+                        blank=True, max_length=50, null=True, verbose_name="نام بانک"
+                    ),
+                ),
+                (
+                    "is_active",
+                    models.BooleanField(default=True, verbose_name="وضعیت فعال"),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="cards",
+                        to=settings.AUTH_USER_MODEL,
+                        verbose_name="کاربر",
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'کارت بانکی',
-                'verbose_name_plural': 'کارت\u200cهای بانکی',
+                "verbose_name": "کارت بانکی",
+                "verbose_name_plural": "کارت\u200cهای بانکی",
             },
         ),
     ]

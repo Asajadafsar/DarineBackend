@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('silver_app', '0002_silverbankinfo'),
+        ("silver_app", "0002_silverbankinfo"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='silverproduct',
-            name='profit_percent',
+            model_name="silverproduct",
+            name="profit_percent",
             field=models.DecimalField(decimal_places=2, default=0, max_digits=5),
         ),
     ]

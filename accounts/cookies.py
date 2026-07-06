@@ -1,66 +1,79 @@
-# accounts/cookies.py
-
-from django.conf import settings
 import os
+
+ACCESS_COOKIE = "accessToken"
+REFRESH_COOKIE = "refreshToken"
 
 
 def is_production():
+    return os.getenv("ENV") == "production"
 
-    return os.environ.get("ENV") == "production"
 
-def set_auth_cookies(
-    response,
-    access_token,
-    refresh_token
-):
+def cookie_settings():
 
-    prod = is_production()
+    if is_production():
+        return {
+            "domain": ".darine.shop",
+            "secure": True,
+            "samesite": "None",
+        }
 
-    cookie_domain = ".darine.shop" if prod else None
+    return {
+        "domain": None,
+        "secure": False,
+        "samesite": "Lax",
+    }
 
-    secure = prod
 
-    samesite = "None" if prod else "Lax"
+def set_auth_cookies(response, access, refresh):
+
+    config = cookie_settings()
 
     response.set_cookie(
-        key="accessToken",
-        value=access_token,
+        ACCESS_COOKIE,
+        access,
         httponly=True,
-        secure=secure,
-        samesite=samesite,
-        domain=cookie_domain,
+        secure=config["secure"],
+        samesite=config["samesite"],
+        domain=config["domain"],
         path="/",
-        max_age=60 * 60 * 24
+        max_age=86400,
     )
 
     response.set_cookie(
-        key="refreshToken",
-        value=refresh_token,
+        REFRESH_COOKIE,
+        refresh,
         httponly=True,
-        secure=secure,
-        samesite=samesite,
-        domain=cookie_domain,
+        secure=config["secure"],
+        samesite=config["samesite"],
+        domain=config["domain"],
         path="/",
-        max_age=60 * 60 * 24 * 7
+        max_age=604800,
     )
 
     return response
+
+
 def clear_auth_cookies(response):
 
-    prod = is_production()
+    cookies = [
+        "accessToken",
+        "refreshToken",
+    ]
 
-    cookie_domain = ".darine.shop" if prod else None
+    domains = [
+        None,
+        "api.darine.shop",
+        "gold.darine.shop",
+        "silver.darine.shop",
+        ".darine.shop",
+    ]
 
-    response.delete_cookie(
-        key="accessToken",
-        domain=cookie_domain,
-        path="/"
-    )
-
-    response.delete_cookie(
-        key="refreshToken",
-        domain=cookie_domain,
-        path="/"
-    )
+    for cookie in cookies:
+        for domain in domains:
+            response.delete_cookie(
+                key=cookie,
+                path="/",
+                domain=domain,
+            )
 
     return response

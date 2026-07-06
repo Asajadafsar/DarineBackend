@@ -6,13 +6,25 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('admin_panel', '0001_initial'),
+        ("admin_panel", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='adminlog',
-            name='action_type',
-            field=models.CharField(choices=[('BUY', 'خرید'), ('SELL', 'فروش'), ('USER', 'کاربر'), ('FINANCIAL', 'مالی'), ('SERVER', 'سرور'), ('ORDER', 'سفارش'), ('OTHER', 'سایر')], default='OTHER', max_length=30),
+            model_name="adminlog",
+            name="action_type",
+            field=models.CharField(
+                choices=[
+                    ("BUY", "خرید"),
+                    ("SELL", "فروش"),
+                    ("USER", "کاربر"),
+                    ("FINANCIAL", "مالی"),
+                    ("SERVER", "سرور"),
+                    ("ORDER", "سفارش"),
+                    ("OTHER", "سایر"),
+                ],
+                default="OTHER",
+                max_length=30,
+            ),
         ),
     ]

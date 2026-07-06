@@ -23,13 +23,13 @@ from .models import (
     PriceAlert,
     GoldPriceHistory,
     PurchaseCredit,
-    AutoSavingPlan
+    AutoSavingPlan,
 )
-
 
 # =========================================================
 # BASE RESPONSE SERIALIZER
 # =========================================================
+
 
 class MessageResponseSerializer(serializers.Serializer):
 
@@ -40,22 +40,18 @@ class MessageResponseSerializer(serializers.Serializer):
 # BANK CARD
 # =========================================================
 
+
 class BankCardSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BankCard
-        fields = [
-            'id',
-            'card_number',
-            'bank_name',
-            'is_active',
-            'created_at'
-        ]
+        fields = ["id", "card_number", "bank_name", "is_active", "created_at"]
 
 
 # =========================================================
 # WALLET & INVENTORY
 # =========================================================
+
 
 class WalletSerializer(serializers.ModelSerializer):
 
@@ -63,18 +59,11 @@ class WalletSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Wallet
-        fields = [
-            'balance',
-            'blocked_balance',
-            'available_balance',
-            'updated_at'
-        ]
+        fields = ["balance", "blocked_balance", "available_balance", "updated_at"]
 
     def get_available_balance(self, obj):
 
-        return int(
-            obj.balance - obj.blocked_balance
-        )
+        return int(obj.balance - obj.blocked_balance)
 
 
 class GoldInventorySerializer(serializers.ModelSerializer):
@@ -83,74 +72,60 @@ class GoldInventorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = GoldInventory
-        fields = [
-            'balance',
-            'blocked_balance',
-            'available_balance',
-            'updated_at'
-        ]
+        fields = ["balance", "blocked_balance", "available_balance", "updated_at"]
 
     def get_available_balance(self, obj):
 
-        return round(
-            obj.balance - obj.blocked_balance,
-            5
-        )
+        return round(obj.balance - obj.blocked_balance, 5)
 
 
 # =========================================================
 # GOLD TRANSACTION
 # =========================================================
 
+
 class GoldTransactionSerializer(serializers.ModelSerializer):
 
-    type_display = serializers.CharField(
-        source='get_type_display',
-        read_only=True
-    )
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
 
-    status_display = serializers.CharField(
-        source='get_status_display',
-        read_only=True
-    )
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     final_price = serializers.SerializerMethodField()
 
     class Meta:
         model = GoldTransaction
         fields = [
-            'id',
-            'type',
-            'type_display',
-            'status',
-            'status_display',
-            'amount_gr',
-            'price_per_gram',
-            'fee',
-            'total_amount',
-            'final_price',
-            'tracking_code',
-            'description',
-            'created_at',
-            'updated_at'
+            "id",
+            "type",
+            "type_display",
+            "status",
+            "status_display",
+            "amount_gr",
+            "price_per_gram",
+            "fee",
+            "total_amount",
+            "final_price",
+            "tracking_code",
+            "description",
+            "created_at",
+            "updated_at",
         ]
 
     def get_final_price(self, obj):
 
-        return int(
-            obj.total_amount - obj.fee
-        )
+        return int(obj.total_amount - obj.fee)
 
 
 # =========================================================
 # FINANCIAL TRANSACTION
 # =========================================================
 
+
 class FinancialTransactionSerializer(serializers.ModelSerializer):
 
-    type_display = serializers.CharField(source='get_type_display', read_only=True)
-    method_display = serializers.CharField(source='get_method_display', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    method_display = serializers.CharField(source="get_method_display", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     user_card_number = serializers.SerializerMethodField()
     receipt_image_url = serializers.SerializerMethodField()
@@ -158,23 +133,23 @@ class FinancialTransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = FinancialTransaction
         fields = [
-            'id',
-            'amount',
-            'type',
-            'type_display',
-            'method',
-            'method_display',
-            'status',
-            'status_display',
-            'receipt_image',        # optional (raw)
-            'receipt_image_url',    # 👈 NEW FIX
-            'user_card',
-            'user_card_number',
-            'admin_note',
-            'tracking_code',
-            'description',
-            'created_at',
-            'updated_at'
+            "id",
+            "amount",
+            "type",
+            "type_display",
+            "method",
+            "method_display",
+            "status",
+            "status_display",
+            "receipt_image",  # optional (raw)
+            "receipt_image_url",  # 👈 NEW FIX
+            "user_card",
+            "user_card_number",
+            "admin_note",
+            "tracking_code",
+            "description",
+            "created_at",
+            "updated_at",
         ]
 
     def get_user_card_number(self, obj):
@@ -198,16 +173,12 @@ class FinancialTransactionSerializer(serializers.ModelSerializer):
 # =========================================================
 # PRODUCT
 # =========================================================
-from decimal import Decimal
 from rest_framework import serializers
 
 
 class ProductSerializer(serializers.ModelSerializer):
 
-    category_name = serializers.CharField(
-        source="category.name",
-        read_only=True
-    )
+    category_name = serializers.CharField(source="category.name", read_only=True)
 
     image_url = serializers.SerializerMethodField()
 
@@ -222,31 +193,21 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
-
             "category",
             "category_name",
-
             "delivery_type",
-
             # وزن خالص
             "weight",
-
             # مقدار وزنی
             "product_weight_with_fee",
-
             # قیمت نهایی
             "sell_price",
             "total_price",
-
             "inventory_count",
-
             "image",
             "image_url",
-
             "description",
-
             "is_active",
-
             "created_at",
         ]
 
@@ -258,9 +219,7 @@ class ProductSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
 
         if request:
-            return request.build_absolute_uri(
-                obj.image.url
-            )
+            return request.build_absolute_uri(obj.image.url)
 
         return obj.image.url
 
@@ -270,16 +229,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
             return float(
                 Decimal(str(obj.weight))
-                *
-                (
-                    Decimal("1")
-                    +
-                    (
-                        Decimal(str(obj.profit_percent))
-                        /
-                        Decimal("100")
-                    )
-                )
+                * (Decimal("1") + (Decimal(str(obj.profit_percent)) / Decimal("100")))
             )
 
         except Exception:
@@ -290,9 +240,8 @@ class ProductSerializer(serializers.ModelSerializer):
             live_price = get_live_gold_price()
             if not live_price:
                 return int(obj.sell_price or 0)
-            total_price = (
-                Decimal(str(obj.total_weight_with_fees))
-                * Decimal(str(live_price))
+            total_price = Decimal(str(obj.total_weight_with_fees)) * Decimal(
+                str(live_price)
             )
             return int(total_price)
         except Exception:
@@ -303,12 +252,10 @@ class ProductSerializer(serializers.ModelSerializer):
 # ORDER STATUS HISTORY
 # =========================================================
 
+
 class OrderStatusHistorySerializer(serializers.ModelSerializer):
 
-    status_display = serializers.CharField(
-        source="get_status_display",
-        read_only=True
-    )
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     class Meta:
         model = OrderStatusHistory
@@ -318,12 +265,12 @@ class OrderStatusHistorySerializer(serializers.ModelSerializer):
             "description",
             "created_at",
         ]
-        
-        
+
 
 # =========================================================
 # ORDER ITEM
 # =========================================================
+
 
 class OrderItemSerializer(serializers.ModelSerializer):
 
@@ -339,10 +286,10 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "product_image",
             "quantity",
             "price_at_time",
-            "weight_at_time"
+            "weight_at_time",
         ]
 
-    
+
 # =========================================================
 # ORDER
 # =========================================================
@@ -350,89 +297,67 @@ class OrderItemSerializer(serializers.ModelSerializer):
 # =========================================================
 # ORDER
 # =========================================================
+
 
 class OrderSerializer(serializers.ModelSerializer):
 
-    items = OrderItemSerializer(
-        many=True,
-        read_only=True
-    )
+    items = OrderItemSerializer(many=True, read_only=True)
 
     payment_method_display = serializers.CharField(
-        source="get_payment_method_display",
-        read_only=True
+        source="get_payment_method_display", read_only=True
     )
 
-    status_display = serializers.CharField(
-        source="get_status_display",
-        read_only=True
-    )
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     delivery_type_display = serializers.CharField(
-        source="get_delivery_type_display",
-        read_only=True
+        source="get_delivery_type_display", read_only=True
     )
 
-    status_history = OrderStatusHistorySerializer(
-        many=True,
-        read_only=True
-    )
+    status_history = OrderStatusHistorySerializer(many=True, read_only=True)
 
     class Meta:
         model = Order
         fields = [
             "id",
-
             "province",
             "city",
             "address",
             "postal_code",
             "plaque",
             "unit",
-
             "payment_method",
             "payment_method_display",
-
             "delivery_type",
             "delivery_type_display",
-
             "status",
             "status_display",
-
             "total_gold_amount",
             "total_toman_amount",
-
             "tracking_code",
-
             "created_at",
-
             "admin_note",
-
             "items",
-
             "status_history",
         ]
-        
+
 
 # =========================================================
 # GIFT CARD
 # =========================================================
+
 
 class GiftCardSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = GiftCard
         fields = [
-            'id',
-            'serial_number',
-            'weight',
-            'is_used',
-            'activated_by',
-            'created_at'
+            "id",
+            "serial_number",
+            "weight",
+            "is_used",
+            "activated_by",
+            "created_at",
         ]
-
-
-
 
 
 # =========================================================
@@ -442,21 +367,15 @@ class GiftCardSerializer(serializers.ModelSerializer):
 from rest_framework import serializers
 
 from .models import (
-    PriceAlert,
     PriceAlertLog,
 )
 
 
 class PriceAlertSerializer(serializers.ModelSerializer):
 
-    target_price = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=3
-    )
+    target_price = serializers.DecimalField(max_digits=20, decimal_places=3)
 
-    alert_type = serializers.ChoiceField(
-        choices=PriceAlert.ALERT_CHOICES
-    )
+    alert_type = serializers.ChoiceField(choices=PriceAlert.ALERT_CHOICES)
 
     max_notifications = serializers.IntegerField(
         min_value=1,
@@ -465,7 +384,7 @@ class PriceAlertSerializer(serializers.ModelSerializer):
             "required": "تعداد دفعات ارسال الزامی است.",
             "min_value": "حداقل تعداد ۱ است.",
             "max_value": "حداکثر تعداد ۱۰۰۰ است.",
-        }
+        },
     )
 
     remaining_notifications = serializers.SerializerMethodField()
@@ -502,26 +421,19 @@ class PriceAlertSerializer(serializers.ModelSerializer):
         ]
 
     def get_remaining_notifications(self, obj):
-        return max(
-            obj.max_notifications - obj.sent_notifications,
-            0
-        )
+        return max(obj.max_notifications - obj.sent_notifications, 0)
 
     def validate_target_price(self, value):
 
         if value <= 0:
-            raise serializers.ValidationError(
-                "قیمت هدف باید بزرگتر از صفر باشد."
-            )
+            raise serializers.ValidationError("قیمت هدف باید بزرگتر از صفر باشد.")
 
         return value
 
     def validate_max_notifications(self, value):
 
         if value < 1:
-            raise serializers.ValidationError(
-                "تعداد دفعات باید حداقل ۱ باشد."
-            )
+            raise serializers.ValidationError("تعداد دفعات باید حداقل ۱ باشد.")
 
         return value
 
@@ -529,6 +441,7 @@ class PriceAlertSerializer(serializers.ModelSerializer):
 # =========================================================
 # PRICE ALERT LOG SERIALIZER
 # =========================================================
+
 
 class PriceAlertLogSerializer(serializers.ModelSerializer):
 
@@ -543,73 +456,47 @@ class PriceAlertLogSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
+
 # =========================================================
 # GIFT CARD ORDER SERIALIZER
 # =========================================================
 
+
 class GiftCardOrderSerializer(serializers.ModelSerializer):
 
-    address_id = serializers.IntegerField(
-        required=False
-    )
+    address_id = serializers.IntegerField(required=False)
 
-    province = serializers.CharField(
-        required=False
-    )
+    province = serializers.CharField(required=False)
 
-    city = serializers.CharField(
-        required=False
-    )
+    city = serializers.CharField(required=False)
 
-    address = serializers.CharField(
-        required=False
-    )
+    address = serializers.CharField(required=False)
 
-    postal_code = serializers.CharField(
-        required=False,
-        allow_blank=True
-    )
+    postal_code = serializers.CharField(required=False, allow_blank=True)
 
-    plaque = serializers.CharField(
-        required=False,
-        allow_blank=True
-    )
+    plaque = serializers.CharField(required=False, allow_blank=True)
 
-    unit = serializers.CharField(
-        required=False,
-        allow_blank=True
-    )
+    unit = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
 
         model = GiftCardOrder
 
         fields = [
-
-            'address_id',
-
-            'weight_per_card',
-
-            'quantity',
-
-            'province',
-
-            'city',
-
-            'address',
-
-            'postal_code',
-
-            'plaque',
-
-            'unit'
+            "address_id",
+            "weight_per_card",
+            "quantity",
+            "province",
+            "city",
+            "address",
+            "postal_code",
+            "plaque",
+            "unit",
         ]
 
     def validate(self, attrs):
 
-        address_id = attrs.get(
-            'address_id'
-        )
+        address_id = attrs.get("address_id")
 
         # =====================================
         # IF NO ADDRESS ID
@@ -618,19 +505,13 @@ class GiftCardOrderSerializer(serializers.ModelSerializer):
 
         if not address_id:
 
-            required_fields = [
-                'province',
-                'city',
-                'address'
-            ]
+            required_fields = ["province", "city", "address"]
 
             for field in required_fields:
 
                 if not attrs.get(field):
 
-                    raise serializers.ValidationError({
-                        field: 'این فیلد اجباری است'
-                    })
+                    raise serializers.ValidationError({field: "این فیلد اجباری است"})
 
         return attrs
 
@@ -639,218 +520,150 @@ class GiftCardOrderSerializer(serializers.ModelSerializer):
 # REFERRAL EARNING
 # =========================================================
 
+
 class ReferralEarningSerializer(serializers.ModelSerializer):
 
-    user_mobile = serializers.CharField(
-        source="user.mobile",
-        read_only=True
-    )
+    user_mobile = serializers.CharField(source="user.mobile", read_only=True)
 
     class Meta:
         model = ReferralEarning
-        fields = [
-            "id",
-            "user_mobile",
-            "amount",
-            "source_type",
-            "created_at"
-        ]
+        fields = ["id", "user_mobile", "amount", "source_type", "created_at"]
+
 
 # =========================================================
 # GOLD PRICE HISTORY
 # =========================================================
 
+
 class GoldPriceHistorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = GoldPriceHistory
-        fields = [
-            'id',
-            'price',
-            'created_at'
-        ]
+        fields = ["id", "price", "created_at"]
 
 
 # =========================================================
 # PURCHASE CREDIT
 # =========================================================
 
+
 class PurchaseCreditSerializer(serializers.ModelSerializer):
 
-    status_display = serializers.CharField(
-        source='get_status_display',
-        read_only=True
-    )
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     class Meta:
         model = PurchaseCredit
         fields = [
-            'id',
-            'amount',
-            'used_amount',
-            'remaining_amount',
-            'status',
-            'status_display',
-            'expire_at',
-            'created_at'
+            "id",
+            "amount",
+            "used_amount",
+            "remaining_amount",
+            "status",
+            "status_display",
+            "expire_at",
+            "created_at",
         ]
+
 
 # =========================================================
 # AUTO SAVING PLAN
 # =========================================================
 
+
 class AutoSavingPlanSerializer(serializers.ModelSerializer):
 
-    type_display = serializers.CharField(
-        source='get_type_display',
-        read_only=True
-    )
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
 
-    status_display = serializers.CharField(
-        source='get_status_display',
-        read_only=True
-    )
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     class Meta:
 
         model = AutoSavingPlan
 
         fields = [
-            'id',
-            'type',
-            'type_display',
-            'amount',
-            'period_days',
-            'next_execute_at',
-            'status',
-            'status_display',
-            'created_at'
+            "id",
+            "type",
+            "type_display",
+            "amount",
+            "period_days",
+            "next_execute_at",
+            "status",
+            "status_display",
+            "created_at",
         ]
 
-        read_only_fields = [
-            'period_days',
-            'next_execute_at',
-            'status',
-            'created_at'
-        ]
+        read_only_fields = ["period_days", "next_execute_at", "status", "created_at"]
+
 
 # =========================================================
 # FILTER SERIALIZERS
 # =========================================================
 
+
 class ReportFilterSerializer(serializers.Serializer):
 
-    status = serializers.CharField(
-        required=False
-    )
+    status = serializers.CharField(required=False)
 
-    start_date = serializers.DateField(
-        required=False
-    )
+    start_date = serializers.DateField(required=False)
 
-    end_date = serializers.DateField(
-        required=False
-    )
+    end_date = serializers.DateField(required=False)
 
 
 class TradeFilterSerializer(ReportFilterSerializer):
 
-    type = serializers.ChoiceField(
-        choices=[
-            'BUY',
-            'SELL'
-        ],
-        required=False
-    )
+    type = serializers.ChoiceField(choices=["BUY", "SELL"], required=False)
 
 
-class FinancialFilterSerializer(
-    ReportFilterSerializer
-):
+class FinancialFilterSerializer(ReportFilterSerializer):
 
-    method = serializers.CharField(
-        required=False
-    )
+    method = serializers.CharField(required=False)
 
-    type = serializers.CharField(
-        required=False
-    )
+    type = serializers.CharField(required=False)
 
 
-class GiftCardFilterSerializer(
-    ReportFilterSerializer
-):
+class GiftCardFilterSerializer(ReportFilterSerializer):
 
-    mode = serializers.CharField(
-        required=False
-    )
+    mode = serializers.CharField(required=False)
 
 
-class PhysicalOrderFilterSerializer(
-    ReportFilterSerializer
-):
+class PhysicalOrderFilterSerializer(ReportFilterSerializer):
 
-    delivery_type = serializers.CharField(
-        required=False
-    )
+    delivery_type = serializers.CharField(required=False)
 
 
-class AutoSavingFilterSerializer(
-    ReportFilterSerializer
-):
+class AutoSavingFilterSerializer(ReportFilterSerializer):
 
-    type = serializers.CharField(
-        required=False
-    )
+    type = serializers.CharField(required=False)
 
 
 # =========================================================
 # DASHBOARD SERIALIZERS
 # =========================================================
 
-class UserBalanceSerializer(
-    serializers.Serializer
-):
 
-    gold_balance_gr = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=5
-    )
+class UserBalanceSerializer(serializers.Serializer):
 
-    toman_balance = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    gold_balance_gr = serializers.DecimalField(max_digits=20, decimal_places=5)
 
-    current_gold_price = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    toman_balance = serializers.DecimalField(max_digits=20, decimal_places=0)
 
-    total_assets = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    current_gold_price = serializers.DecimalField(max_digits=20, decimal_places=0)
 
-
+    total_assets = serializers.DecimalField(max_digits=20, decimal_places=0)
 
 
 # =========================================================
 # RECENT TRANSACTION SERIALIZER
 # =========================================================
 
-class RecentTransactionSerializer(
-    serializers.Serializer
-):
+
+class RecentTransactionSerializer(serializers.Serializer):
 
     id = serializers.IntegerField()
 
     title = serializers.CharField()
 
-    amount = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    amount = serializers.DecimalField(max_digits=20, decimal_places=0)
 
     status = serializers.CharField()
 
@@ -863,9 +676,8 @@ class RecentTransactionSerializer(
 # RECENT DELIVERY SERIALIZER
 # =========================================================
 
-class RecentDeliverySerializer(
-    serializers.Serializer
-):
+
+class RecentDeliverySerializer(serializers.Serializer):
 
     id = serializers.IntegerField()
 
@@ -873,10 +685,7 @@ class RecentDeliverySerializer(
 
     status = serializers.CharField()
 
-    total_amount = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    total_amount = serializers.DecimalField(max_digits=20, decimal_places=0)
 
     created_at = serializers.DateTimeField()
 
@@ -885,81 +694,57 @@ class RecentDeliverySerializer(
 # DEPOSIT SERIALIZER
 # =========================================================
 
+
 class DepositSerializer(serializers.Serializer):
 
     METHOD_CHOICES = (
-        ('RECEIPT', 'رسید بانکی'),
-        ('GATEWAY', 'درگاه پرداخت'),
+        ("RECEIPT", "رسید بانکی"),
+        ("GATEWAY", "درگاه پرداخت"),
     )
 
-    amount = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    amount = serializers.DecimalField(max_digits=20, decimal_places=0)
 
-    method = serializers.ChoiceField(
-        choices=METHOD_CHOICES
-    )
+    method = serializers.ChoiceField(choices=METHOD_CHOICES)
 
-    receipt = serializers.ImageField(
-        required=False
-    )
-    
-    description = serializers.CharField(
-        required=False,
-        allow_blank=True
-    )
+    receipt = serializers.ImageField(required=False)
+
+    description = serializers.CharField(required=False, allow_blank=True)
+
     def validate(self, attrs):
 
-        method = attrs.get('method')
-        receipt = attrs.get('receipt')
+        method = attrs.get("method")
+        receipt = attrs.get("receipt")
 
-        if method == 'RECEIPT' and not receipt:
+        if method == "RECEIPT" and not receipt:
 
-            raise serializers.ValidationError({
-                "receipt": "تصویر رسید الزامی است"
-            })
+            raise serializers.ValidationError({"receipt": "تصویر رسید الزامی است"})
 
         return attrs
 
 
 from rest_framework import serializers
-from decimal import Decimal
-
 
 # =========================================================
 # BUY GOLD SERIALIZER FIX
 # =========================================================
 
 from rest_framework import serializers
-from decimal import Decimal, InvalidOperation
 from rest_framework import serializers
-from decimal import Decimal
 
 
 class BuyGoldSerializer(serializers.Serializer):
 
     payment_method = serializers.ChoiceField(
-        choices=[
-            ("WALLET", "کیف پول"),
-            ("GATEWAY", "درگاه")
-        ]
+        choices=[("WALLET", "کیف پول"), ("GATEWAY", "درگاه")]
     )
 
     toman = serializers.DecimalField(
-        max_digits=25,
-        decimal_places=2,
-        required=False,
-        allow_null=True
+        max_digits=25, decimal_places=2, required=False, allow_null=True
     )
 
     weight = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=3,
-        required=False,
-        allow_null=True
+        max_digits=20, decimal_places=3, required=False, allow_null=True
     )
-
 
     def validate(self, attrs):
 
@@ -967,40 +752,22 @@ class BuyGoldSerializer(serializers.Serializer):
         weight = attrs.get("weight")
 
         if toman is None and weight is None:
-            raise serializers.ValidationError(
-                "مبلغ یا وزن الزامی است"
-            )
+            raise serializers.ValidationError("مبلغ یا وزن الزامی است")
 
-
-        gold_price = Decimal(
-            str(self.context["gold_price"])
-        )
+        gold_price = Decimal(str(self.context["gold_price"]))
 
         user = self.context["request"].user
 
+        user_fee = getattr(user, "fee", None)
 
-        user_fee = getattr(
-            user,
-            "fee",
-            None
-        )
-
-        fee_rate = (
-            user_fee.gold_buy_fee
-            if user_fee
-            else Decimal("0.0099")
-        )
-
+        fee_rate = user_fee.gold_buy_fee if user_fee else Decimal("0.0099")
 
         if toman is not None:
 
             toman = Decimal(str(toman))
 
             if toman <= 0:
-                raise serializers.ValidationError(
-                    "مبلغ نامعتبر است"
-                )
-
+                raise serializers.ValidationError("مبلغ نامعتبر است")
 
             fee = toman * fee_rate
 
@@ -1010,16 +777,12 @@ class BuyGoldSerializer(serializers.Serializer):
 
             total_toman = toman
 
-
         else:
 
             weight = Decimal(str(weight))
 
             if weight <= 0:
-                raise serializers.ValidationError(
-                    "وزن نامعتبر است"
-                )
-
+                raise serializers.ValidationError("وزن نامعتبر است")
 
             pure = weight * gold_price
 
@@ -1029,191 +792,131 @@ class BuyGoldSerializer(serializers.Serializer):
 
             final_weight = weight
 
-
-
         attrs["fee"] = fee
         attrs["fee_rate"] = fee_rate
         attrs["total_toman"] = total_toman
 
         # مهم
-        attrs["final_weight"] = final_weight.quantize(
-            Decimal("0.001")
-        )
-
+        attrs["final_weight"] = final_weight.quantize(Decimal("0.001"))
 
         return attrs
-
 
 
 # =========================================================
 # SELL GOLD
 # =========================================================
 
+
 class SellGoldSerializer(serializers.Serializer):
 
     toman = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=2,
-        required=False,
-        allow_null=True
+        max_digits=20, decimal_places=2, required=False, allow_null=True
     )
-
 
     weight = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=4,
-        required=False,
-        allow_null=True
+        max_digits=20, decimal_places=4, required=False, allow_null=True
     )
-
 
     fee = None
     fee_rate = None
     final_amount = None
     final_weight = None
 
-
-
     def validate(self, attrs):
 
         toman = attrs.get("toman")
         weight = attrs.get("weight")
 
-
         if toman is None and weight is None:
-            raise serializers.ValidationError(
-                "مبلغ یا وزن الزامی است"
-            )
-
+            raise serializers.ValidationError("مبلغ یا وزن الزامی است")
 
         if toman is not None and Decimal(toman) <= 0:
-            raise serializers.ValidationError(
-                "مبلغ نامعتبر است"
-            )
-
+            raise serializers.ValidationError("مبلغ نامعتبر است")
 
         if weight is not None and Decimal(weight) <= 0:
-            raise serializers.ValidationError(
-                "وزن طلا نامعتبر است"
-            )
-
+            raise serializers.ValidationError("وزن طلا نامعتبر است")
 
         request = self.context.get("request")
         user = request.user
 
-
         user_fee = getattr(user, "fee", None)
 
+        fee_rate = user_fee.gold_sell_fee if user_fee else Decimal("0.0099")
 
-        fee_rate = (
-            user_fee.gold_sell_fee
-            if user_fee
-            else Decimal("0.0099")
-        )
-
-
-        gold_price = Decimal(
-            str(self.context.get("gold_price"))
-        )
-
+        gold_price = Decimal(str(self.context.get("gold_price")))
 
         attrs["fee_rate"] = fee_rate
-
-
 
         if toman is not None:
 
             toman = Decimal(toman)
 
-            final_weight = (
-                toman / gold_price
-            )
+            final_weight = toman / gold_price
 
             fee = toman * fee_rate
 
-            final_amount = (
-                toman - fee
-            )
-
+            final_amount = toman - fee
 
         else:
 
             final_weight = Decimal(weight)
 
-            pure = (
-                final_weight * gold_price
-            )
+            pure = final_weight * gold_price
 
             fee = pure * fee_rate
 
-            final_amount = (
-                pure - fee
-            )
-
-
+            final_amount = pure - fee
 
         attrs["fee"] = fee
         attrs["final_weight"] = final_weight
         attrs["final_amount"] = final_amount
 
-
         return attrs
+
 
 # =========================================================
 # WITHDRAW
 # =========================================================
 
+
 class WithdrawSerializer(serializers.Serializer):
 
     TARGET_CHOICES = (
-        ('BANK', 'برداشت بانکی'),
-        ('SILVER', 'تبدیل به نقره'),
+        ("BANK", "برداشت بانکی"),
+        ("SILVER", "تبدیل به نقره"),
     )
 
-    amount = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    amount = serializers.DecimalField(max_digits=20, decimal_places=0)
 
-    target = serializers.ChoiceField(
-        choices=TARGET_CHOICES
-    )
+    target = serializers.ChoiceField(choices=TARGET_CHOICES)
 
-    card_id = serializers.IntegerField(
-        required=False
-    )
+    card_id = serializers.IntegerField(required=False)
 
     def validate(self, attrs):
 
-        request = self.context.get('request')
+        request = self.context.get("request")
 
-        target = attrs.get('target')
+        target = attrs.get("target")
 
-        card_id = attrs.get('card_id')
+        card_id = attrs.get("card_id")
 
-        if target == 'BANK':
+        if target == "BANK":
 
             if not card_id:
 
-                raise serializers.ValidationError({
-                    "card_id": "کارت بانکی الزامی است"
-                })
+                raise serializers.ValidationError({"card_id": "کارت بانکی الزامی است"})
 
             try:
 
                 card = BankCard.objects.get(
-                    id=card_id,
-                    user=request.user,
-                    is_active=True
+                    id=card_id, user=request.user, is_active=True
                 )
 
             except BankCard.DoesNotExist:
 
-                raise serializers.ValidationError({
-                    "card_id": "کارت بانکی معتبر نیست"
-                })
+                raise serializers.ValidationError({"card_id": "کارت بانکی معتبر نیست"})
 
-            attrs['card'] = card
+            attrs["card"] = card
 
         return attrs
 
@@ -1221,6 +924,10 @@ class WithdrawSerializer(serializers.Serializer):
 # =========================================================
 # CHECKOUT
 # =========================================================
+# =========================================================
+# CHECKOUT (NO ADDRESS)
+# =========================================================
+
 class PhysicalOrderSerializer(serializers.Serializer):
 
     products = serializers.ListField(
@@ -1230,69 +937,43 @@ class PhysicalOrderSerializer(serializers.Serializer):
 
     payment_method = serializers.ChoiceField(
         choices=[
-            ('TOMAN', 'کیف پول'),
-            ('GOLD', 'طلا')
+            ("TOMAN", "کیف پول"),
+            ("GOLD", "طلا"),
         ]
     )
-
-    delivery_type = serializers.ChoiceField(
-        choices=[
-            ('HOME', 'ارسال'),
-            ('IN_PERSON', 'حضوری')
-        ]
-    )
-
-    # =========================
-    # ADDRESS
-    # =========================
-    address_id = serializers.IntegerField(required=False, allow_null=True)
-
-    province = serializers.CharField(required=False, allow_blank=True)
-    city = serializers.CharField(required=False, allow_blank=True)
-    address = serializers.CharField(required=False, allow_blank=True)
-
-    postal_code = serializers.CharField(required=False, allow_blank=True)
-    plaque = serializers.CharField(required=False, allow_blank=True)
-    unit = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, data):
 
         products = data.get("products")
 
         if not products:
-            raise serializers.ValidationError({
-                "non_field_errors": ["سبد خرید خالی است"]
-            })
+            raise serializers.ValidationError(
+                {"non_field_errors": ["سبد خرید خالی است"]}
+            )
 
         for item in products:
 
             if "product_id" not in item:
-                raise serializers.ValidationError({
-                    "non_field_errors": ["product_id الزامی است"]
-                })
+                raise serializers.ValidationError(
+                    {"non_field_errors": ["product_id الزامی است"]}
+                )
 
-            if "quantity" not in item or int(item["quantity"]) < 1:
-                raise serializers.ValidationError({
-                    "non_field_errors": ["quantity نامعتبر است"]
-                })
+            if "quantity" not in item:
+                raise serializers.ValidationError(
+                    {"non_field_errors": ["quantity الزامی است"]}
+                )
 
-        address_id = data.get("address_id")
-        province = data.get("province")
-        city = data.get("city")
-        address = data.get("address")
-
-        if address_id and any([province, city, address]):
-            raise serializers.ValidationError({
-                "non_field_errors": ["یا آدرس قبلی یا جدید، نه هر دو"]
-            })
-
-        if not address_id:
-            if not (province and city and address):
-                raise serializers.ValidationError({
-                    "non_field_errors": ["province, city, address الزامی است"]
-                })
+            if int(item["quantity"]) < 1:
+                raise serializers.ValidationError(
+                    {"non_field_errors": ["quantity نامعتبر است"]}
+                )
 
         return data
+
+
+
+
+from rest_framework import serializers
 
 
 class UserAddressSerializer(serializers.ModelSerializer):
@@ -1310,14 +991,54 @@ class UserAddressSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
+        extra_kwargs = {
+            "province": {
+                "required": True,
+                "error_messages": {"required": "استان اجباری است"},
+            },
+            "city": {
+                "required": True,
+                "error_messages": {"required": "شهر اجباری است"},
+            },
+            "address": {
+                "required": True,
+                "error_messages": {"required": "آدرس اجباری است"},
+            },
+            "postal_code": {
+                "required": True,
+                "error_messages": {"required": "کد پستی اجباری است"},
+            },
+            "plaque": {
+                "required": True,
+                "error_messages": {"required": "پلاک اجباری است"},
+            },
+            "unit": {
+                "required": True,
+                "error_messages": {"required": "واحد اجباری است"},
+            },
+        }
+
+    # =========================
+    # VALIDATION
+    # =========================
+
+    def validate_postal_code(self, value):
+
+        if not str(value).isdigit():
+            raise serializers.ValidationError("کد پستی فقط باید عدد باشد")
+
+        if len(str(value)) != 10:
+            raise serializers.ValidationError("کد پستی باید دقیقاً ۱۰ رقم باشد")
+
+        return value
+
 
 # =========================================================
 # GIFT CARD REDEEM
 # =========================================================
 
-class RedeemGiftCardSerializer(
-    serializers.Serializer
-):
+
+class RedeemGiftCardSerializer(serializers.Serializer):
 
     serial_number = serializers.CharField()
 
@@ -1326,31 +1047,23 @@ class RedeemGiftCardSerializer(
 # CHART FILTER
 # =========================================================
 
-class GoldChartFilterSerializer(
-    serializers.Serializer
-):
 
-    filter = serializers.ChoiceField(
-        choices=[
-            '24H',
-            'WEEKLY',
-            'MONTHLY'
-        ]
-    )
+class GoldChartFilterSerializer(serializers.Serializer):
+
+    filter = serializers.ChoiceField(choices=["24H", "WEEKLY", "MONTHLY"])
 
 
 # =========================================================
 # GOLD CHART
 # =========================================================
 
+
 class GoldChartSerializer(serializers.Serializer):
 
-    FILTER_CHOICES = ['24H', 'WEEKLY', 'MONTHLY']
+    FILTER_CHOICES = ["24H", "WEEKLY", "MONTHLY"]
 
-    filter_type = serializers.ChoiceField(
-        choices=FILTER_CHOICES,
-        default='24H'
-    )
+    filter_type = serializers.ChoiceField(choices=FILTER_CHOICES, default="24H")
+
 
 class GoldBubbleSerializer(serializers.Serializer):
     buy_price = serializers.IntegerField()
@@ -1381,30 +1094,18 @@ class GoldChartSerializer(serializers.Serializer):
     bubble = GoldBubbleSerializer()
 
 
-
-
-
 class GoldOrderSerializer(serializers.Serializer):
 
-    order_type = serializers.ChoiceField(
-        choices=["BUY", "SELL"]
-    )
+    order_type = serializers.ChoiceField(choices=["BUY", "SELL"])
 
-    target_price = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    target_price = serializers.DecimalField(max_digits=20, decimal_places=0)
 
     amount_toman = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0,
-        required=False
+        max_digits=20, decimal_places=0, required=False
     )
 
     gold_weight = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=5,
-        required=False
+        max_digits=20, decimal_places=5, required=False
     )
 
     def validate(self, data):
@@ -1414,16 +1115,12 @@ class GoldOrderSerializer(serializers.Serializer):
         if order_type == "BUY":
 
             if not data.get("amount_toman"):
-                raise serializers.ValidationError(
-                    "مبلغ تومان الزامی است"
-                )
+                raise serializers.ValidationError("مبلغ تومان الزامی است")
 
         elif order_type == "SELL":
 
             if not data.get("gold_weight"):
-                raise serializers.ValidationError(
-                    "وزن طلا الزامی است"
-                )
+                raise serializers.ValidationError("وزن طلا الزامی است")
 
         return data
 
@@ -1445,11 +1142,9 @@ class GoldOrderListSerializer(serializers.ModelSerializer):
         )
 
 
-
 class PriceQuerySerializer(serializers.Serializer):
     key = serializers.CharField()
 
-    
 
 class ProductCategorySerializer(serializers.ModelSerializer):
 
@@ -1462,45 +1157,20 @@ class ProductCategorySerializer(serializers.ModelSerializer):
         ]
 
 
-
 class AssetValueSerializer(serializers.Serializer):
 
-    total_asset_value = serializers.DecimalField(
-        max_digits=25,
-        decimal_places=0
-    )
+    total_asset_value = serializers.DecimalField(max_digits=25, decimal_places=0)
 
-    gold_balance = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=5
-    )
+    gold_balance = serializers.DecimalField(max_digits=20, decimal_places=5)
 
-    silver_balance = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=5
-    )
+    silver_balance = serializers.DecimalField(max_digits=20, decimal_places=5)
 
-    wallet_balance = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    wallet_balance = serializers.DecimalField(max_digits=20, decimal_places=0)
 
-    gold_asset_value = serializers.DecimalField(
-        max_digits=25,
-        decimal_places=0
-    )
+    gold_asset_value = serializers.DecimalField(max_digits=25, decimal_places=0)
 
-    silver_asset_value = serializers.DecimalField(
-        max_digits=25,
-        decimal_places=0
-    )
+    silver_asset_value = serializers.DecimalField(max_digits=25, decimal_places=0)
 
-    gold_price = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    gold_price = serializers.DecimalField(max_digits=20, decimal_places=0)
 
-    silver_price = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    silver_price = serializers.DecimalField(max_digits=20, decimal_places=0)

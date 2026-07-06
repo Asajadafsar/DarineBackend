@@ -1,6 +1,5 @@
 import uuid
 import logging
-import jdatetime
 import requests
 
 from decimal import Decimal
@@ -10,24 +9,20 @@ from django.utils import timezone
 
 from .models import SilverPriceHistory
 
-
 logger = logging.getLogger(__name__)
 
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN
+
 
 def decimal_3(value):
-    return Decimal(value).quantize(
-        Decimal("0.001"),
-        rounding=ROUND_DOWN
-    )
+    return Decimal(value).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+
+
 # =========================================================
 # SILVER PRICE
 # =========================================================
 def get_live_silver_price():
-    url = (
-        "https://api.noghresea.ir/"
-        "api/market/getSilverPrice"
-    )
+    url = "https://api.noghresea.ir/" "api/market/getSilverPrice"
 
     try:
         response = requests.get(url, timeout=10)
@@ -38,7 +33,7 @@ def get_live_silver_price():
 
         data = response.json()
 
-        raw_price = Decimal(str(data['price']))
+        raw_price = Decimal(str(data["price"]))
 
         if raw_price <= 0:
             return None
@@ -52,9 +47,8 @@ def get_live_silver_price():
     # offset
     try:
         from admin_panel.models import SilverPriceOffset
-        offset = SilverPriceOffset.objects.filter(
-            is_active=True
-        ).first()
+
+        offset = SilverPriceOffset.objects.filter(is_active=True).first()
         if offset:
             price = price + offset.offset_amount
     except Exception:
@@ -63,12 +57,10 @@ def get_live_silver_price():
     return price
 
 
-
-
-
 # =========================================================
 # SAVE SILVER PRICE HISTORY
 # =========================================================
+
 
 def save_silver_price_history():
     price = get_live_silver_price()
@@ -87,34 +79,24 @@ def save_silver_price_history():
     return True
 
 
-from datetime import timedelta
-from django.utils import timezone
-
-
 def calculate_silver_price_changes(current_price):
 
     now = timezone.now()
 
     day = (
-        SilverPriceHistory.objects.filter(
-            created_at__lte=now - timedelta(hours=24)
-        )
+        SilverPriceHistory.objects.filter(created_at__lte=now - timedelta(hours=24))
         .order_by("-created_at")
         .first()
     )
 
     week = (
-        SilverPriceHistory.objects.filter(
-            created_at__lte=now - timedelta(days=7)
-        )
+        SilverPriceHistory.objects.filter(created_at__lte=now - timedelta(days=7))
         .order_by("-created_at")
         .first()
     )
 
     month = (
-        SilverPriceHistory.objects.filter(
-            created_at__lte=now - timedelta(days=30)
-        )
+        SilverPriceHistory.objects.filter(created_at__lte=now - timedelta(days=30))
         .order_by("-created_at")
         .first()
     )
@@ -124,13 +106,7 @@ def calculate_silver_price_changes(current_price):
         if old is None or current_price == 0:
             return 0
 
-        return round(
-            (
-                (current_price - float(old.price))
-                / current_price
-            ) * 100,
-            2
-        )
+        return round(((current_price - float(old.price)) / current_price) * 100, 2)
 
     return {
         "daily": calc(day),
@@ -139,49 +115,59 @@ def calculate_silver_price_changes(current_price):
     }
 
 
-
-
 # =========================================================
 # SILVER CHART DATA
 # =========================================================
 
-from datetime import timedelta
 
-from django.utils import timezone
 from django.db.models import Avg
-from django.db.models.functions import (
-    TruncMinute,
-    TruncHour,
-    TruncDate
-)
+from django.db.models.functions import TruncMinute, TruncHour, TruncDate
 
-from .models import SilverPriceHistory
+
+from django.db.models import Avg
+from django.db.models.functions import TruncHour, TruncDate
+
+
+from datetime import datetime, timedelta
+
+from django.db.models import Avg
+from django.db.models.functions import TruncHour, TruncDate
+from django.utils import timezone
+
 
 def get_silver_chart_data(filter_type="24H"):
 
     now = timezone.now()
+    current_tz = timezone.get_current_timezone()
+
+    # =====================================================
+    # TIME FRAME
+    # =====================================================
 
     if filter_type == "24H":
         start_date = now - timedelta(hours=24)
-        trunc_fn = TruncMinute
+        trunc_fn = TruncHour
 
     elif filter_type == "WEEKLY":
         start_date = now - timedelta(days=7)
-        trunc_fn = TruncHour
+        trunc_fn = TruncDate
 
-    else:
+    elif filter_type == "MONTHLY":
         start_date = now - timedelta(days=30)
         trunc_fn = TruncDate
+
+    else:
+        start_date = now - timedelta(hours=24)
+        trunc_fn = TruncHour
+
+    # =====================================================
+    # QUERY
+    # =====================================================
 
     queryset = (
         SilverPriceHistory.objects
         .filter(created_at__gte=start_date)
-        .annotate(
-            period=trunc_fn(
-                "created_at",
-                tzinfo=timezone.get_current_timezone()
-            )
-        )
+        .annotate(period=trunc_fn("created_at"))
         .values("period")
         .annotate(avg_price=Avg("price"))
         .order_by("period")
@@ -195,35 +181,56 @@ def get_silver_chart_data(filter_type="24H"):
         if item["avg_price"] is None:
             continue
 
-        local_dt = timezone.localtime(item["period"])
+        period = item["period"]
 
-        labels.append(
-            local_dt.isoformat(timespec="seconds")
-        )
+        # -----------------------------------------
+        # TruncDate => date
+        # TruncHour => datetime
+        # -----------------------------------------
 
-        prices.append(
-            int(item["avg_price"])
-        )
+        if isinstance(period, datetime):
+
+            if timezone.is_naive(period):
+                period = timezone.make_aware(period, current_tz)
+            else:
+                period = timezone.localtime(period)
+
+        else:
+            period = timezone.make_aware(
+                datetime.combine(period, datetime.min.time()),
+                current_tz,
+            )
+
+        labels.append(period.isoformat(timespec="seconds"))
+        prices.append(int(item["avg_price"]))
+
+    # =====================================================
+    # EMPTY
+    # =====================================================
 
     if not prices:
         return {
             "chart": {
                 "labels": [],
-                "prices": []
+                "prices": [],
             },
             "stats": {
                 "current_price": 0,
                 "highest_price": 0,
                 "lowest_price": 0,
-                "change_percent": 0,
                 "change_amount": 0,
+                "change_percent": 0,
                 "daily_change_percent": 0,
                 "weekly_change_percent": 0,
                 "monthly_change_percent": 0,
                 "min_y": 0,
-                "max_y": 0
-            }
+                "max_y": 0,
+            },
         }
+
+    # =====================================================
+    # STATS
+    # =====================================================
 
     current_price = prices[-1]
     highest_price = max(prices)
@@ -235,11 +242,9 @@ def get_silver_chart_data(filter_type="24H"):
     change_amount = current_price - first_price
 
     change_percent = (
-        round(
-            ((current_price - first_price) / first_price) * 100,
-            2
-        )
-        if first_price else 0
+        round(((current_price - first_price) / first_price) * 100, 2)
+        if first_price
+        else 0
     )
 
     price_range = highest_price - lowest_price
@@ -253,7 +258,7 @@ def get_silver_chart_data(filter_type="24H"):
     return {
         "chart": {
             "labels": labels,
-            "prices": prices
+            "prices": prices,
         },
         "stats": {
             "current_price": current_price,
@@ -265,11 +270,11 @@ def get_silver_chart_data(filter_type="24H"):
             "weekly_change_percent": changes["weekly"],
             "monthly_change_percent": changes["monthly"],
             "min_y": max(0, lowest_price - padding),
-            "max_y": highest_price + padding
-        }
+            "max_y": highest_price + padding,
+        },
     }
-
-
+    
+    
 
 def get_silver_bubble():
 
@@ -287,33 +292,18 @@ def get_silver_bubble():
         if not market_price:
             return None
 
-        intrinsic = (
-            world["silver_ounce"]
-            * world["usdt"]
-        ) / Decimal("31.1035")
+        intrinsic = (world["silver_ounce"] * world["usdt"]) / Decimal("31.1035")
 
         bubble_amount = market_price - intrinsic
 
-        bubble_percent = round(
-            (
-                bubble_amount
-                / intrinsic
-            ) * 100,
-            2
-        )
+        bubble_percent = round((bubble_amount / intrinsic) * 100, 2)
 
         return {
-
             "market_price": int(market_price),
-
             "intrinsic_price": int(intrinsic),
-
             "bubble_amount": int(bubble_amount),
-
             "bubble_percent": float(bubble_percent),
-
-            "is_positive": bubble_amount > 0
-
+            "is_positive": bubble_amount > 0,
         }
 
     except Exception as e:
@@ -327,23 +317,16 @@ def get_silver_bubble():
 # FILTER DATE
 # =========================================================
 
-def filter_by_date(
-    queryset,
-    start_date=None,
-    end_date=None
-):
+
+def filter_by_date(queryset, start_date=None, end_date=None):
 
     if start_date:
 
-        queryset = queryset.filter(
-            created_at__date__gte=start_date
-        )
+        queryset = queryset.filter(created_at__date__gte=start_date)
 
     if end_date:
 
-        queryset = queryset.filter(
-            created_at__date__lte=end_date
-        )
+        queryset = queryset.filter(created_at__date__lte=end_date)
 
     return queryset
 
@@ -352,16 +335,12 @@ def filter_by_date(
 # FILTER STATUS
 # =========================================================
 
-def filter_by_status(
-    queryset,
-    status=None
-):
+
+def filter_by_status(queryset, status=None):
 
     if status:
 
-        queryset = queryset.filter(
-            status=status
-        )
+        queryset = queryset.filter(status=status)
 
     return queryset
 
@@ -370,28 +349,21 @@ def filter_by_status(
 # TRACKING CODE
 # =========================================================
 
-def generate_tracking_code(
-    prefix='SLV'
-):
 
-    random_part = str(
-        uuid.uuid4()
-    ).split('-')[0]
+def generate_tracking_code(prefix="SLV"):
 
-    return (
-        f"{prefix}-"
-        f"{random_part.upper()}"
-    )
+    random_part = str(uuid.uuid4()).split("-")[0]
+
+    return f"{prefix}-" f"{random_part.upper()}"
 
 
 # =========================================================
 # BUY SILVER CALC
 # =========================================================
 
+
 def calculate_buy_silver(
-    toman_amount=None,
-    weight_amount=None,
-    fee_rate=Decimal('0.01')
+    toman_amount=None, weight_amount=None, fee_rate=Decimal("0.01")
 ):
 
     price_per_gram = get_live_silver_price()
@@ -420,14 +392,10 @@ def calculate_buy_silver(
         total_toman = pure_price + fee
 
     return {
-
         "price_per_gram": price_per_gram,
-
         "weight": round(weight, 3),
-
         "fee": round(fee),
-
-        "total_toman": round(total_toman)
+        "total_toman": round(total_toman),
     }
 
 
@@ -435,10 +403,9 @@ def calculate_buy_silver(
 # SELL SILVER CALC
 # =========================================================
 
+
 def calculate_sell_silver(
-    toman_amount=None,
-    weight_amount=None,
-    fee_rate=Decimal('0.01')
+    toman_amount=None, weight_amount=None, fee_rate=Decimal("0.01")
 ):
 
     price_per_gram = get_live_silver_price()
@@ -467,20 +434,17 @@ def calculate_sell_silver(
         final_amount = pure_price - fee
 
     return {
-
         "price_per_gram": price_per_gram,
-
         "weight": round(weight, 3),
-
         "fee": round(fee),
-
-        "final_amount": round(final_amount)
+        "final_amount": round(final_amount),
     }
 
 
 # =========================================================
 # MONEY FORMAT
 # =========================================================
+
 
 def format_money(amount):
 

@@ -6,13 +6,13 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('silver_app', '0008_silvertransaction_commission_amount_and_more'),
+        ("silver_app", "0008_silvertransaction_commission_amount_and_more"),
     ]
 
     operations = [
         migrations.RenameField(
-            model_name='silverinventory',
-            old_name='balance',
-            new_name='accessible_balance',
+            model_name="silverinventory",
+            old_name="balance",
+            new_name="accessible_balance",
         ),
     ]

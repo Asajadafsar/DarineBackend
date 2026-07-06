@@ -6,43 +6,43 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('silver_app', '0004_alter_silverbankinfo_card_number_and_more'),
+        ("silver_app", "0004_alter_silverbankinfo_card_number_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='silverinventory',
-            name='balance',
+            model_name="silverinventory",
+            name="balance",
             field=models.DecimalField(decimal_places=3, default=0, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='silverinventory',
-            name='blocked_balance',
+            model_name="silverinventory",
+            name="blocked_balance",
             field=models.DecimalField(decimal_places=3, default=0, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='silverorder',
-            name='total_silver_amount',
+            model_name="silverorder",
+            name="total_silver_amount",
             field=models.DecimalField(decimal_places=3, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='silverorderitem',
-            name='weight_at_time',
+            model_name="silverorderitem",
+            name="weight_at_time",
             field=models.DecimalField(decimal_places=3, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='silverproduct',
-            name='total_weight_with_fees',
+            model_name="silverproduct",
+            name="total_weight_with_fees",
             field=models.DecimalField(decimal_places=3, default=0, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='silverproduct',
-            name='weight',
+            model_name="silverproduct",
+            name="weight",
             field=models.DecimalField(decimal_places=3, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='silvertransaction',
-            name='amount_gr',
+            model_name="silvertransaction",
+            name="amount_gr",
             field=models.DecimalField(decimal_places=3, max_digits=20),
         ),
     ]

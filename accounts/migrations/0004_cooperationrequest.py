@@ -6,21 +6,29 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0003_bankcard'),
+        ("accounts", "0003_bankcard"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='CooperationRequest',
+            name="CooperationRequest",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('organization_name', models.CharField(max_length=255)),
-                ('full_name', models.CharField(max_length=255)),
-                ('email', models.EmailField(max_length=254)),
-                ('mobile', models.CharField(max_length=20)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('is_reviewed', models.BooleanField(default=False)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("organization_name", models.CharField(max_length=255)),
+                ("full_name", models.CharField(max_length=255)),
+                ("email", models.EmailField(max_length=254)),
+                ("mobile", models.CharField(max_length=20)),
+                ("description", models.TextField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("is_reviewed", models.BooleanField(default=False)),
             ],
         ),
     ]

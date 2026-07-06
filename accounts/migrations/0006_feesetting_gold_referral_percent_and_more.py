@@ -6,18 +6,18 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0005_feesetting_referralearning'),
+        ("accounts", "0005_feesetting_referralearning"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='feesetting',
-            name='gold_referral_percent',
+            model_name="feesetting",
+            name="gold_referral_percent",
             field=models.DecimalField(decimal_places=2, default=20.0, max_digits=5),
         ),
         migrations.AddField(
-            model_name='feesetting',
-            name='silver_referral_percent',
+            model_name="feesetting",
+            name="silver_referral_percent",
             field=models.DecimalField(decimal_places=2, default=10.0, max_digits=5),
         ),
     ]

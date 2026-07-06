@@ -6,68 +6,70 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('gold_app', '0009_alter_goldbankinfo_card_number_and_more'),
+        ("gold_app", "0009_alter_goldbankinfo_card_number_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='giftcard',
-            name='weight',
+            model_name="giftcard",
+            name="weight",
             field=models.DecimalField(decimal_places=3, max_digits=12),
         ),
         migrations.AlterField(
-            model_name='giftcardorder',
-            name='weight_per_card',
+            model_name="giftcardorder",
+            name="weight_per_card",
             field=models.DecimalField(decimal_places=3, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='goldinventory',
-            name='balance',
+            model_name="goldinventory",
+            name="balance",
             field=models.DecimalField(decimal_places=3, default=0, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='goldinventory',
-            name='blocked_balance',
+            model_name="goldinventory",
+            name="blocked_balance",
             field=models.DecimalField(decimal_places=3, default=0, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='goldorder',
-            name='estimated_weight',
+            model_name="goldorder",
+            name="estimated_weight",
             field=models.DecimalField(decimal_places=3, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='goldorder',
-            name='gold_weight',
-            field=models.DecimalField(blank=True, decimal_places=3, max_digits=20, null=True),
+            model_name="goldorder",
+            name="gold_weight",
+            field=models.DecimalField(
+                blank=True, decimal_places=3, max_digits=20, null=True
+            ),
         ),
         migrations.AlterField(
-            model_name='goldtransaction',
-            name='amount_gr',
+            model_name="goldtransaction",
+            name="amount_gr",
             field=models.DecimalField(decimal_places=3, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='order',
-            name='total_gold_amount',
+            model_name="order",
+            name="total_gold_amount",
             field=models.DecimalField(decimal_places=3, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='orderitem',
-            name='weight_at_time',
+            model_name="orderitem",
+            name="weight_at_time",
             field=models.DecimalField(decimal_places=3, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='pricealert',
-            name='target_price',
+            model_name="pricealert",
+            name="target_price",
             field=models.DecimalField(decimal_places=3, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='product',
-            name='total_weight_with_fees',
+            model_name="product",
+            name="total_weight_with_fees",
             field=models.DecimalField(decimal_places=3, default=0, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='product',
-            name='weight',
+            model_name="product",
+            name="weight",
             field=models.DecimalField(decimal_places=3, max_digits=20),
         ),
     ]

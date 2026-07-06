@@ -6,38 +6,54 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('admin_panel', '0008_adminlog_ip_address'),
+        ("admin_panel", "0008_adminlog_ip_address"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='GoldAnnouncement',
+            name="GoldAnnouncement",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('title', models.CharField(max_length=255, verbose_name='عنوان')),
-                ('description', models.TextField(verbose_name='توضیحات')),
-                ('link', models.URLField(blank=True, null=True, verbose_name='لینک')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("title", models.CharField(max_length=255, verbose_name="عنوان")),
+                ("description", models.TextField(verbose_name="توضیحات")),
+                ("link", models.URLField(blank=True, null=True, verbose_name="لینک")),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
             options={
-                'verbose_name': 'اطلاعیه طلا',
-                'verbose_name_plural': 'اطلاعیه\u200cهای طلا',
-                'ordering': ['-created_at'],
+                "verbose_name": "اطلاعیه طلا",
+                "verbose_name_plural": "اطلاعیه\u200cهای طلا",
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='SilverAnnouncement',
+            name="SilverAnnouncement",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('title', models.CharField(max_length=255, verbose_name='عنوان')),
-                ('description', models.TextField(verbose_name='توضیحات')),
-                ('link', models.URLField(blank=True, null=True, verbose_name='لینک')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("title", models.CharField(max_length=255, verbose_name="عنوان")),
+                ("description", models.TextField(verbose_name="توضیحات")),
+                ("link", models.URLField(blank=True, null=True, verbose_name="لینک")),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
             options={
-                'verbose_name': 'اطلاعیه نقره',
-                'verbose_name_plural': 'اطلاعیه\u200cهای نقره',
-                'ordering': ['-created_at'],
+                "verbose_name": "اطلاعیه نقره",
+                "verbose_name_plural": "اطلاعیه\u200cهای نقره",
+                "ordering": ["-created_at"],
             },
         ),
     ]

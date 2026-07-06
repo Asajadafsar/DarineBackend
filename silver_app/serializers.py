@@ -1,8 +1,6 @@
 from rest_framework import serializers
 from decimal import ROUND_DOWN, Decimal
-from rest_framework import serializers
-from decimal import Decimal
-from accounts.models import BankCard, ReferralEarning
+from accounts.models import BankCard
 from .utils import get_live_silver_price
 from .models import (
     SilverOrderStatusHistory,
@@ -16,14 +14,13 @@ from .models import (
     SilverOrderItem,
     SilverPriceHistory,
     SilverReferralEarning,
-    SilverRecentTransaction,
-    SilverRecentDelivery,
-    UserAddress
+    UserAddress,
 )
 
 # =========================================================
 # BASE RESPONSE
 # =========================================================
+
 
 class MessageResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
@@ -33,22 +30,18 @@ class MessageResponseSerializer(serializers.Serializer):
 # BANK CARD
 # =========================================================
 
+
 class BankCardSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BankCard
-        fields = [
-            "id",
-            "card_number",
-            "bank_name",
-            "is_active",
-            "created_at"
-        ]
+        fields = ["id", "card_number", "bank_name", "is_active", "created_at"]
 
 
 # =========================================================
 # WALLET
 # =========================================================
+
 
 class SilverWalletSerializer(serializers.ModelSerializer):
 
@@ -56,12 +49,7 @@ class SilverWalletSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SilverWallet
-        fields = [
-            "balance",
-            "blocked_balance",
-            "available_balance",
-            "updated_at"
-        ]
+        fields = ["balance", "blocked_balance", "available_balance", "updated_at"]
 
     def get_available_balance(self, obj):
         return int(obj.balance - obj.blocked_balance)
@@ -71,18 +59,14 @@ class SilverWalletSerializer(serializers.ModelSerializer):
 # INVENTORY
 # =========================================================
 
+
 class SilverInventorySerializer(serializers.ModelSerializer):
 
     available_balance = serializers.SerializerMethodField()
 
     class Meta:
         model = SilverInventory
-        fields = [
-            "balance",
-            "blocked_balance",
-            "available_balance",
-            "updated_at"
-        ]
+        fields = ["balance", "blocked_balance", "available_balance", "updated_at"]
 
     def get_available_balance(self, obj):
         return round(obj.balance - obj.blocked_balance, 5)
@@ -91,6 +75,7 @@ class SilverInventorySerializer(serializers.ModelSerializer):
 # =========================================================
 # TRANSACTION (BUY / SELL SILVER)
 # =========================================================
+
 
 class SilverTransactionSerializer(serializers.ModelSerializer):
 
@@ -113,7 +98,7 @@ class SilverTransactionSerializer(serializers.ModelSerializer):
             "total_amount",
             "final_price",
             "tracking_code",
-            "created_at"
+            "created_at",
         ]
 
     def get_final_price(self, obj):
@@ -123,6 +108,7 @@ class SilverTransactionSerializer(serializers.ModelSerializer):
 # =========================================================
 # FINANCIAL (DEPOSIT / WITHDRAW)
 # =========================================================
+
 
 class SilverFinancialTransactionSerializer(serializers.ModelSerializer):
 
@@ -144,19 +130,16 @@ class SilverFinancialTransactionSerializer(serializers.ModelSerializer):
             "method_display",
             "status",
             "status_display",
-
             # raw + full url (مثل Gold)
             "receipt_image",
             "receipt_image_url",
-
             "user_card",
             "user_card_number",
-
             "tracking_code",
             "admin_note",
             "description",
             "created_at",
-            "updated_at"
+            "updated_at",
         ]
 
     def get_user_card_number(self, obj):
@@ -175,28 +158,17 @@ class SilverFinancialTransactionSerializer(serializers.ModelSerializer):
         return f"https://api.darine.shop{obj.receipt_image.url}"
 
 
-
-
-
-
-
 # =========================================================
 # PRODUCT
 # =========================================================
 
 
-
-
-from decimal import Decimal
 from rest_framework import serializers
 
 
 class SilverProductSerializer(serializers.ModelSerializer):
 
-    category_name = serializers.CharField(
-        source="category.name",
-        read_only=True
-    )
+    category_name = serializers.CharField(source="category.name", read_only=True)
 
     image_url = serializers.SerializerMethodField()
 
@@ -211,30 +183,20 @@ class SilverProductSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
-
             "category",
             "category_name",
-
             "delivery_type",
-
             # وزن خالص
             "weight",
-
             # مقدار وزنی
             "product_weight_with_fee",
-
             # قیمت نهایی
             "sell_price",
             "total_price",
-
             "inventory_count",
-
             "image_url",
-
             "description",
-
             "is_active",
-
             "created_at",
         ]
 
@@ -246,9 +208,7 @@ class SilverProductSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
 
         if request:
-            return request.build_absolute_uri(
-                obj.image.url
-            )
+            return request.build_absolute_uri(obj.image.url)
 
         return f"https://api.darine.shop{obj.image.url}"
 
@@ -258,16 +218,7 @@ class SilverProductSerializer(serializers.ModelSerializer):
 
             return float(
                 Decimal(str(obj.weight))
-                *
-                (
-                    Decimal("1")
-                    +
-                    (
-                        Decimal(str(obj.profit_percent))
-                        /
-                        Decimal("100")
-                    )
-                )
+                * (Decimal("1") + (Decimal(str(obj.profit_percent)) / Decimal("100")))
             )
 
         except Exception:
@@ -278,24 +229,22 @@ class SilverProductSerializer(serializers.ModelSerializer):
             live_price = get_live_silver_price()
             if not live_price:
                 return int(obj.sell_price or 0)
-            total_price = (
-                Decimal(str(obj.total_weight_with_fees))
-                * Decimal(str(live_price))
+            total_price = Decimal(str(obj.total_weight_with_fees)) * Decimal(
+                str(live_price)
             )
             return int(total_price)
         except Exception:
             return int(obj.sell_price or 0)
 
+
 # =========================================================
 # ORDER STATUS HISTORY
 # =========================================================
 
+
 class SilverOrderStatusHistorySerializer(serializers.ModelSerializer):
 
-    status_display = serializers.CharField(
-        source="get_status_display",
-        read_only=True
-    )
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     class Meta:
         model = SilverOrderStatusHistory
@@ -307,12 +256,10 @@ class SilverOrderStatusHistorySerializer(serializers.ModelSerializer):
         ]
 
 
-
-
-
 # =========================================================
 # ORDER ITEM
 # =========================================================
+
 
 class SilverOrderItemSerializer(serializers.ModelSerializer):
 
@@ -328,7 +275,7 @@ class SilverOrderItemSerializer(serializers.ModelSerializer):
             "product_image",
             "quantity",
             "price_at_time",
-            "weight_at_time"
+            "weight_at_time",
         ]
 
 
@@ -339,120 +286,68 @@ class SilverOrderItemSerializer(serializers.ModelSerializer):
 
 class SilverOrderSerializer(serializers.ModelSerializer):
 
-    items = SilverOrderItemSerializer(
-        many=True,
-        read_only=True
-    )
+    items = SilverOrderItemSerializer(many=True, read_only=True)
 
     payment_method_display = serializers.CharField(
-        source="get_payment_method_display",
-        read_only=True
+        source="get_payment_method_display", read_only=True
     )
 
-    status_display = serializers.CharField(
-        source="get_status_display",
-        read_only=True
-    )
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     delivery_type_display = serializers.CharField(
-        source="get_delivery_type_display",
-        read_only=True
+        source="get_delivery_type_display", read_only=True
     )
 
-    status_history = SilverOrderStatusHistorySerializer(
-        many=True,
-        read_only=True
-    )
+    status_history = SilverOrderStatusHistorySerializer(many=True, read_only=True)
 
     class Meta:
         model = SilverOrder
         fields = [
             "id",
-
             "province",
             "city",
             "address",
             "postal_code",
             "plaque",
             "unit",
-
             "payment_method",
             "payment_method_display",
-
             "delivery_type",
             "delivery_type_display",
-
             "status",
             "status_display",
-
             "total_silver_amount",
             "total_toman_amount",
-
             "tracking_code",
-
             "created_at",
-
             "admin_note",
-
             "items",
-
             "status_history",
         ]
-
-
-
-
 
 
 # =========================================================
 # PRICE HISTORY (CHART)
 # =========================================================
 
+
 class SilverPriceHistorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SilverPriceHistory
-        fields = [
-            "id",
-            "price",
-            "created_at"
-        ]
+        fields = ["id", "price", "created_at"]
 
 
 # =========================================================
 # REFERRAL
 # =========================================================
 
+
 class SilverReferralEarningSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SilverReferralEarning
-        fields = [
-            "id",
-            "amount",
-            "source_type",
-            "created_at"
-        ]
-
-
-# =========================================================
-# RECENT TRANSACTIONS
-# =========================================================
-
-# class SilverRecentTransactionSerializer(serializers.Serializer):
-#     id = serializers.IntegerField()
-#     title = serializers.CharField()
-#     amount = serializers.DecimalField(
-#     max_digits=20,
-#     decimal_places=0,
-#     error_messages={
-#         "required": "مبلغ الزامی است",
-#         "invalid": "مبلغ نامعتبر است"
-#     }
-# )
-#     status = serializers.CharField()
-#     type = serializers.CharField()
-#     created_at = serializers.DateTimeField()
+        fields = ["id", "amount", "source_type", "created_at"]
 
 
 class SilverRecentTransactionSerializer(serializers.Serializer):
@@ -461,25 +356,21 @@ class SilverRecentTransactionSerializer(serializers.Serializer):
 
     title = serializers.CharField()
 
-    amount = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
+    amount = serializers.DecimalField(max_digits=20, decimal_places=0)
 
     status = serializers.CharField()
 
     type = serializers.CharField()
 
-    method = serializers.CharField(
-        required=False,
-        allow_null=True
-    )
+    method = serializers.CharField(required=False, allow_null=True)
 
     created_at = serializers.DateTimeField()
+
 
 # =========================================================
 # RECENT DELIVERIES
 # =========================================================
+
 
 class SilverRecentDeliverySerializer(serializers.Serializer):
     id = serializers.IntegerField()
@@ -497,34 +388,22 @@ class SilverRecentDeliverySerializer(serializers.Serializer):
 # DEPOSIT
 # =========================================================
 
+
 class SilverDepositSerializer(serializers.Serializer):
 
-    METHOD_CHOICES = (
-        ("RECEIPT", "رسید"),
-        ("GATEWAY", "درگاه")
-    )
+    METHOD_CHOICES = (("RECEIPT", "رسید"), ("GATEWAY", "درگاه"))
 
     amount = serializers.DecimalField(
         max_digits=20,
         decimal_places=0,
-        error_messages={
-            "required": "مبلغ الزامی است",
-            "invalid": "مبلغ نامعتبر است"
-        }
+        error_messages={"required": "مبلغ الزامی است", "invalid": "مبلغ نامعتبر است"},
     )
 
-    method = serializers.ChoiceField(
-        choices=METHOD_CHOICES
-    )
+    method = serializers.ChoiceField(choices=METHOD_CHOICES)
 
-    receipt = serializers.ImageField(
-        required=False
-    )
+    receipt = serializers.ImageField(required=False)
 
-    description = serializers.CharField(
-        required=False,
-        allow_blank=True
-    )
+    description = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
 
@@ -532,48 +411,38 @@ class SilverDepositSerializer(serializers.Serializer):
         receipt = attrs.get("receipt")
 
         if method == "RECEIPT" and not receipt:
-            raise serializers.ValidationError({
-                "receipt": "تصویر رسید الزامی است"
-            })
+            raise serializers.ValidationError({"receipt": "تصویر رسید الزامی است"})
 
         return attrs
+
 
 # =========================================================
 # BUY SILVER
 # =========================================================
 
 
-
 class BuySilverSerializer(serializers.Serializer):
 
     payment_method = serializers.ChoiceField(
-        choices=[
-            ("WALLET", "کیف پول"),
-            ("GATEWAY", "درگاه")
-        ]
+        choices=[("WALLET", "کیف پول"), ("GATEWAY", "درگاه")]
     )
 
     toman = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=2,
-        required=False,
-        allow_null=True
+        max_digits=20, decimal_places=2, required=False, allow_null=True
     )
 
     # 👇 مهم: validation سخت رو برمی‌داریم
     weight = serializers.DecimalField(
         max_digits=30,
-        decimal_places=18,   # 👈 اجازه عدد خام فرانت
+        decimal_places=18,  # 👈 اجازه عدد خام فرانت
         required=False,
-        allow_null=True
+        allow_null=True,
     )
 
     def validate(self, attrs):
 
         if not attrs.get("toman") and not attrs.get("weight"):
-            raise serializers.ValidationError({
-                "message": "مبلغ یا وزن الزامی است"
-            })
+            raise serializers.ValidationError({"message": "مبلغ یا وزن الزامی است"})
 
         request = self.context.get("request")
         user = request.user
@@ -600,8 +469,7 @@ class BuySilverSerializer(serializers.Serializer):
 
             # 👇 اینجا trim واقعی انجام میشه
             weight = Decimal(str(attrs["weight"])).quantize(
-                Decimal("0.00000001"),
-                rounding=ROUND_DOWN
+                Decimal("0.00000001"), rounding=ROUND_DOWN
             )
 
             pure = weight * silver_price
@@ -609,30 +477,29 @@ class BuySilverSerializer(serializers.Serializer):
             total_toman = pure + fee
 
         attrs["fee"] = fee.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
-        attrs["total_toman"] = total_toman.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
-        attrs["final_weight"] = weight.quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+        attrs["total_toman"] = total_toman.quantize(
+            Decimal("0.01"), rounding=ROUND_DOWN
+        )
+        attrs["final_weight"] = weight.quantize(
+            Decimal("0.00000001"), rounding=ROUND_DOWN
+        )
 
         return attrs
-    
+
 
 # =========================================================
 # SELL SILVER
 # =========================================================
 
+
 class SellSilverSerializer(serializers.Serializer):
 
     toman = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=2,
-        required=False,
-        allow_null=True
+        max_digits=20, decimal_places=2, required=False, allow_null=True
     )
 
     weight = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=8,
-        required=False,
-        allow_null=True
+        max_digits=20, decimal_places=8, required=False, allow_null=True
     )
 
     fee = None
@@ -643,9 +510,7 @@ class SellSilverSerializer(serializers.Serializer):
     def validate(self, attrs):
 
         if not attrs.get("toman") and not attrs.get("weight"):
-            raise serializers.ValidationError({
-                "message": "مبلغ یا وزن الزامی است"
-            })
+            raise serializers.ValidationError({"message": "مبلغ یا وزن الزامی است"})
 
         request = self.context.get("request")
         user = request.user
@@ -684,48 +549,45 @@ class SellSilverSerializer(serializers.Serializer):
         attrs["final_weight"] = final_weight
 
         return attrs
-    
 
 
 # =========================================================
-# WITHDRAW
+# WITHDRAW (SILVER)
 # =========================================================
+
 
 class SilverWithdrawSerializer(serializers.Serializer):
 
     TARGET_CHOICES = (
         ("BANK", "بانک"),
-        ("SILVER", "تبدیل به نقره"),
+        ("GOLD", "تبدیل به طلا"),
     )
 
     amount = serializers.DecimalField(
         max_digits=20,
         decimal_places=0,
-        error_messages={
-            "required": "مبلغ الزامی است",
-            "invalid": "مبلغ نامعتبر است"
-        }
+        error_messages={"required": "مبلغ الزامی است", "invalid": "مبلغ نامعتبر است"},
     )
 
     target = serializers.ChoiceField(
         choices=TARGET_CHOICES,
         error_messages={
             "required": "نوع برداشت الزامی است",
-            "invalid_choice": "نوع برداشت نامعتبر است"
-        }
+            "invalid_choice": "نوع برداشت نامعتبر است",
+        },
     )
 
     card_id = serializers.IntegerField(
         required=False,
         allow_null=True,
-        error_messages={
-            "invalid": "شناسه کارت نامعتبر است"
-        }
+        error_messages={"invalid": "شناسه کارت نامعتبر است"},
     )
+
 
 # =========================================================
 # USER BALANCE (DASHBOARD)
 # =========================================================
+
 
 class SilverUserBalanceSerializer(serializers.Serializer):
 
@@ -735,21 +597,8 @@ class SilverUserBalanceSerializer(serializers.Serializer):
     total_assets = serializers.DecimalField(max_digits=20, decimal_places=0)
 
 
-# =========================================================
-# # CHART
-# # =========================================================
-
-# class SilverChartSerializer(serializers.Serializer):
-
-#     labels = serializers.ListField(child=serializers.CharField())
-#     prices = serializers.ListField(child=serializers.DecimalField(max_digits=20, decimal_places=0))
-#     highest_price = serializers.DecimalField(max_digits=20, decimal_places=0)
-#     lowest_price = serializers.DecimalField(max_digits=20, decimal_places=0)
-#     change_percent = serializers.DecimalField(max_digits=10, decimal_places=2)
-#     filter_type = serializers.CharField()
 
 
-# silver_app/serializers.py
 
 class SilverBubbleSerializer(serializers.Serializer):
     silver_price = serializers.IntegerField()
@@ -778,21 +627,57 @@ class SilverChartSerializer(serializers.Serializer):
     stats = SilverChartStatsSerializer()
     bubble = SilverBubbleSerializer()
 
+
+from rest_framework import serializers
+import re
+
+from rest_framework import serializers
+
+
 class UserAddressSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UserAddress
-        fields = [
-            "id",
+        fields = ["id", "province", "city", "address", "plaque", "unit", "postal_code"]
+        read_only_fields = ["id"]
+
+    def validate(self, attrs):
+
+        required_fields = [
             "province",
             "city",
             "address",
-            "postal_code",
             "plaque",
             "unit",
-            "created_at",
+            "postal_code",
         ]
 
+        # =========================
+        # بررسی اجباری بودن
+        # =========================
+        for field in required_fields:
+            value = attrs.get(field)
+
+            if value is None or str(value).strip() == "":
+                raise serializers.ValidationError({field: "این فیلد اجباری است"})
+
+        # =========================
+        # بررسی کد پستی
+        # =========================
+        postal_code = str(attrs.get("postal_code"))
+
+        if not re.fullmatch(r"\d{10}", postal_code):
+            raise serializers.ValidationError(
+                {"postal_code": "کد پستی باید دقیقاً ۱۰ رقم عددی باشد"}
+            )
+
+        return attrs
+
+
+
+# =========================================================
+# SILVER CHECKOUT (NO ADDRESS)
+# =========================================================
 
 class SilverPhysicalOrderSerializer(serializers.Serializer):
 
@@ -803,72 +688,43 @@ class SilverPhysicalOrderSerializer(serializers.Serializer):
 
     payment_method = serializers.ChoiceField(
         choices=[
-            ('TOMAN', 'کیف پول'),
-            ('SILVER', 'نقره')
+            ("TOMAN", "کیف پول"),
+            ("SILVER", "نقره"),
         ]
     )
-
-    delivery_type = serializers.ChoiceField(
-        choices=[
-            ('HOME', 'ارسال'),
-            ('IN_PERSON', 'حضوری')
-        ]
-    )
-
-    # =========================
-    # ADDRESS
-    # =========================
-    address_id = serializers.IntegerField(required=False, allow_null=True)
-
-    province = serializers.CharField(required=False, allow_blank=True)
-    city = serializers.CharField(required=False, allow_blank=True)
-    address = serializers.CharField(required=False, allow_blank=True)
-
-    postal_code = serializers.CharField(required=False, allow_blank=True)
-    plaque = serializers.CharField(required=False, allow_blank=True)
-    unit = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, data):
 
         products = data.get("products")
 
         if not products:
-            raise serializers.ValidationError({
-                "non_field_errors": ["سبد خرید خالی است"]
-            })
+            raise serializers.ValidationError(
+                {"non_field_errors": ["سبد خرید خالی است"]}
+            )
 
-        # validate each product item
         for item in products:
 
             if "product_id" not in item:
-                raise serializers.ValidationError({
-                    "non_field_errors": ["product_id الزامی است"]
-                })
+                raise serializers.ValidationError(
+                    {"non_field_errors": ["product_id الزامی است"]}
+                )
 
-            if "quantity" not in item or int(item["quantity"]) < 1:
-                raise serializers.ValidationError({
-                    "non_field_errors": ["quantity نامعتبر است"]
-                })
+            if "quantity" not in item:
+                raise serializers.ValidationError(
+                    {"non_field_errors": ["quantity الزامی است"]}
+                )
 
-        address_id = data.get("address_id")
-        province = data.get("province")
-        city = data.get("city")
-        address = data.get("address")
-
-        # address logic
-        if address_id and any([province, city, address]):
-            raise serializers.ValidationError({
-                "non_field_errors": ["یا آدرس قبلی یا جدید، نه هر دو"]
-            })
-
-        if not address_id:
-            if not (province and city and address):
-                raise serializers.ValidationError({
-                    "non_field_errors": ["province, city, address الزامی است"]
-                })
+            if int(item["quantity"]) < 1:
+                raise serializers.ValidationError(
+                    {"non_field_errors": ["quantity نامعتبر است"]}
+                )
 
         return data
-    
+
+
+
+
+
 
 class SilverProductCategorySerializer(serializers.ModelSerializer):
 

@@ -6,33 +6,41 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('gold_app', '0018_goldtransaction_commission_amount_and_more'),
+        ("gold_app", "0018_goldtransaction_commission_amount_and_more"),
     ]
 
     operations = [
         migrations.RenameField(
-            model_name='wallet',
-            old_name='balance',
-            new_name='accessible_toman',
+            model_name="wallet",
+            old_name="balance",
+            new_name="accessible_toman",
         ),
         migrations.RenameField(
-            model_name='wallet',
-            old_name='blocked_balance',
-            new_name='blocked_toman',
+            model_name="wallet",
+            old_name="blocked_balance",
+            new_name="blocked_toman",
         ),
         migrations.AddField(
-            model_name='wallet',
-            name='accessible_gold',
+            model_name="wallet",
+            name="accessible_gold",
             field=models.DecimalField(decimal_places=3, default=0, max_digits=20),
         ),
         migrations.AddField(
-            model_name='wallet',
-            name='blocked_gold',
+            model_name="wallet",
+            name="blocked_gold",
             field=models.DecimalField(decimal_places=3, default=0, max_digits=20),
         ),
         migrations.AlterField(
-            model_name='financialtransaction',
-            name='status',
-            field=models.CharField(choices=[('PENDING', 'در انتظار'), ('COMPLETED', 'تکمیل شده'), ('REJECTED', 'ناموفق')], default='PENDING', max_length=20),
+            model_name="financialtransaction",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("PENDING", "در انتظار"),
+                    ("COMPLETED", "تکمیل شده"),
+                    ("REJECTED", "ناموفق"),
+                ],
+                default="PENDING",
+                max_length=20,
+            ),
         ),
     ]

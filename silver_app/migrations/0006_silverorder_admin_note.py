@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('silver_app', '0005_alter_silverinventory_balance_and_more'),
+        ("silver_app", "0005_alter_silverinventory_balance_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='silverorder',
-            name='admin_note',
+            model_name="silverorder",
+            name="admin_note",
             field=models.TextField(blank=True, null=True),
         ),
     ]

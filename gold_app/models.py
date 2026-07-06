@@ -1,111 +1,113 @@
-# gold_app/models.py
+    # gold_app/models.py
 
-from decimal import Decimal
 from django.db import models
 from django.conf import settings
-from django.utils import timezone
 
 from accounts.models import BankCard, User
 
 
-# =========================================================
-# WALLET
-# =========================================================
+    # =========================================================
+    # WALLET
+    # =========================================================
 
-# =========================================================
-# WALLET
-# =========================================================
+    # =========================================================
+    # WALLET
+    # =========================================================
 
-# =========================================================
-# WALLET
-# =========================================================
+    # =========================================================
+    # WALLET
+    # =========================================================
 
 class Wallet(models.Model):
 
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="wallet"
-    )
-
-    # ==========================
-    # TOMAN
-    # ==========================
-
-    accessible_toman = models.DecimalField(
-        max_digits=20,
-        decimal_places=0,
-        default=0
-    )
-
-    blocked_toman = models.DecimalField(
-        max_digits=20,
-        decimal_places=0,
-        default=0
-    )
-
-    updated_at = models.DateTimeField(
-        auto_now=True
-    )
-
-    @property
-    def toman_total(self):
-        return (
-            self.accessible_toman +
-            self.blocked_toman
+        user = models.OneToOneField(
+            settings.AUTH_USER_MODEL,
+            on_delete=models.CASCADE,
+            related_name="wallet"
         )
 
-    def __str__(self):
-        return self.user.mobile
-# =========================================================
-# GOLD INVENTORY
-# =========================================================
+        # ==========================
+        # TOMAN
+        # ==========================
+
+        accessible_toman = models.DecimalField(
+            max_digits=20,
+            decimal_places=0,
+            default=0
+        )
+
+        blocked_toman = models.DecimalField(
+            max_digits=20,
+            decimal_places=0,
+            default=0
+        )
+
+        updated_at = models.DateTimeField(
+            auto_now=True
+        )
+
+        @property
+        def toman_total(self):
+            return (
+                self.accessible_toman +
+                self.blocked_toman
+            )
+
+        def __str__(self):
+            return self.user.mobile
 
 
 
-from django.core.validators import MinValueValidator
-from decimal import Decimal
+
+    # =========================================================
+    # GOLD INVENTORY
+    # =========================================================
+
+
+
 
 from django.db import models
 from django.conf import settings
-from django.core.validators import MinValueValidator
 
 class GoldInventory(models.Model):
 
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="gold_inventory"
-    )
-
-    accessible_balance = models.DecimalField(
-        max_digits=20,
-        decimal_places=3,
-        default=0
-    )
-
-    blocked_balance = models.DecimalField(
-        max_digits=20,
-        decimal_places=3,
-        default=0
-    )
-
-    updated_at = models.DateTimeField(
-        auto_now=True
-    )
-
-    @property
-    def total_balance(self):
-        return (
-            self.accessible_balance +
-            self.blocked_balance
+        user = models.OneToOneField(
+            settings.AUTH_USER_MODEL,
+            on_delete=models.CASCADE,
+            related_name="gold_inventory"
         )
 
-    def __str__(self):
-        return self.user.mobile
-# =========================================================
-# GOLD TRANSACTION
-# =========================================================
+        accessible_balance = models.DecimalField(
+            max_digits=20,
+            decimal_places=3,
+            default=0
+        )
+
+        blocked_balance = models.DecimalField(
+            max_digits=20,
+            decimal_places=3,
+            default=0
+        )
+
+        updated_at = models.DateTimeField(
+            auto_now=True
+        )
+
+        @property
+        def total_balance(self):
+            return (
+                self.accessible_balance +
+                self.blocked_balance
+            )
+
+        def __str__(self):
+            return self.user.mobile
+    # =========================================================
+    # GOLD TRANSACTION
+    # =========================================================
+
+
+
 
 class GoldTransaction(models.Model):
 
@@ -381,24 +383,18 @@ class Product(models.Model):
 
 
 # =========================================================
-# ORDER
-# =========================================================
-# =========================================================
-# ORDER
+# ORDERS
 # =========================================================
 
 class Order(models.Model):
-
     PAYMENT_CHOICES = (
         ("GOLD", "طلا"),
         ("TOMAN", "کیف پول"),
     )
-
     DELIVERY_CHOICES = (
         ("HOME", "ارسال"),
         ("IN_PERSON", "حضوری"),
     )
-
     STATUS_CHOICES = (
         ("REQUESTED", "درخواست سفارش"),
         ("PREPARING", "در حال آماده‌سازی"),
@@ -407,87 +403,24 @@ class Order(models.Model):
         ("CANCELLED", "لغو شده"),
     )
 
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE
-    )
-
-    province = models.CharField(
-        max_length=100
-    )
-
-    city = models.CharField(
-        max_length=100
-    )
-
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    province = models.CharField(max_length=100)
+    city = models.CharField(max_length=100)
     address = models.TextField()
-
-    postal_code = models.CharField(
-        max_length=20,
-        blank=True,
-        null=True
-    )
-
-    plaque = models.CharField(
-        max_length=20,
-        blank=True,
-        null=True
-    )
-
-    unit = models.CharField(
-        max_length=20,
-        blank=True,
-        null=True
-    )
-
-    payment_method = models.CharField(
-        max_length=20,
-        choices=PAYMENT_CHOICES
-    )
-
-    delivery_type = models.CharField(
-        max_length=20,
-        choices=DELIVERY_CHOICES
-    )
-
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default="REQUESTED"
-    )
-
-    total_gold_amount = models.DecimalField(
-        max_digits=20,
-        decimal_places=3
-    )
-
-    total_toman_amount = models.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
-
-    tracking_code = models.CharField(
-        max_length=100,
-        unique=True
-    )
-
-    admin_note = models.TextField(
-        blank=True,
-        null=True
-    )
-
-    description = models.TextField(
-        blank=True,
-        null=True
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
-
-    updated_at = models.DateTimeField(
-        auto_now=True
-    )
+    postal_code = models.CharField(max_length=20, blank=True, null=True)
+    plaque = models.CharField(max_length=20, blank=True, null=True)
+    unit = models.CharField(max_length=20, blank=True, null=True)
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_CHOICES)
+    delivery_type = models.CharField(max_length=20, choices=DELIVERY_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="REQUESTED")
+    
+    total_gold_amount = models.DecimalField(max_digits=20, decimal_places=3)
+    total_toman_amount = models.DecimalField(max_digits=20, decimal_places=0)
+    tracking_code = models.CharField(max_length=100, unique=True)
+    admin_note = models.TextField(blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.tracking_code
@@ -495,11 +428,10 @@ class Order(models.Model):
     
     
 # =========================================================
-# ORDER STATUS HISTORY
+# STATUS HISTORIES
 # =========================================================
 
 class OrderStatusHistory(models.Model):
-
     STATUS_CHOICES = (
         ("REQUESTED", "درخواست سفارش"),
         ("PREPARING", "در حال آماده‌سازی"),
@@ -507,66 +439,31 @@ class OrderStatusHistory(models.Model):
         ("DELIVERED", "تحویل داده شد"),
         ("CANCELLED", "لغو شده"),
     )
-
-    order = models.ForeignKey(
-        Order,
-        on_delete=models.CASCADE,
-        related_name="status_history"
-    )
-
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES
-    )
-
-    description = models.TextField(
-        blank=True,
-        null=True
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="status_history")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["created_at"]
-        verbose_name = "مرحله سفارش"
-        verbose_name_plural = "مراحل سفارش"
+        verbose_name = "مرحله سفارش طلا"
+        verbose_name_plural = "مراحل سفارش طلا"
 
     def __str__(self):
         return f"{self.order.tracking_code} - {self.get_status_display()}"
-    
-    
 
 # =========================================================
-# ORDER ITEM
+# ORDER ITEMS
 # =========================================================
 
 class OrderItem(models.Model):
-
-    order = models.ForeignKey(
-        Order,
-        on_delete=models.CASCADE,
-        related_name='items'
-    )
-
-    product = models.ForeignKey(
-        Product,
-        on_delete=models.CASCADE
-    )
-
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
-
-    price_at_time = models.DecimalField(
-        max_digits=20,
-        decimal_places=0
-    )
-
-    weight_at_time = models.DecimalField(
-        max_digits=20,
-        decimal_places=3
-    )
-
+    price_at_time = models.DecimalField(max_digits=20, decimal_places=0)
+    weight_at_time = models.DecimalField(max_digits=20, decimal_places=3)
+    
+    
 
 # =========================================================
 # PRICE ALERT

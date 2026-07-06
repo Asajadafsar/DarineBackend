@@ -3,29 +3,20 @@ from rest_framework.response import Response
 from rest_framework import status
 
 
-
 def custom_exception_handler(exc, context):
 
-    response = exception_handler(
-        exc,
-        context
-    )
-
+    response = exception_handler(exc, context)
 
     # خطاهای DRF
     if response is not None:
 
         errors = response.data
 
-
         message = "خطایی رخ داده است."
 
         if isinstance(errors, dict):
 
-            first_key = next(
-                iter(errors),
-                None
-            )
+            first_key = next(iter(errors), None)
 
             if first_key:
 
@@ -39,16 +30,10 @@ def custom_exception_handler(exc, context):
 
                     message = str(value)
 
-
         return Response(
-            {
-                "success": False,
-                "message": message,
-                "data": errors
-            },
-            status=response.status_code
+            {"success": False, "message": message, "data": errors},
+            status=response.status_code,
         )
-
 
     # ==========================
     # SERVER ERROR 500
@@ -58,7 +43,7 @@ def custom_exception_handler(exc, context):
         {
             "success": False,
             "message": "خطای داخلی سرور رخ داده است. لطفا دوباره تلاش کنید.",
-            "data": None
+            "data": None,
         },
-        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
     )

@@ -7,21 +7,48 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('gold_app', '0014_pricealert_triggered'),
+        ("gold_app", "0014_pricealert_triggered"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='OrderStatusHistory',
+            name="OrderStatusHistory",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('status', models.CharField(choices=[('PENDING', 'درخواست سفارش'), ('PREPARING', 'در حال آماده\u200cسازی'), ('SHIPPING', 'در حال تحویل'), ('DELIVERED', 'تحویل داده شد'), ('CANCELLED', 'لغو شد')], max_length=20)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('order', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='status_history', to='gold_app.order')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("PENDING", "درخواست سفارش"),
+                            ("PREPARING", "در حال آماده\u200cسازی"),
+                            ("SHIPPING", "در حال تحویل"),
+                            ("DELIVERED", "تحویل داده شد"),
+                            ("CANCELLED", "لغو شد"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                ("description", models.TextField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "order",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="status_history",
+                        to="gold_app.order",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['created_at'],
+                "ordering": ["created_at"],
             },
         ),
     ]

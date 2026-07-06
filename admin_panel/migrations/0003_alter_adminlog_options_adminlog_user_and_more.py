@@ -8,33 +8,59 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('admin_panel', '0002_adminlog_action_type'),
+        ("admin_panel", "0002_adminlog_action_type"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='adminlog',
-            options={'ordering': ['-created_at']},
+            name="adminlog",
+            options={"ordering": ["-created_at"]},
         ),
         migrations.AddField(
-            model_name='adminlog',
-            name='user',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='user_action_logs', to=settings.AUTH_USER_MODEL),
+            model_name="adminlog",
+            name="user",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="user_action_logs",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AlterField(
-            model_name='adminlog',
-            name='action_type',
-            field=models.CharField(choices=[('BUY_GOLD', 'خرید طلا'), ('SELL_GOLD', 'فروش طلا'), ('BUY_SILVER', 'خرید نقره'), ('SELL_SILVER', 'فروش نقره'), ('DEPOSIT', 'واریز'), ('WITHDRAW', 'برداشت'), ('USER_REGISTER', 'ثبت نام کاربر'), ('USER_VERIFY', 'احراز هویت'), ('ORDER', 'سفارش'), ('ADMIN', 'فعالیت ادمین')], max_length=50),
+            model_name="adminlog",
+            name="action_type",
+            field=models.CharField(
+                choices=[
+                    ("BUY_GOLD", "خرید طلا"),
+                    ("SELL_GOLD", "فروش طلا"),
+                    ("BUY_SILVER", "خرید نقره"),
+                    ("SELL_SILVER", "فروش نقره"),
+                    ("DEPOSIT", "واریز"),
+                    ("WITHDRAW", "برداشت"),
+                    ("USER_REGISTER", "ثبت نام کاربر"),
+                    ("USER_VERIFY", "احراز هویت"),
+                    ("ORDER", "سفارش"),
+                    ("ADMIN", "فعالیت ادمین"),
+                ],
+                max_length=50,
+            ),
         ),
         migrations.AlterField(
-            model_name='adminlog',
-            name='admin',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='admin_action_logs', to=settings.AUTH_USER_MODEL),
+            model_name="adminlog",
+            name="admin",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="admin_action_logs",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AlterField(
-            model_name='adminlog',
-            name='model_name',
+            model_name="adminlog",
+            name="model_name",
             field=models.CharField(blank=True, max_length=255, null=True),
         ),
     ]

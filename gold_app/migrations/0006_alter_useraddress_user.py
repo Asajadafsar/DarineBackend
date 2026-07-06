@@ -8,14 +8,18 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('gold_app', '0005_alter_goldpricehistory_options_and_more'),
+        ("gold_app", "0005_alter_goldpricehistory_options_and_more"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='useraddress',
-            name='user',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='gold_addresses', to=settings.AUTH_USER_MODEL),
+            model_name="useraddress",
+            name="user",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="gold_addresses",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
     ]

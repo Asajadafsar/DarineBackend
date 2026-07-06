@@ -6,28 +6,28 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('gold_app', '0017_alter_order_status_orderstatushistory'),
+        ("gold_app", "0017_alter_order_status_orderstatushistory"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='goldtransaction',
-            name='commission_amount',
+            model_name="goldtransaction",
+            name="commission_amount",
             field=models.DecimalField(decimal_places=0, default=0, max_digits=20),
         ),
         migrations.AddField(
-            model_name='goldtransaction',
-            name='commission_percent',
+            model_name="goldtransaction",
+            name="commission_percent",
             field=models.DecimalField(decimal_places=2, default=0, max_digits=5),
         ),
         migrations.AddField(
-            model_name='goldtransaction',
-            name='marketer_percent',
+            model_name="goldtransaction",
+            name="marketer_percent",
             field=models.DecimalField(decimal_places=2, default=0, max_digits=5),
         ),
         migrations.AddField(
-            model_name='goldtransaction',
-            name='profit',
+            model_name="goldtransaction",
+            name="profit",
             field=models.DecimalField(decimal_places=0, default=0, max_digits=20),
         ),
     ]

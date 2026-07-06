@@ -6,38 +6,62 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('admin_panel', '0003_alter_adminlog_options_adminlog_user_and_more'),
+        ("admin_panel", "0003_alter_adminlog_options_adminlog_user_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='GoldBanner',
+            name="GoldBanner",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('title', models.CharField(max_length=255, verbose_name='عنوان')),
-                ('image', models.ImageField(upload_to='banners/gold/', verbose_name='تصویر')),
-                ('link', models.URLField(blank=True, null=True, verbose_name='لینک')),
-                ('is_active', models.BooleanField(default=True, verbose_name='فعال')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("title", models.CharField(max_length=255, verbose_name="عنوان")),
+                (
+                    "image",
+                    models.ImageField(upload_to="banners/gold/", verbose_name="تصویر"),
+                ),
+                ("link", models.URLField(blank=True, null=True, verbose_name="لینک")),
+                ("is_active", models.BooleanField(default=True, verbose_name="فعال")),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
             options={
-                'verbose_name': 'بنر طلا',
-                'verbose_name_plural': 'بنرهای طلا',
+                "verbose_name": "بنر طلا",
+                "verbose_name_plural": "بنرهای طلا",
             },
         ),
         migrations.CreateModel(
-            name='SilverBanner',
+            name="SilverBanner",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('title', models.CharField(max_length=255, verbose_name='عنوان')),
-                ('image', models.ImageField(upload_to='banners/silver/', verbose_name='تصویر')),
-                ('link', models.URLField(blank=True, null=True, verbose_name='لینک')),
-                ('is_active', models.BooleanField(default=True, verbose_name='فعال')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("title", models.CharField(max_length=255, verbose_name="عنوان")),
+                (
+                    "image",
+                    models.ImageField(
+                        upload_to="banners/silver/", verbose_name="تصویر"
+                    ),
+                ),
+                ("link", models.URLField(blank=True, null=True, verbose_name="لینک")),
+                ("is_active", models.BooleanField(default=True, verbose_name="فعال")),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
             options={
-                'verbose_name': 'بنر نقره',
-                'verbose_name_plural': 'بنرهای نقره',
+                "verbose_name": "بنر نقره",
+                "verbose_name_plural": "بنرهای نقره",
             },
         ),
     ]

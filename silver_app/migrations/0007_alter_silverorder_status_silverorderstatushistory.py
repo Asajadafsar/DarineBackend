@@ -7,28 +7,65 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('silver_app', '0006_silverorder_admin_note'),
+        ("silver_app", "0006_silverorder_admin_note"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='silverorder',
-            name='status',
-            field=models.CharField(choices=[('REQUESTED', 'درخواست سفارش'), ('PREPARING', 'در حال آماده\u200cسازی'), ('DELIVERING', 'در حال تحویل'), ('DELIVERED', 'تحویل داده شد'), ('CANCELLED', 'لغو شده')], default='REQUESTED', max_length=20),
+            model_name="silverorder",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("REQUESTED", "درخواست سفارش"),
+                    ("PREPARING", "در حال آماده\u200cسازی"),
+                    ("DELIVERING", "در حال تحویل"),
+                    ("DELIVERED", "تحویل داده شد"),
+                    ("CANCELLED", "لغو شده"),
+                ],
+                default="REQUESTED",
+                max_length=20,
+            ),
         ),
         migrations.CreateModel(
-            name='SilverOrderStatusHistory',
+            name="SilverOrderStatusHistory",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('status', models.CharField(choices=[('REQUESTED', 'درخواست سفارش'), ('PREPARING', 'در حال آماده\u200cسازی'), ('DELIVERING', 'در حال تحویل'), ('DELIVERED', 'تحویل داده شد'), ('CANCELLED', 'لغو شده')], max_length=20)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('order', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='status_history', to='silver_app.silverorder')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("REQUESTED", "درخواست سفارش"),
+                            ("PREPARING", "در حال آماده\u200cسازی"),
+                            ("DELIVERING", "در حال تحویل"),
+                            ("DELIVERED", "تحویل داده شد"),
+                            ("CANCELLED", "لغو شده"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                ("description", models.TextField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "order",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="status_history",
+                        to="silver_app.silverorder",
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'مرحله سفارش نقره',
-                'verbose_name_plural': 'مراحل سفارش نقره',
-                'ordering': ['created_at'],
+                "verbose_name": "مرحله سفارش نقره",
+                "verbose_name_plural": "مراحل سفارش نقره",
+                "ordering": ["created_at"],
             },
         ),
     ]

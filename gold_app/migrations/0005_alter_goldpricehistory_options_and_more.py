@@ -6,17 +6,17 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('gold_app', '0004_delete_referralearning'),
+        ("gold_app", "0004_delete_referralearning"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='goldpricehistory',
-            options={'ordering': ['created_at']},
+            name="goldpricehistory",
+            options={"ordering": ["created_at"]},
         ),
         migrations.AlterField(
-            model_name='goldpricehistory',
-            name='created_at',
+            model_name="goldpricehistory",
+            name="created_at",
             field=models.DateTimeField(auto_now_add=True, db_index=True),
         ),
     ]

@@ -6,31 +6,31 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0008_userfee_created_at_alter_userfee_gold_buy_fee_and_more'),
+        ("accounts", "0008_userfee_created_at_alter_userfee_gold_buy_fee_and_more"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='cooperationrequest',
-            name='email',
+            model_name="cooperationrequest",
+            name="email",
         ),
         migrations.RemoveField(
-            model_name='cooperationrequest',
-            name='is_reviewed',
+            model_name="cooperationrequest",
+            name="is_reviewed",
         ),
         migrations.RemoveField(
-            model_name='cooperationrequest',
-            name='organization_name',
+            model_name="cooperationrequest",
+            name="organization_name",
         ),
         migrations.AlterField(
-            model_name='cooperationrequest',
-            name='description',
+            model_name="cooperationrequest",
+            name="description",
             field=models.TextField(default=1),
             preserve_default=False,
         ),
         migrations.AlterField(
-            model_name='cooperationrequest',
-            name='mobile',
+            model_name="cooperationrequest",
+            name="mobile",
             field=models.CharField(max_length=11),
         ),
     ]

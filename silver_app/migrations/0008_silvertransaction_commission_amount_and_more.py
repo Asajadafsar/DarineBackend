@@ -6,28 +6,28 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('silver_app', '0007_alter_silverorder_status_silverorderstatushistory'),
+        ("silver_app", "0007_alter_silverorder_status_silverorderstatushistory"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='silvertransaction',
-            name='commission_amount',
+            model_name="silvertransaction",
+            name="commission_amount",
             field=models.DecimalField(decimal_places=0, default=0, max_digits=20),
         ),
         migrations.AddField(
-            model_name='silvertransaction',
-            name='commission_percent',
+            model_name="silvertransaction",
+            name="commission_percent",
             field=models.DecimalField(decimal_places=2, default=0, max_digits=5),
         ),
         migrations.AddField(
-            model_name='silvertransaction',
-            name='marketer_percent',
+            model_name="silvertransaction",
+            name="marketer_percent",
             field=models.DecimalField(decimal_places=2, default=0, max_digits=5),
         ),
         migrations.AddField(
-            model_name='silvertransaction',
-            name='profit',
+            model_name="silvertransaction",
+            name="profit",
             field=models.DecimalField(decimal_places=0, default=0, max_digits=20),
         ),
     ]

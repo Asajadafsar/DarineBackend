@@ -29,12 +29,7 @@ darine.shop
         "ApiKey": SMS_API_KEY,
         "Text": text,
         "Sender": SMS_SENDER,
-        "Recipients": [
-            {
-                "Destination": mobile,
-                "UserTraceId": int(time.time())
-            }
-        ]
+        "Recipients": [{"Destination": mobile, "UserTraceId": int(time.time())}],
     }
 
     try:
@@ -42,10 +37,8 @@ darine.shop
         response = requests.post(
             SMS_URL,
             json=payload,
-            headers={
-                "Content-Type": "application/json"
-            },
-            timeout=30
+            headers={"Content-Type": "application/json"},
+            timeout=30,
         )
 
         print("SMS STATUS:", response.status_code)
@@ -62,15 +55,13 @@ darine.shop
 
         print("SMS EXCEPTION:", str(e))
         return False
-    
-    
+
+
 def get_account_info():
 
     response = requests.post(
         "https://api.sms-webservice.com/api/V3/AccountInfo",
-        json={
-            "ApiKey": SMS_API_KEY
-        }
+        json={"ApiKey": SMS_API_KEY},
     )
 
     print(response.text)

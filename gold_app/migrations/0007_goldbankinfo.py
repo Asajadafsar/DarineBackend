@@ -6,19 +6,27 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('gold_app', '0006_alter_useraddress_user'),
+        ("gold_app", "0006_alter_useraddress_user"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='GoldBankInfo',
+            name="GoldBankInfo",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('card_number', models.CharField(max_length=30)),
-                ('full_name', models.CharField(max_length=255)),
-                ('sheba', models.CharField(max_length=34)),
-                ('is_active', models.BooleanField(default=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("card_number", models.CharField(max_length=30)),
+                ("full_name", models.CharField(max_length=255)),
+                ("sheba", models.CharField(max_length=34)),
+                ("is_active", models.BooleanField(default=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
         ),
     ]

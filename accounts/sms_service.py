@@ -46,13 +46,12 @@ def send_otp_sms(mobile, code, client_type="gold"):
     except Exception as e:
         print(f"SMS Connection Error: {e}")
         return False
-    
-  
-  
-  
+
+
 # ==========================================
 # LOGIN SUCCESS SMS
 # ==========================================
+
 
 def send_login_sms(mobile):
     url = "https://api.sms-webservice.com/api/V3/SendTokenSingle"
@@ -63,7 +62,7 @@ def send_login_sms(mobile):
 
     params = {
         "ApiKey": api_key,
-        "TemplateKey": "login",   # اسم قالب پیامک
+        "TemplateKey": "login",  # اسم قالب پیامک
         "Destination": mobile,
         "p1": j_now.strftime("%Y/%m/%d"),
         "p2": j_now.strftime("%H:%M"),

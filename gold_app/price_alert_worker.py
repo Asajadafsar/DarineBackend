@@ -12,7 +12,6 @@ from gold_app.models import (
 
 from gold_app.sms_service import send_price_alert_sms
 
-
 SMS_PRICE = Decimal("400")
 
 
@@ -21,17 +20,12 @@ def get_current_gold_price():
     دریافت آخرین قیمت طلا
     """
 
-    gold_price = (
-        GoldPriceHistory.objects
-        .order_by("-created_at")
-        .first()
-    )
+    gold_price = GoldPriceHistory.objects.order_by("-created_at").first()
 
     if not gold_price:
         return None
 
     return gold_price.price
-
 
 
 def is_alert_triggered(alert, current_price):
@@ -46,41 +40,23 @@ def is_alert_triggered(alert, current_price):
 
         return True
 
-
     if alert.triggered:
 
         alert.triggered = False
-        alert.save(
-            update_fields=[
-                "triggered"
-            ]
-        )
+        alert.save(update_fields=["triggered"])
 
     return False
 
 
-
-
 @transaction.atomic
 def process_price_alert(alert, current_price):
-
     """
     اجرای ارسال آلارم
     """
 
-    alert = (
-        PriceAlert.objects
-        .select_for_update()
-        .get(pk=alert.pk)
-    )
+    alert = PriceAlert.objects.select_for_update().get(pk=alert.pk)
 
-
-    wallet = (
-        Wallet.objects
-        .select_for_update()
-        .get(user=alert.user)
-    )
-
+    wallet = Wallet.objects.select_for_update().get(user=alert.user)
 
     # تعداد آلارم کامل شده
     if alert.sent_notifications >= alert.max_notifications:
@@ -88,16 +64,9 @@ def process_price_alert(alert, current_price):
         alert.status = "FINISHED"
         alert.is_active = False
 
-        alert.save(
-            update_fields=[
-                "status",
-                "is_active"
-            ]
-        )
+        alert.save(update_fields=["status", "is_active"])
 
         return
-
-
 
     # اگر رزرو پول تمام شده
     if wallet.blocked_balance < SMS_PRICE:
@@ -107,52 +76,33 @@ def process_price_alert(alert, current_price):
             price=current_price,
             sms_cost=SMS_PRICE,
             sms_status="FAILED",
-            sms_response="Blocked balance finished"
+            sms_response="Blocked balance finished",
         )
 
         return
 
-
-
     # ارسال پیامک
-    sms_success = send_price_alert_sms(
-        alert.user.mobile,
-        current_price
-    )
-
-
+    sms_success = send_price_alert_sms(alert.user.mobile, current_price)
 
     if not sms_success:
-
 
         PriceAlertLog.objects.create(
             alert=alert,
             price=current_price,
             sms_cost=SMS_PRICE,
             sms_status="FAILED",
-            sms_response="SMS provider error"
+            sms_response="SMS provider error",
         )
 
         return
 
-
-
-
     # آزاد کردن هزینه یک پیام
     wallet.blocked_balance -= SMS_PRICE
-
 
     if wallet.blocked_balance < 0:
         wallet.blocked_balance = 0
 
-
-    wallet.save(
-        update_fields=[
-            "blocked_balance"
-        ]
-    )
-
-
+    wallet.save(update_fields=["blocked_balance"])
 
     # ثبت تاریخچه
     PriceAlertLog.objects.create(
@@ -160,10 +110,8 @@ def process_price_alert(alert, current_price):
         price=current_price,
         sms_cost=SMS_PRICE,
         sms_status="SUCCESS",
-        sms_response="SMS sent successfully"
+        sms_response="SMS sent successfully",
     )
-
-
 
     # بروزرسانی آلارم
 
@@ -175,20 +123,12 @@ def process_price_alert(alert, current_price):
 
     alert.triggered = True
 
-
-
     # کامل شده
-    if (
-        alert.sent_notifications
-        >=
-        alert.max_notifications
-    ):
+    if alert.sent_notifications >= alert.max_notifications:
 
         alert.status = "FINISHED"
 
         alert.is_active = False
-
-
 
     alert.save(
         update_fields=[
@@ -202,55 +142,34 @@ def process_price_alert(alert, current_price):
     )
 
 
-
-
 def run_price_alert_worker():
-
     """
     اجرا توسط cron / celery
     """
 
     current_price = get_current_gold_price()
 
-
     if current_price is None:
         return
 
-
-
-    alerts = (
-        PriceAlert.objects
-        .select_related("user")
-        .filter(
-            is_active=True,
-            status="ACTIVE"
-        )
+    alerts = PriceAlert.objects.select_related("user").filter(
+        is_active=True, status="ACTIVE"
     )
-
-
 
     for alert in alerts:
 
         try:
 
-            if is_alert_triggered(
-                alert,
-                current_price
-            ):
+            if is_alert_triggered(alert, current_price):
 
-                process_price_alert(
-                    alert,
-                    current_price
-                )
-
+                process_price_alert(alert, current_price)
 
         except Exception as exc:
-
 
             PriceAlertLog.objects.create(
                 alert=alert,
                 price=current_price,
                 sms_cost=0,
                 sms_status="FAILED",
-                sms_response=str(exc)
+                sms_response=str(exc),
             )

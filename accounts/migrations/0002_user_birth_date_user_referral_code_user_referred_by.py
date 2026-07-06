@@ -8,23 +8,36 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0001_initial'),
+        ("accounts", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='user',
-            name='birth_date',
-            field=models.DateField(blank=True, null=True, verbose_name='تاریخ تولد'),
+            model_name="user",
+            name="birth_date",
+            field=models.DateField(blank=True, null=True, verbose_name="تاریخ تولد"),
         ),
         migrations.AddField(
-            model_name='user',
-            name='referral_code',
-            field=models.CharField(blank=True, max_length=10, null=True, unique=True, verbose_name='کد معرف اختصاصی'),
+            model_name="user",
+            name="referral_code",
+            field=models.CharField(
+                blank=True,
+                max_length=10,
+                null=True,
+                unique=True,
+                verbose_name="کد معرف اختصاصی",
+            ),
         ),
         migrations.AddField(
-            model_name='user',
-            name='referred_by',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='subscribers', to=settings.AUTH_USER_MODEL, verbose_name='معرف'),
+            model_name="user",
+            name="referred_by",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="subscribers",
+                to=settings.AUTH_USER_MODEL,
+                verbose_name="معرف",
+            ),
         ),
     ]

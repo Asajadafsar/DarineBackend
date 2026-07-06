@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('gold_app', '0013_pricealert_last_triggered_at_and_more'),
+        ("gold_app", "0013_pricealert_last_triggered_at_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='pricealert',
-            name='triggered',
+            model_name="pricealert",
+            name="triggered",
             field=models.BooleanField(default=False),
         ),
     ]

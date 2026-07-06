@@ -10,185 +10,505 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('accounts', '0006_feesetting_gold_referral_percent_and_more'),
+        ("accounts", "0006_feesetting_gold_referral_percent_and_more"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='SilverPriceHistory',
+            name="SilverPriceHistory",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('price', models.DecimalField(decimal_places=0, max_digits=20)),
-                ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("price", models.DecimalField(decimal_places=0, max_digits=20)),
+                ("created_at", models.DateTimeField(auto_now_add=True, db_index=True)),
             ],
             options={
-                'ordering': ['created_at'],
+                "ordering": ["created_at"],
             },
         ),
         migrations.CreateModel(
-            name='SilverProduct',
+            name="SilverProduct",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255)),
-                ('delivery_type', models.CharField(choices=[('HOME', 'ارسال به منزل'), ('IN_PERSON', 'تحویل حضوری')], default='HOME', max_length=20)),
-                ('weight', models.DecimalField(decimal_places=5, max_digits=20)),
-                ('total_weight_with_fees', models.DecimalField(decimal_places=5, default=0, max_digits=20)),
-                ('buy_price', models.DecimalField(blank=True, decimal_places=0, max_digits=20, null=True)),
-                ('sell_price', models.DecimalField(blank=True, decimal_places=0, max_digits=20, null=True)),
-                ('inventory_count', models.PositiveIntegerField(default=0)),
-                ('image', models.ImageField(blank=True, null=True, upload_to='silver_products/')),
-                ('description', models.TextField(blank=True, null=True)),
-                ('is_active', models.BooleanField(default=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=255)),
+                (
+                    "delivery_type",
+                    models.CharField(
+                        choices=[
+                            ("HOME", "ارسال به منزل"),
+                            ("IN_PERSON", "تحویل حضوری"),
+                        ],
+                        default="HOME",
+                        max_length=20,
+                    ),
+                ),
+                ("weight", models.DecimalField(decimal_places=5, max_digits=20)),
+                (
+                    "total_weight_with_fees",
+                    models.DecimalField(decimal_places=5, default=0, max_digits=20),
+                ),
+                (
+                    "buy_price",
+                    models.DecimalField(
+                        blank=True, decimal_places=0, max_digits=20, null=True
+                    ),
+                ),
+                (
+                    "sell_price",
+                    models.DecimalField(
+                        blank=True, decimal_places=0, max_digits=20, null=True
+                    ),
+                ),
+                ("inventory_count", models.PositiveIntegerField(default=0)),
+                (
+                    "image",
+                    models.ImageField(
+                        blank=True, null=True, upload_to="silver_products/"
+                    ),
+                ),
+                ("description", models.TextField(blank=True, null=True)),
+                ("is_active", models.BooleanField(default=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
         ),
         migrations.CreateModel(
-            name='SilverProductCategory',
+            name="SilverProductCategory",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=100)),
-                ('slug', models.SlugField(unique=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=100)),
+                ("slug", models.SlugField(unique=True)),
             ],
         ),
         migrations.CreateModel(
-            name='SilverFinancialTransaction',
+            name="SilverFinancialTransaction",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('amount', models.DecimalField(decimal_places=0, max_digits=20)),
-                ('type', models.CharField(choices=[('DEPOSIT', 'واریز'), ('WITHDRAW', 'برداشت')], max_length=20)),
-                ('method', models.CharField(choices=[('ONLINE', 'آنلاین'), ('CARD_TO_CARD', 'کارت به کارت'), ('BANK', 'بانکی')], max_length=30)),
-                ('status', models.CharField(choices=[('PENDING', 'در انتظار'), ('COMPLETED', 'تکمیل شده'), ('FAILED', 'ناموفق')], default='PENDING', max_length=20)),
-                ('receipt_image', models.ImageField(blank=True, null=True, upload_to='silver_receipts/')),
-                ('tracking_code', models.CharField(blank=True, max_length=100, null=True, unique=True)),
-                ('admin_note', models.TextField(blank=True, null=True)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
-                ('user_card', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='accounts.bankcard')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("amount", models.DecimalField(decimal_places=0, max_digits=20)),
+                (
+                    "type",
+                    models.CharField(
+                        choices=[("DEPOSIT", "واریز"), ("WITHDRAW", "برداشت")],
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "method",
+                    models.CharField(
+                        choices=[
+                            ("ONLINE", "آنلاین"),
+                            ("CARD_TO_CARD", "کارت به کارت"),
+                            ("BANK", "بانکی"),
+                        ],
+                        max_length=30,
+                    ),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("PENDING", "در انتظار"),
+                            ("COMPLETED", "تکمیل شده"),
+                            ("FAILED", "ناموفق"),
+                        ],
+                        default="PENDING",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "receipt_image",
+                    models.ImageField(
+                        blank=True, null=True, upload_to="silver_receipts/"
+                    ),
+                ),
+                (
+                    "tracking_code",
+                    models.CharField(
+                        blank=True, max_length=100, null=True, unique=True
+                    ),
+                ),
+                ("admin_note", models.TextField(blank=True, null=True)),
+                ("description", models.TextField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "user_card",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        to="accounts.bankcard",
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='SilverInventory',
+            name="SilverInventory",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('balance', models.DecimalField(decimal_places=5, default=0, max_digits=20)),
-                ('blocked_balance', models.DecimalField(decimal_places=5, default=0, max_digits=20)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='silver_inventory', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "balance",
+                    models.DecimalField(decimal_places=5, default=0, max_digits=20),
+                ),
+                (
+                    "blocked_balance",
+                    models.DecimalField(decimal_places=5, default=0, max_digits=20),
+                ),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="silver_inventory",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='SilverOrder',
+            name="SilverOrder",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('province', models.CharField(max_length=100)),
-                ('city', models.CharField(max_length=100)),
-                ('address', models.TextField()),
-                ('postal_code', models.CharField(blank=True, max_length=20, null=True)),
-                ('plaque', models.CharField(blank=True, max_length=20, null=True)),
-                ('unit', models.CharField(blank=True, max_length=20, null=True)),
-                ('payment_method', models.CharField(choices=[('SILVER', 'نقره'), ('TOMAN', 'کیف پول')], max_length=20)),
-                ('delivery_type', models.CharField(choices=[('HOME', 'ارسال'), ('IN_PERSON', 'حضوری')], max_length=20)),
-                ('status', models.CharField(choices=[('PENDING', 'در انتظار'), ('PROCESSING', 'در حال پردازش'), ('SHIPPED', 'ارسال شده'), ('COMPLETED', 'تکمیل شده'), ('CANCELLED', 'لغو شده')], default='PENDING', max_length=20)),
-                ('total_silver_amount', models.DecimalField(decimal_places=5, max_digits=20)),
-                ('total_toman_amount', models.DecimalField(decimal_places=0, max_digits=20)),
-                ('tracking_code', models.CharField(max_length=100, unique=True)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("province", models.CharField(max_length=100)),
+                ("city", models.CharField(max_length=100)),
+                ("address", models.TextField()),
+                ("postal_code", models.CharField(blank=True, max_length=20, null=True)),
+                ("plaque", models.CharField(blank=True, max_length=20, null=True)),
+                ("unit", models.CharField(blank=True, max_length=20, null=True)),
+                (
+                    "payment_method",
+                    models.CharField(
+                        choices=[("SILVER", "نقره"), ("TOMAN", "کیف پول")],
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "delivery_type",
+                    models.CharField(
+                        choices=[("HOME", "ارسال"), ("IN_PERSON", "حضوری")],
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("PENDING", "در انتظار"),
+                            ("PROCESSING", "در حال پردازش"),
+                            ("SHIPPED", "ارسال شده"),
+                            ("COMPLETED", "تکمیل شده"),
+                            ("CANCELLED", "لغو شده"),
+                        ],
+                        default="PENDING",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "total_silver_amount",
+                    models.DecimalField(decimal_places=5, max_digits=20),
+                ),
+                (
+                    "total_toman_amount",
+                    models.DecimalField(decimal_places=0, max_digits=20),
+                ),
+                ("tracking_code", models.CharField(max_length=100, unique=True)),
+                ("description", models.TextField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='SilverOrderItem',
+            name="SilverOrderItem",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('quantity', models.PositiveIntegerField()),
-                ('price_at_time', models.DecimalField(decimal_places=0, max_digits=20)),
-                ('weight_at_time', models.DecimalField(decimal_places=5, max_digits=20)),
-                ('order', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='items', to='silver_app.silverorder')),
-                ('product', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='silver_app.silverproduct')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("quantity", models.PositiveIntegerField()),
+                ("price_at_time", models.DecimalField(decimal_places=0, max_digits=20)),
+                (
+                    "weight_at_time",
+                    models.DecimalField(decimal_places=5, max_digits=20),
+                ),
+                (
+                    "order",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="items",
+                        to="silver_app.silverorder",
+                    ),
+                ),
+                (
+                    "product",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to="silver_app.silverproduct",
+                    ),
+                ),
             ],
         ),
         migrations.AddField(
-            model_name='silverproduct',
-            name='category',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='products', to='silver_app.silverproductcategory'),
+            model_name="silverproduct",
+            name="category",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="products",
+                to="silver_app.silverproductcategory",
+            ),
         ),
         migrations.CreateModel(
-            name='SilverRecentDelivery',
+            name="SilverRecentDelivery",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('delivery_type', models.CharField(max_length=50)),
-                ('status', models.CharField(max_length=50)),
-                ('total_amount', models.DecimalField(decimal_places=0, max_digits=20)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("delivery_type", models.CharField(max_length=50)),
+                ("status", models.CharField(max_length=50)),
+                ("total_amount", models.DecimalField(decimal_places=0, max_digits=20)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='SilverRecentTransaction',
+            name="SilverRecentTransaction",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('title', models.CharField(max_length=255)),
-                ('amount', models.DecimalField(decimal_places=0, max_digits=20)),
-                ('status', models.CharField(max_length=50)),
-                ('type', models.CharField(max_length=50)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("title", models.CharField(max_length=255)),
+                ("amount", models.DecimalField(decimal_places=0, max_digits=20)),
+                ("status", models.CharField(max_length=50)),
+                ("type", models.CharField(max_length=50)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='SilverReferralEarning',
+            name="SilverReferralEarning",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('amount', models.DecimalField(decimal_places=0, max_digits=20)),
-                ('source_type', models.CharField(max_length=50)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("amount", models.DecimalField(decimal_places=0, max_digits=20)),
+                ("source_type", models.CharField(max_length=50)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='SilverTransaction',
+            name="SilverTransaction",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('type', models.CharField(choices=[('BUY', 'خرید'), ('SELL', 'فروش')], max_length=20)),
-                ('status', models.CharField(choices=[('PENDING', 'در انتظار'), ('COMPLETED', 'تکمیل شده'), ('FAILED', 'ناموفق')], default='COMPLETED', max_length=20)),
-                ('amount_gr', models.DecimalField(decimal_places=5, max_digits=20)),
-                ('price_per_gram', models.DecimalField(decimal_places=0, max_digits=20)),
-                ('fee', models.DecimalField(decimal_places=0, default=0, max_digits=20)),
-                ('total_amount', models.DecimalField(decimal_places=0, max_digits=20)),
-                ('tracking_code', models.CharField(max_length=100, unique=True)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "type",
+                    models.CharField(
+                        choices=[("BUY", "خرید"), ("SELL", "فروش")], max_length=20
+                    ),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("PENDING", "در انتظار"),
+                            ("COMPLETED", "تکمیل شده"),
+                            ("FAILED", "ناموفق"),
+                        ],
+                        default="COMPLETED",
+                        max_length=20,
+                    ),
+                ),
+                ("amount_gr", models.DecimalField(decimal_places=5, max_digits=20)),
+                (
+                    "price_per_gram",
+                    models.DecimalField(decimal_places=0, max_digits=20),
+                ),
+                (
+                    "fee",
+                    models.DecimalField(decimal_places=0, default=0, max_digits=20),
+                ),
+                ("total_amount", models.DecimalField(decimal_places=0, max_digits=20)),
+                ("tracking_code", models.CharField(max_length=100, unique=True)),
+                ("description", models.TextField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='SilverWallet',
+            name="SilverWallet",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('balance', models.DecimalField(decimal_places=0, default=0, max_digits=20)),
-                ('blocked_balance', models.DecimalField(decimal_places=0, default=0, max_digits=20)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='silver_wallet', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "balance",
+                    models.DecimalField(decimal_places=0, default=0, max_digits=20),
+                ),
+                (
+                    "blocked_balance",
+                    models.DecimalField(decimal_places=0, default=0, max_digits=20),
+                ),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="silver_wallet",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='UserAddress',
+            name="UserAddress",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('province', models.CharField(max_length=100)),
-                ('city', models.CharField(max_length=100)),
-                ('address', models.TextField()),
-                ('postal_code', models.CharField(blank=True, max_length=20, null=True)),
-                ('plaque', models.CharField(blank=True, max_length=20, null=True)),
-                ('unit', models.CharField(blank=True, max_length=20, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='silver_addresses', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("province", models.CharField(max_length=100)),
+                ("city", models.CharField(max_length=100)),
+                ("address", models.TextField()),
+                ("postal_code", models.CharField(blank=True, max_length=20, null=True)),
+                ("plaque", models.CharField(blank=True, max_length=20, null=True)),
+                ("unit", models.CharField(blank=True, max_length=20, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="silver_addresses",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
     ]

@@ -1,8 +1,8 @@
 from rest_framework import serializers
 from .models import User, BankCard
-from rest_framework import serializers
 from .models import CooperationRequest
 import jdatetime
+
 
 class SendOTPSerializer(serializers.Serializer):
     mobile = serializers.CharField(max_length=11)
@@ -20,8 +20,9 @@ class VerifyOTPSerializer(serializers.Serializer):
             "blank": "کد تایید نمی‌تواند خالی باشد",
             "min_length": "کد تایید باید دقیقا ۶ رقم باشد",
             "max_length": "کد تایید نمی‌تواند بیشتر از ۶ رقم باشد",
-        }
+        },
     )
+
 
 class LoginSerializer(serializers.Serializer):
     mobile = serializers.CharField(max_length=11)
@@ -40,7 +41,7 @@ class LoginOTPSerializer(serializers.Serializer):
             "blank": "کد تایید نمی‌تواند خالی باشد",
             "min_length": "کد تایید باید دقیقا ۶ رقم باشد",
             "max_length": "کد تایید نمی‌تواند بیشتر از ۶ رقم باشد",
-        }
+        },
     )
 
 
@@ -60,7 +61,7 @@ class ResetPasswordVerifySerializer(serializers.Serializer):
             "blank": "کد تایید نمی‌تواند خالی باشد",
             "min_length": "کد تایید باید دقیقا ۶ رقم باشد",
             "max_length": "کد تایید نمی‌تواند بیشتر از ۶ رقم باشد",
-        }
+        },
     )
 
 
@@ -76,7 +77,7 @@ class ResetPasswordCompleteSerializer(serializers.Serializer):
             "blank": "کد تایید نمی‌تواند خالی باشد",
             "min_length": "کد تایید باید دقیقا ۶ رقم باشد",
             "max_length": "کد تایید نمی‌تواند بیشتر از ۶ رقم باشد",
-        }
+        },
     )
 
     password = serializers.CharField(min_length=8)
@@ -85,9 +86,9 @@ class ResetPasswordCompleteSerializer(serializers.Serializer):
     def validate(self, attrs):
 
         if attrs["password"] != attrs["confirm_password"]:
-            raise serializers.ValidationError({
-                "confirm_password": "تکرار رمز عبور صحیح نیست"
-            })
+            raise serializers.ValidationError(
+                {"confirm_password": "تکرار رمز عبور صحیح نیست"}
+            )
 
         return attrs
 
@@ -111,7 +112,7 @@ class RegisterSerializer(serializers.Serializer):
             "blank": "شماره موبایل نمی‌تواند خالی باشد",
             "max_length": "شماره موبایل باید 11 رقم باشد",
             "min_length": "شماره موبایل باید 11 رقم باشد",
-        }
+        },
     )
 
     first_name = serializers.CharField(
@@ -136,7 +137,7 @@ class RegisterSerializer(serializers.Serializer):
             "blank": "کد ملی نمی‌تواند خالی باشد",
             "max_length": "کد ملی باید دقیقاً 10 رقم باشد",
             "min_length": "کد ملی باید دقیقاً 10 رقم باشد",
-        }
+        },
     )
 
     birth_date = serializers.CharField(
@@ -152,7 +153,7 @@ class RegisterSerializer(serializers.Serializer):
             "required": "رمز عبور الزامی است",
             "blank": "رمز عبور نمی‌تواند خالی باشد",
             "min_length": "رمز عبور باید حداقل 8 کاراکتر باشد",
-        }
+        },
     )
 
     confirm_password = serializers.CharField(
@@ -162,10 +163,7 @@ class RegisterSerializer(serializers.Serializer):
         }
     )
 
-    referral_code = serializers.CharField(
-        required=False,
-        allow_blank=True
-    )
+    referral_code = serializers.CharField(required=False, allow_blank=True)
 
     # =========================
     # MOBILE VALIDATION
@@ -173,19 +171,13 @@ class RegisterSerializer(serializers.Serializer):
     def validate_mobile(self, value):
 
         if not value.isdigit():
-            raise serializers.ValidationError(
-                "شماره موبایل فقط باید عدد باشد"
-            )
+            raise serializers.ValidationError("شماره موبایل فقط باید عدد باشد")
 
         if len(value) != 11:
-            raise serializers.ValidationError(
-                "شماره موبایل باید دقیقاً 11 رقم باشد"
-            )
+            raise serializers.ValidationError("شماره موبایل باید دقیقاً 11 رقم باشد")
 
         if not value.startswith("09"):
-            raise serializers.ValidationError(
-                "شماره موبایل باید با 09 شروع شود"
-            )
+            raise serializers.ValidationError("شماره موبایل باید با 09 شروع شود")
 
         return value
 
@@ -195,14 +187,10 @@ class RegisterSerializer(serializers.Serializer):
     def validate_national_code(self, value):
 
         if not value.isdigit():
-            raise serializers.ValidationError(
-                "کد ملی فقط باید عدد باشد"
-            )
+            raise serializers.ValidationError("کد ملی فقط باید عدد باشد")
 
         if len(value) != 10:
-            raise serializers.ValidationError(
-                "کد ملی باید دقیقاً 10 رقم باشد"
-            )
+            raise serializers.ValidationError("کد ملی باید دقیقاً 10 رقم باشد")
 
         return value
 
@@ -216,13 +204,12 @@ class RegisterSerializer(serializers.Serializer):
 
         # فقط بررسی برابر بودن
         if password != confirm_password:
-            raise serializers.ValidationError({
-                "confirm_password": [
-                    "رمز عبور و تکرار آن یکسان نیست"
-                ]
-            })
+            raise serializers.ValidationError(
+                {"confirm_password": ["رمز عبور و تکرار آن یکسان نیست"]}
+            )
 
         return attrs
+
 
 class UserProfileSerializer(serializers.ModelSerializer):
 
@@ -260,16 +247,13 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def get_auth_status_display(self, obj):
         return obj.get_auth_status_display()
-    
-    
+
 
 # serializers.py
 
 from rest_framework import serializers
-import re
 
 from rest_framework import serializers
-from .models import BankCard
 
 
 class BankCardSerializer(serializers.ModelSerializer):
@@ -283,7 +267,7 @@ class BankCardSerializer(serializers.ModelSerializer):
         error_messages={
             "min_length": "شماره شبا باید دقیقا ۲۴ رقم باشد.",
             "max_length": "شماره شبا باید دقیقا ۲۴ رقم باشد.",
-        }
+        },
     )
 
     card_number = serializers.CharField(
@@ -295,7 +279,7 @@ class BankCardSerializer(serializers.ModelSerializer):
         error_messages={
             "min_length": "شماره کارت باید دقیقا ۱۶ رقم باشد.",
             "max_length": "شماره کارت باید دقیقا ۱۶ رقم باشد.",
-        }
+        },
     )
 
     class Meta:
@@ -322,14 +306,10 @@ class BankCardSerializer(serializers.ModelSerializer):
             return value
 
         if not value.isdigit():
-            raise serializers.ValidationError(
-                "شماره شبا فقط باید شامل عدد باشد."
-            )
+            raise serializers.ValidationError("شماره شبا فقط باید شامل عدد باشد.")
 
         if len(value) != 24:
-            raise serializers.ValidationError(
-                "شماره شبا باید دقیقا ۲۴ رقم باشد."
-            )
+            raise serializers.ValidationError("شماره شبا باید دقیقا ۲۴ رقم باشد.")
 
         return value
 
@@ -342,14 +322,10 @@ class BankCardSerializer(serializers.ModelSerializer):
             return value
 
         if not value.isdigit():
-            raise serializers.ValidationError(
-                "شماره کارت فقط باید شامل عدد باشد."
-            )
+            raise serializers.ValidationError("شماره کارت فقط باید شامل عدد باشد.")
 
         if len(value) != 16:
-            raise serializers.ValidationError(
-                "شماره کارت باید دقیقا ۱۶ رقم باشد."
-            )
+            raise serializers.ValidationError("شماره کارت باید دقیقا ۱۶ رقم باشد.")
 
         return value
 
@@ -359,13 +335,11 @@ class BankCardSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
 
         card_number = attrs.get(
-            "card_number",
-            getattr(self.instance, "card_number", None)
+            "card_number", getattr(self.instance, "card_number", None)
         )
 
         shaba_number = attrs.get(
-            "shaba_number",
-            getattr(self.instance, "shaba_number", None)
+            "shaba_number", getattr(self.instance, "shaba_number", None)
         )
 
         if not card_number and not shaba_number:
@@ -378,45 +352,32 @@ class BankCardSerializer(serializers.ModelSerializer):
         # =========================
         if shaba_number:
 
-            qs = BankCard.objects.filter(
-                shaba_number=shaba_number
-            )
+            qs = BankCard.objects.filter(shaba_number=shaba_number)
 
             if self.instance:
-                qs = qs.exclude(
-                    pk=self.instance.pk
-                )
+                qs = qs.exclude(pk=self.instance.pk)
 
             if qs.exists():
-                raise serializers.ValidationError({
-                    "shaba_number": [
-                        "این شماره شبا قبلاً ثبت شده است."
-                    ]
-                })
+                raise serializers.ValidationError(
+                    {"shaba_number": ["این شماره شبا قبلاً ثبت شده است."]}
+                )
 
         # =========================
         # DUPLICATE CARD
         # =========================
         if card_number:
 
-            qs = BankCard.objects.filter(
-                card_number=card_number
-            )
+            qs = BankCard.objects.filter(card_number=card_number)
 
             if self.instance:
-                qs = qs.exclude(
-                    pk=self.instance.pk
-                )
+                qs = qs.exclude(pk=self.instance.pk)
 
             if qs.exists():
-                raise serializers.ValidationError({
-                    "card_number": [
-                        "این شماره کارت قبلاً ثبت شده است."
-                    ]
-                })
+                raise serializers.ValidationError(
+                    {"card_number": ["این شماره کارت قبلاً ثبت شده است."]}
+                )
 
         return attrs
-
 
 
 class ChangeMobileRequestSerializer(serializers.Serializer):
@@ -435,16 +396,11 @@ class ChangeMobileConfirmSerializer(serializers.Serializer):
             "blank": "کد تایید نمی‌تواند خالی باشد",
             "min_length": "کد تایید باید دقیقا ۶ رقم باشد",
             "max_length": "کد تایید نمی‌تواند بیشتر از ۶ رقم باشد",
-        }
+        },
     )
 
 
-
-
-
-class CooperationRequestSerializer(
-    serializers.ModelSerializer
-):
+class CooperationRequestSerializer(serializers.ModelSerializer):
 
     full_name = serializers.CharField(
         required=True,
@@ -452,7 +408,7 @@ class CooperationRequestSerializer(
             "required": "نام و نام خانوادگی الزامی است",
             "blank": "نام و نام خانوادگی نمی‌تواند خالی باشد",
             "max_length": "نام و نام خانوادگی بیش از حد مجاز است",
-        }
+        },
     )
 
     mobile = serializers.CharField(
@@ -464,7 +420,7 @@ class CooperationRequestSerializer(
             "blank": "شماره همراه نمی‌تواند خالی باشد",
             "max_length": "شماره همراه باید 11 رقم باشد",
             "min_length": "شماره همراه باید 11 رقم باشد",
-        }
+        },
     )
 
     description = serializers.CharField(
@@ -472,7 +428,7 @@ class CooperationRequestSerializer(
         error_messages={
             "required": "توضیحات همکاری الزامی است",
             "blank": "توضیحات همکاری نمی‌تواند خالی باشد",
-        }
+        },
     )
 
     class Meta:
@@ -486,56 +442,37 @@ class CooperationRequestSerializer(
             "description",
         ]
 
-        read_only_fields = [
-            "id"
-        ]
+        read_only_fields = ["id"]
 
-    def validate_full_name(
-        self,
-        value
-    ):
+    def validate_full_name(self, value):
 
         value = value.strip()
 
         if len(value) < 3:
 
-            raise serializers.ValidationError(
-                "نام و نام خانوادگی معتبر نیست"
-            )
+            raise serializers.ValidationError("نام و نام خانوادگی معتبر نیست")
 
         return value
 
-    def validate_mobile(
-        self,
-        value
-    ):
+    def validate_mobile(self, value):
 
         value = value.strip()
 
         if not value.isdigit():
 
-            raise serializers.ValidationError(
-                "شماره همراه نامعتبر است"
-            )
+            raise serializers.ValidationError("شماره همراه نامعتبر است")
 
         if len(value) != 11:
 
-            raise serializers.ValidationError(
-                "شماره همراه باید 11 رقم باشد"
-            )
+            raise serializers.ValidationError("شماره همراه باید 11 رقم باشد")
 
         if not value.startswith("09"):
 
-            raise serializers.ValidationError(
-                "شماره همراه باید با 09 شروع شود"
-            )
+            raise serializers.ValidationError("شماره همراه باید با 09 شروع شود")
 
         return value
 
-    def validate_description(
-        self,
-        value
-    ):
+    def validate_description(self, value):
 
         value = value.strip()
 

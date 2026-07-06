@@ -141,7 +141,8 @@ REST_FRAMEWORK = {
 
         'rest_framework.permissions.IsAuthenticated',
     ),
-
+    "EXCEPTION_HANDLER":
+        "admin_panel.exceptions.custom_exception_handler",
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     "EXCEPTION_HANDLER": "rest_framework.views.exception_handler"
 }
