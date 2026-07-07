@@ -199,6 +199,12 @@ router.register(
 # =========================================================
 # MARKET
 # =========================================================
+# نکته: GoldPriceOffsetAdminViewSet و SilverPriceOffsetAdminViewSet
+# دیگر اینجا register نمی‌شوند چون با /offset/ زیرمجموعه‌ی
+# market/gold و market/silver تداخل داشتند (router pk pattern
+# مثل market/gold/<pk>/ زودتر از market/gold/offset/ match می‌شد).
+# این دو مسیر الان به‌صورت صریح در urlpatterns پایین تعریف شده‌اند.
+# =========================================================
 
 router.register(
     r"market/gold",
@@ -210,18 +216,6 @@ router.register(
     r"market/silver",
     SilverAdminViewSet,
     basename="admin-silver",
-)
-
-router.register(
-    r"market/gold/offset",
-    GoldPriceOffsetAdminViewSet,
-    basename="admin-gold-offset",
-)
-
-router.register(
-    r"market/silver/offset",
-    SilverPriceOffsetAdminViewSet,
-    basename="admin-silver-offset",
 )
 
 # =========================================================
@@ -271,11 +265,64 @@ router.register(
     SilverBalanceWithdrawalViewSet,
     basename="silver-balance-withdrawal",
 )
+
 # =========================================================
 # URL PATTERNS
 # =========================================================
 
 urlpatterns = [
+
+    # -------------------------
+    # Market — Gold / Silver Price Offset
+    # (صریح و قبل از router.urls تعریف شده تا با
+    # market/gold/<pk>/ و market/silver/<pk>/ تداخل نکند)
+    # -------------------------
+
+    path(
+        "market/gold/offset/",
+        GoldPriceOffsetAdminViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="admin-gold-offset-list",
+    ),
+
+    path(
+        "market/gold/offset/<int:pk>/",
+        GoldPriceOffsetAdminViewSet.as_view(
+            {
+                "get": "retrieve",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="admin-gold-offset-detail",
+    ),
+
+    path(
+        "market/silver/offset/",
+        SilverPriceOffsetAdminViewSet.as_view(
+            {
+                "get": "list",
+                "post": "create",
+            }
+        ),
+        name="admin-silver-offset-list",
+    ),
+
+    path(
+        "market/silver/offset/<int:pk>/",
+        SilverPriceOffsetAdminViewSet.as_view(
+            {
+                "get": "retrieve",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="admin-silver-offset-detail",
+    ),
 
     # -------------------------
     # Analytics
@@ -317,7 +364,6 @@ urlpatterns = [
         "gold-balance-adjustments/<int:user_id>/<int:pk>/",
         GoldBalanceAdjustmentViewSet.as_view(
             {
-                
                 "get": "retrieve",
                 "put": "update",
                 "patch": "partial_update",
@@ -330,21 +376,19 @@ urlpatterns = [
     # -------------------------
     # Silver Balance Adjustment
     # -------------------------
-    # -------------------------
 
-path(
-    "silver-balance-adjustments/<int:user_id>/<int:pk>/",
-    SilverBalanceAdjustmentViewSet.as_view(
-        {
-            "get": "retrieve",
-            "put": "update",
-            "patch": "partial_update",
-            "delete": "destroy",
-        }
+    path(
+        "silver-balance-adjustments/<int:user_id>/<int:pk>/",
+        SilverBalanceAdjustmentViewSet.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="silver-balance-adjustment-detail",
     ),
-    name="silver-balance-adjustment-detail",
-),
-
 
     path(
         "silver-balance-adjustments/<int:user_id>/",
@@ -355,87 +399,60 @@ path(
         ),
         name="silver-balance-adjustment-user-list",
     ),
+
     # -------------------------
-# Gold Balance Withdrawal
-# -------------------------
+    # Gold Balance Withdrawal
+    # -------------------------
 
-path(
-    "gold-balance-withdrawals/<int:user_id>/",
-    GoldBalanceWithdrawalViewSet.as_view(
-        {
-            "get": "list",
-        }
+    path(
+        "gold-balance-withdrawals/<int:user_id>/",
+        GoldBalanceWithdrawalViewSet.as_view(
+            {
+                "get": "list",
+            }
+        ),
+        name="gold-balance-withdrawal-user-list",
     ),
-    name="gold-balance-withdrawal-user-list",
-),
 
-path(
-    "gold-balance-withdrawals/<int:user_id>/<int:pk>/",
-    GoldBalanceWithdrawalViewSet.as_view(
-        {
-            "get": "retrieve",
-            "put": "update",
-            "patch": "partial_update",
-            "delete": "destroy",
-        }
+    path(
+        "gold-balance-withdrawals/<int:user_id>/<int:pk>/",
+        GoldBalanceWithdrawalViewSet.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="gold-balance-withdrawal-detail",
     ),
-    name="gold-balance-withdrawal-detail",
-),
 
-# -------------------------
-# Gold Balance Withdrawal
-# -------------------------
+    # -------------------------
+    # Silver Balance Withdrawal
+    # -------------------------
 
-path(
-    "gold-balance-withdrawals/<int:user_id>/",
-    GoldBalanceWithdrawalViewSet.as_view(
-        {
-            "get": "list",
-        }
+    path(
+        "silver-balance-withdrawals/<int:user_id>/",
+        SilverBalanceWithdrawalViewSet.as_view(
+            {
+                "get": "list",
+            }
+        ),
+        name="silver-balance-withdrawal-user-list",
     ),
-    name="gold-balance-withdrawal-user-list",
-),
 
-path(
-    "gold-balance-withdrawals/<int:user_id>/<int:pk>/",
-    GoldBalanceWithdrawalViewSet.as_view(
-        {
-            "get": "retrieve",
-            "put": "update",
-            "patch": "partial_update",
-            "delete": "destroy",
-        }
+    path(
+        "silver-balance-withdrawals/<int:user_id>/<int:pk>/",
+        SilverBalanceWithdrawalViewSet.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="silver-balance-withdrawal-detail",
     ),
-    name="gold-balance-withdrawal-detail",
-),
-
-# -------------------------
-# Silver Balance Withdrawal
-# -------------------------
-
-path(
-    "silver-balance-withdrawals/<int:user_id>/",
-    SilverBalanceWithdrawalViewSet.as_view(
-        {
-            "get": "list",
-        }
-    ),
-    name="silver-balance-withdrawal-user-list",
-),
-
-
-path(
-    "silver-balance-withdrawals/<int:user_id>/<int:pk>/",
-    SilverBalanceWithdrawalViewSet.as_view(
-        {
-            "get": "retrieve",
-            "put": "update",
-            "patch": "partial_update",
-            "delete": "destroy",
-        }
-    ),
-    name="silver-balance-withdrawal-detail",
-),
 ]
 
 urlpatterns += router.urls

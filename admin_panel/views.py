@@ -198,140 +198,338 @@ class UserAdminViewSet(AdminBaseViewSet):
         # =========================================================
    
    
-# =========================================================
-# USER TRANSACTIONS
-# =========================================================
-    @action(detail=True, methods=["get"], url_path="transactions")
+
+
+
+    # =========================================================
+    # USER TRANSACTIONS
+    # =========================================================
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="transactions",
+    )
     def transactions(self, request, pk=None):
 
-        user = get_object_or_404(User, pk=pk)
+        user = get_object_or_404(
+            User,
+            pk=pk,
+        )
 
         results = []
 
-        for item in FinancialTransaction.objects.filter(user=user):
+        # =====================================================
+        # GOLD WALLET TRANSACTIONS
+        # =====================================================
 
-            results.append({
-                "source": "GOLD_WALLET",
-                "type": item.type,
-                "status": item.status,
-                "amount": None,
-                "toman_amount": item.amount,
-                "payment_method": None,
-                "delivery_type": None,
-                "tracking_code": item.tracking_code,
-                "description": item.description,
-                "created_at": item.created_at,
-            })
+        for item in FinancialTransaction.objects.filter(
+            user=user,
+        ):
 
-        for item in GoldBalanceAdjustment.objects.filter(user=user):
+            results.append(
+                {
+                    "source": "GOLD_WALLET",
+                    "type": item.type,
+                    "status": item.status,
+                    "amount": None,
+                    "toman_amount": item.amount,
+                    "payment_method": None,
+                    "delivery_type": None,
+                    "tracking_code": item.tracking_code,
+                    "description": item.description,
+                    "created_at": item.created_at,
+                }
+            )
 
-            results.append({
-                "source": "GOLD_WALLET",
-                "type": "ADMIN_ADJUSTMENT",
-                "status": "COMPLETED",
-                "amount": item.gold_amount,
-                "toman_amount": item.wallet_amount,
-                "payment_method": None,
-                "delivery_type": None,
-                "tracking_code": None,
-                "description": item.admin_note or "افزایش موجودی توسط ادمین",
-                "created_at": item.created_at,
-            })
+        # =====================================================
+        # GOLD ADMIN DEPOSIT
+        # =====================================================
 
-        for item in GoldTransaction.objects.filter(user=user):
+        for item in GoldBalanceAdjustment.objects.filter(
+            user=user,
+        ):
 
-            results.append({
-                "source": "GOLD",
-                "type": item.type,
-                "status": item.status,
-                "amount": item.amount_gr,
-                "toman_amount": item.total_amount,
-                "payment_method": None,
-                "delivery_type": None,
-                "tracking_code": item.tracking_code,
-                "description": item.description,
-                "created_at": item.created_at,
-            })
+            results.append(
+                {
+                    "source": "GOLD_WALLET",
+                    "type": "ADMIN_ADJUSTMENT",
+                    "status": "COMPLETED",
+                    "amount": item.gold_amount,
+                    "toman_amount": item.wallet_amount,
+                    "payment_method": None,
+                    "delivery_type": None,
+                    "tracking_code": None,
+                    "description": item.admin_note
+                    or "افزایش موجودی توسط ادمین",
+                    "created_at": item.created_at,
+                }
+            )
 
-        for item in Order.objects.filter(user=user):
+        # =====================================================
+        # GOLD ADMIN WITHDRAW
+        # =====================================================
 
-            results.append({
-                "source": "GOLD_ORDER",
-                "type": item.payment_method,
-                "status": item.status,
-                "amount": item.total_gold_amount,
-                "toman_amount": item.total_toman_amount,
-                "payment_method": item.payment_method,
-                "delivery_type": item.delivery_type,
-                "tracking_code": item.tracking_code,
-                "description": item.description or f"سفارش فیزیکی طلا ({item.get_delivery_type_display()})",
-                "created_at": item.created_at,
-            })
+        for item in GoldBalanceWithdrawal.objects.filter(
+            user=user,
+        ):
 
-        for item in SilverFinancialTransaction.objects.filter(user=user):
+            results.append(
+                {
+                    "source": "GOLD_WALLET",
+                    "type": "ADMIN_WITHDRAWAL",
+                    "status": "COMPLETED",
+                    "amount": item.gold_amount,
+                    "toman_amount": item.wallet_amount,
+                    "payment_method": None,
+                    "delivery_type": None,
+                    "tracking_code": None,
+                    "description": item.admin_note
+                    or "برداشت موجودی توسط ادمین",
+                    "created_at": item.created_at,
+                }
+            )
 
-            results.append({
-                "source": "SILVER_WALLET",
-                "type": item.type,
-                "status": item.status,
-                "amount": None,
-                "toman_amount": item.amount,
-                "payment_method": None,
-                "delivery_type": None,
-                "tracking_code": item.tracking_code,
-                "description": item.description,
-                "created_at": item.created_at,
-            })
+        # =====================================================
+        # GOLD BUY / SELL
+        # =====================================================
 
-        for item in SilverBalanceAdjustment.objects.filter(user=user):
+        for item in GoldTransaction.objects.filter(
+            user=user,
+        ):
 
-            results.append({
-                "source": "SILVER_WALLET",
-                "type": "ADMIN_ADJUSTMENT",
-                "status": "COMPLETED",
-                "amount": item.silver_amount,
-                "toman_amount": item.wallet_amount,
-                "payment_method": None,
-                "delivery_type": None,
-                "tracking_code": None,
-                "description": item.admin_note or "افزایش موجودی توسط ادمین",
-                "created_at": item.created_at,
-            })
+            results.append(
+                {
+                    "source": "GOLD",
+                    "type": item.type,
+                    "status": item.status,
+                    "amount": item.amount_gr,
+                    "toman_amount": item.total_amount,
+                    "payment_method": None,
+                    "delivery_type": None,
+                    "tracking_code": item.tracking_code,
+                    "description": item.description,
+                    "created_at": item.created_at,
+                }
+            )
 
-        for item in SilverTransaction.objects.filter(user=user):
+        # =====================================================
+        # GOLD ORDERS
+        # =====================================================
 
-            results.append({
-                "source": "SILVER",
-                "type": item.type,
-                "status": item.status,
-                "amount": item.amount_gr,
-                "toman_amount": item.total_amount,
-                "payment_method": None,
-                "delivery_type": None,
-                "tracking_code": item.tracking_code,
-                "description": item.description,
-                "created_at": item.created_at,
-            })
+        for item in Order.objects.filter(
+            user=user,
+        ):
 
-        for item in SilverOrder.objects.filter(user=user):
+            results.append(
+                {
+                    "source": "GOLD_ORDER",
+                    "type": item.payment_method,
+                    "status": item.status,
+                    "amount": item.total_gold_amount,
+                    "toman_amount": item.total_toman_amount,
+                    "payment_method": item.payment_method,
+                    "delivery_type": item.delivery_type,
+                    "tracking_code": item.tracking_code,
+                    "description": (
+                        item.description
+                        or f"سفارش فیزیکی طلا ({item.get_delivery_type_display()})"
+                    ),
+                    "created_at": item.created_at,
+                }
+            )
+            # =====================================================
+        # SILVER WALLET TRANSACTIONS
+        # =====================================================
 
-            results.append({
-                "source": "SILVER_ORDER",
-                "type": item.payment_method,
-                "status": item.status,
-                "amount": item.total_silver_amount,
-                "toman_amount": item.total_toman_amount,
-                "payment_method": item.payment_method,
-                "delivery_type": item.delivery_type,
-                "tracking_code": item.tracking_code,
-                "description": item.description or f"سفارش فیزیکی نقره ({item.get_delivery_type_display()})",
-                "created_at": item.created_at,
-            })
+        for item in SilverFinancialTransaction.objects.filter(
+            user=user,
+        ):
+
+            results.append(
+                {
+                    "source": "SILVER_WALLET",
+                    "type": item.type,
+                    "status": item.status,
+                    "amount": None,
+                    "toman_amount": item.amount,
+                    "payment_method": None,
+                    "delivery_type": None,
+                    "tracking_code": item.tracking_code,
+                    "description": item.description,
+                    "created_at": item.created_at,
+                }
+            )
+
+        # =====================================================
+        # SILVER ADMIN DEPOSIT
+        # =====================================================
+
+        for item in SilverBalanceAdjustment.objects.filter(
+            user=user,
+        ):
+
+            results.append(
+                {
+                    "source": "SILVER_WALLET",
+                    "type": "ADMIN_ADJUSTMENT",
+                    "status": "COMPLETED",
+                    "amount": item.silver_amount,
+                    "toman_amount": item.wallet_amount,
+                    "payment_method": None,
+                    "delivery_type": None,
+                    "tracking_code": None,
+                    "description": (
+                        item.admin_note
+                        or "افزایش موجودی توسط ادمین"
+                    ),
+                    "created_at": item.created_at,
+                }
+            )
+
+        # =====================================================
+        # SILVER ADMIN WITHDRAW
+        # =====================================================
+
+        for item in SilverBalanceWithdrawal.objects.filter(
+            user=user,
+        ):
+
+            results.append(
+                {
+                    "source": "SILVER_WALLET",
+                    "type": "ADMIN_WITHDRAWAL",
+                    "status": "COMPLETED",
+                    "amount": item.silver_amount,
+                    "toman_amount": item.wallet_amount,
+                    "payment_method": None,
+                    "delivery_type": None,
+                    "tracking_code": None,
+                    "description": (
+                        item.admin_note
+                        or "برداشت موجودی توسط ادمین"
+                    ),
+                    "created_at": item.created_at,
+                }
+            )
+
+        # =====================================================
+        # SILVER BUY / SELL
+        # =====================================================
+
+        for item in SilverTransaction.objects.filter(
+            user=user,
+        ):
+
+            results.append(
+                {
+                    "source": "SILVER",
+                    "type": item.type,
+                    "status": item.status,
+                    "amount": item.amount_gr,
+                    "toman_amount": item.total_amount,
+                    "payment_method": None,
+                    "delivery_type": None,
+                    "tracking_code": item.tracking_code,
+                    "description": item.description,
+                    "created_at": item.created_at,
+                }
+            )
+
+        # =====================================================
+        # SILVER ORDERS
+        # =====================================================
+
+        for item in SilverOrder.objects.filter(
+            user=user,
+        ):
+
+            results.append(
+                {
+                    "source": "SILVER_ORDER",
+                    "type": item.payment_method,
+                    "status": item.status,
+                    "amount": item.total_silver_amount,
+                    "toman_amount": item.total_toman_amount,
+                    "payment_method": item.payment_method,
+                    "delivery_type": item.delivery_type,
+                    "tracking_code": item.tracking_code,
+                    "description": (
+                        item.description
+                        or f"سفارش فیزیکی نقره ({item.get_delivery_type_display()})"
+                    ),
+                    "created_at": item.created_at,
+                }
+            )
 
         results.sort(
             key=lambda x: x["created_at"],
             reverse=True,
         )
+        TYPE_MAP = {
+            
+            "BUY": "خرید",
+            "SELL": "فروش",
+            "DEPOSIT": "واریز",
+            "WITHDRAW": "برداشت",
+            "TRANSFER": "انتقال",
+            "TOMAN": "پرداخت تومانی",
+            "GOLD": "پرداخت با طلا",
+            "SILVER": "پرداخت با نقره",
+            "ADMIN_ADJUSTMENT": "افزایش موجودی توسط ادمین",
+            "ADMIN_WITHDRAWAL": "برداشت موجودی توسط ادمین",
+            "ONLINE": "پرداخت آنلاین",
+            "WALLET": "پرداخت از کیف پول",
+            "CARD_TO_CARD": "کارت به کارت",
+            "CASH": "پرداخت نقدی",
+            }
+
+        STATUS_MAP = {
+            "PENDING": "در انتظار",
+            "PROCESSING": "در حال پردازش",
+            "COMPLETED": "تکمیل شده",
+            "SUCCESS": "موفق",
+            "FAILED": "ناموفق",
+            "CANCELLED": "لغو شده",
+            "REQUESTED": "ثبت سفارش",
+            "PREPARING": "در حال آماده‌سازی",
+            "DELIVERING": "در حال ارسال",
+            "DELIVERED": "تحویل داده شد",
+        }
+
+        DELIVERY_MAP = {
+            "POST": "پست",
+            "TIPAX": "تیپاکس",
+            "PICKUP": "تحویل حضوری",
+            "EXPRESS": "ارسال فوری",
+        }
+
+        for item in results:
+
+            item["type"] = TYPE_MAP.get(
+                item["type"],
+                item["type"],
+            )
+
+            item["status"] = STATUS_MAP.get(
+                item["status"],
+                item["status"],
+            )
+
+            if item["payment_method"]:
+
+                item["payment_method"] = TYPE_MAP.get(
+                    item["payment_method"],
+                    item["payment_method"],
+                )
+
+            if item["delivery_type"]:
+
+                item["delivery_type"] = DELIVERY_MAP.get(
+                    item["delivery_type"],
+                    item["delivery_type"],
+                )
+
 
         serializer = UserTransactionSerializer(
             results,
@@ -345,6 +543,11 @@ class UserAdminViewSet(AdminBaseViewSet):
                 "results": serializer.data,
             },
         )
+
+
+
+
+
 
 
 # =========================================================
@@ -5723,3 +5926,5 @@ class SilverPriceOffsetAdminViewSet(AdminBaseViewSet):
         obj = self.get_object()
         obj.delete()
         return success_response("Offset نقره حذف شد")
+
+

@@ -17,6 +17,7 @@ from admin_panel.models import GoldAnnouncement, GoldAnnouncementRead, GoldBanne
 from admin_panel.serializers import GoldAnnouncementSerializer, GoldBannerSerializer
 from admin_panel.utils import create_admin_log
 from silver_app.models import SilverFinancialTransaction, SilverInventory, SilverTransaction, SilverWallet
+from silver_app.serializers import SilverFinancialTransactionSerializer
 from silver_app.utils import decimal_3, get_live_silver_price
 from .models import (
     AutoSavingPlan,
@@ -916,7 +917,7 @@ PENDING
                 method="BANK",
                 status="COMPLETED",
                 tracking_code=generate_tracking_code("TRS"),
-                admin_note="انتقال داخلی از Gold Wallet به Silver Wallet",
+                admin_note="انتقال داخلی از طلا به نقره",
                 description="انتقال موفق به کیف پول نقره"
             )
 
@@ -1197,6 +1198,10 @@ class PhysicalOrderNoAddressAPIView(APIView):
         user = request.user
 
         products_data = serializer.validated_data["products"]
+        payment_method = serializer.validated_data["payment_method"]
+
+        if payment_method not in ["TOMAN", "GOLD"]:
+            return error_response(message="روش پرداخت نامعتبر است")
 
         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
@@ -1205,16 +1210,19 @@ class PhysicalOrderNoAddressAPIView(APIView):
         total_toman = Decimal("0")
 
         order_items = []
+        locked_products = {}
 
         # =====================================================
-        # VALIDATE PRODUCTS
+        # VALIDATE PRODUCTS (با قفل روی موجودی محصول برای جلوگیری از race condition)
         # =====================================================
+
         for item in products_data:
 
-            product = Product.objects.filter(
-                id=item["product_id"],
-                is_active=True
-            ).first()
+            product = (
+                Product.objects.select_for_update()
+                .filter(id=item["product_id"], is_active=True)
+                .first()
+            )
 
             if not product:
                 return error_response(
@@ -1223,10 +1231,19 @@ class PhysicalOrderNoAddressAPIView(APIView):
 
             quantity = int(item["quantity"])
 
-            if product.inventory_count < quantity:
+            # -----------------------------------------
+            # اگر یک محصول چند بار در لیست ارسال شده باشد،
+            # موجودی تجمعی چک شود نه فقط تک‌تک
+            # -----------------------------------------
+            already_requested = locked_products.get(product.id, 0)
+            total_requested = already_requested + quantity
+
+            if product.inventory_count < total_requested:
                 return error_response(
                     message=f"موجودی {product.name} کافی نیست"
                 )
+
+            locked_products[product.id] = total_requested
 
             item_gold = product.total_weight_with_fees * quantity
             item_toman = product.buy_price * quantity
@@ -1240,8 +1257,6 @@ class PhysicalOrderNoAddressAPIView(APIView):
                 "price_at_time": product.buy_price,
                 "weight_at_time": product.total_weight_with_fees,
             })
-
-        payment_method = serializer.validated_data["payment_method"]
 
         # =====================================================
         # PAYMENT HANDLING
@@ -1267,8 +1282,14 @@ class PhysicalOrderNoAddressAPIView(APIView):
 
             inventory.save(update_fields=["accessible_balance", "blocked_balance"])
 
-        else:
-            return error_response(message="روش پرداخت نامعتبر است")
+        # =====================================================
+        # DECREASE PRODUCT INVENTORY
+        # =====================================================
+
+        # for product_id, requested_qty in locked_products.items():
+        #     Product.objects.filter(id=product_id).update(
+        #         inventory_count=F("inventory_count") - requested_qty
+        #     )
 
         # =====================================================
         # CREATE ORDER (NO ADDRESS)
@@ -1308,6 +1329,39 @@ class PhysicalOrderNoAddressAPIView(APIView):
                 price_at_time=item["price_at_time"],
                 weight_at_time=item["weight_at_time"],
             )
+
+        # =====================================================
+        # LOG
+        # =====================================================
+
+        create_admin_log(
+            request=request,
+            admin=None,
+            user=user,
+            action_type="ORDER",
+            action="ثبت سفارش فیزیکی",
+            model_name="Order",
+            tracking_code=order.tracking_code,
+            object_id=order.id,
+            description=f"""
+کاربر: {user.mobile}
+
+روش پرداخت:
+{payment_method}
+
+مبلغ تومانی:
+{total_toman:,}
+
+وزن طلا:
+{total_gold}
+
+موجودی قابل برداشت تومان:
+{wallet.accessible_toman:,}
+
+موجودی قابل برداشت طلا:
+{inventory.accessible_balance}
+""",
+        )
 
         # =====================================================
         # RESPONSE
@@ -1761,6 +1815,10 @@ class PriceAlertReportAPIView(APIView):
         return success_response("گزارش هشدارهای قیمت", data)
 
 
+
+
+
+
 # =========================================================
 # REPORTS (GOLD)
 # =========================================================
@@ -1805,7 +1863,6 @@ class ReportsAPIView(APIView):
         # =====================================================
         # FINANCIAL (DEPOSIT / WITHDRAW)
         # =====================================================
-
         if report_type in ["deposit", "withdraw"]:
 
             transaction_type = "DEPOSIT" if report_type == "deposit" else "WITHDRAW"
@@ -1839,11 +1896,123 @@ class ReportsAPIView(APIView):
                 queryset, many=True, context={"request": request}
             )
 
+            combined_data = list(serializer.data)
+
+            # =====================================================
+            # اضافه کردن انتقال (طلا -> نقره) به گزارش برداشت
+            # =====================================================
+
+            if report_type == "withdraw":
+
+                silver_queryset = SilverFinancialTransaction.objects.filter(
+                    user=request.user, type="TRANSFER"
+                )
+
+                if status_filter:
+
+                    silver_queryset = silver_queryset.filter(status__iexact=status_filter)
+
+                if start_date:
+
+                    silver_queryset = silver_queryset.filter(created_at__date__gte=start_date)
+
+                if end_date:
+
+                    silver_queryset = silver_queryset.filter(created_at__date__lte=end_date)
+
+                silver_queryset = silver_queryset.order_by("-created_at")
+
+                silver_serializer = SilverFinancialTransactionSerializer(
+                    silver_queryset, many=True, context={"request": request}
+                )
+
+                silver_data = list(silver_serializer.data)
+
+                # -----------------------------------------
+                # این تراکنش‌ها در واقع "برداشت به روش تبدیل به نقره" هستند
+                # -----------------------------------------
+
+                for item in silver_data:
+                    item["type"] = "WITHDRAW"
+                    item["type_display"] = "برداشت"
+                    item["method"] = "SILVER"
+                    item["method_display"] = "تبدیل به نقره"
+
+                combined_data.extend(silver_data)
+
+            # =====================================================
+            # اضافه کردن انتقال (نقره -> طلا) به گزارش واریز طلا
+            # =====================================================
+
+            if report_type == "deposit":
+
+                silver_to_gold_queryset = SilverFinancialTransaction.objects.filter(
+                    user=request.user,
+                    type="WITHDRAW",
+                    tracking_code__startswith="SLV_TO_GOLD",
+                )
+
+                if status_filter:
+
+                    silver_to_gold_queryset = silver_to_gold_queryset.filter(
+                        status__iexact=status_filter
+                    )
+
+                if start_date:
+
+                    silver_to_gold_queryset = silver_to_gold_queryset.filter(
+                        created_at__date__gte=start_date
+                    )
+
+                if end_date:
+
+                    silver_to_gold_queryset = silver_to_gold_queryset.filter(
+                        created_at__date__lte=end_date
+                    )
+
+                silver_to_gold_queryset = silver_to_gold_queryset.order_by("-created_at")
+
+                silver_to_gold_serializer = SilverFinancialTransactionSerializer(
+                    silver_to_gold_queryset, many=True, context={"request": request}
+                )
+
+                silver_to_gold_data = list(silver_to_gold_serializer.data)
+
+                # -----------------------------------------
+                # این تراکنش‌ها در واقع "واریز به روش تبدیل از نقره" هستند
+                # -----------------------------------------
+
+                for item in silver_to_gold_data:
+                    item["type"] = "DEPOSIT"
+                    item["type_display"] = "واریز"
+                    item["method"] = "SILVER"
+                    item["method_display"] = "تبدیل از نقره"
+
+                combined_data.extend(silver_to_gold_data)
+
+            # -----------------------------------------
+            # فیلتر method روی نتیجه‌ی نهایی (چون method واقعی
+            # این رکوردها در دیتابیس BANK است نه SILVER)
+            # -----------------------------------------
+
+            if method_filter and method_filter.upper() == "SILVER":
+
+                combined_data = [
+                    item for item in combined_data
+                    if item.get("method") == "SILVER"
+                ]
+
+            # -----------------------------------------
+            # مرتب‌سازی نهایی بر اساس تاریخ (جدیدترین اول)
+            # -----------------------------------------
+
+            combined_data.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+
             return success_response(
                 message=(
                     "گزارش واریزها" if report_type == "deposit" else "گزارش برداشت‌ها"
                 ),
-                data=serializer.data,
+                data=combined_data,
             )
 
         # =====================================================
@@ -1911,6 +2080,8 @@ class ReportsAPIView(APIView):
             return success_response(message="گزارش سفارشات", data=serializer.data)
 
         return error_response(message="نوع گزارش نامعتبر است")
+
+
 
 
 # =========================================================

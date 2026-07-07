@@ -5,7 +5,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import F, Sum
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.utils import timezone
 from rest_framework.views import APIView
@@ -1155,7 +1155,6 @@ class SilverPhysicalOrderAPIView(APIView):
         )
 
 
-
 class SilverOrderNoAddressAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -1171,6 +1170,10 @@ class SilverOrderNoAddressAPIView(APIView):
         user = request.user
 
         products_data = serializer.validated_data["products"]
+        payment_method = serializer.validated_data["payment_method"]
+
+        if payment_method not in ["TOMAN", "SILVER"]:
+            return error_response(message="روش پرداخت نامعتبر است")
 
         wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
         inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
@@ -1179,16 +1182,18 @@ class SilverOrderNoAddressAPIView(APIView):
         total_toman = Decimal("0")
 
         order_items = []
+        locked_products = {}
 
         # =========================
-        # VALIDATE PRODUCTS
+        # VALIDATE PRODUCTS (با قفل روی موجودی محصول برای جلوگیری از race condition)
         # =========================
         for item in products_data:
 
-            product = SilverProduct.objects.filter(
-                id=item["product_id"],
-                is_active=True
-            ).first()
+            product = (
+                SilverProduct.objects.select_for_update()
+                .filter(id=item["product_id"], is_active=True)
+                .first()
+            )
 
             if not product:
                 return error_response(
@@ -1196,6 +1201,20 @@ class SilverOrderNoAddressAPIView(APIView):
                 )
 
             quantity = int(item["quantity"])
+
+            # -----------------------------------------
+            # اگر یک محصول چند بار در لیست ارسال شده باشد،
+            # موجودی تجمعی چک شود نه فقط تک‌تک
+            # -----------------------------------------
+            already_requested = locked_products.get(product.id, 0)
+            total_requested = already_requested + quantity
+
+            if product.inventory_count < total_requested:
+                return error_response(
+                    message=f"موجودی {product.name} کافی نیست"
+                )
+
+            locked_products[product.id] = total_requested
 
             item_silver = product.total_weight_with_fees * quantity
             item_toman = product.buy_price * quantity
@@ -1209,8 +1228,6 @@ class SilverOrderNoAddressAPIView(APIView):
                 "price_at_time": product.buy_price,
                 "weight_at_time": product.total_weight_with_fees,
             })
-
-        payment_method = serializer.validated_data["payment_method"]
 
         # =========================
         # PAYMENT → BLOCK ONLY
@@ -1244,8 +1261,14 @@ class SilverOrderNoAddressAPIView(APIView):
                 "updated_at"
             ])
 
-        else:
-            return error_response(message="روش پرداخت نامعتبر است")
+        # =========================
+        # DECREASE PRODUCT INVENTORY
+        # =========================
+
+        # for product_id, requested_qty in locked_products.items():
+        #     SilverProduct.objects.filter(id=product_id).update(
+        #         inventory_count=F("inventory_count") - requested_qty
+        #     )
 
         # =========================
         # CREATE ORDER (NO ADDRESS)
@@ -1281,6 +1304,39 @@ class SilverOrderNoAddressAPIView(APIView):
                 price_at_time=item["price_at_time"],
                 weight_at_time=item["weight_at_time"],
             )
+
+        # =========================
+        # LOG
+        # =========================
+
+        create_admin_log(
+            request=request,
+            admin=None,
+            user=user,
+            action_type="ORDER",
+            action="ثبت سفارش فیزیکی نقره",
+            model_name="SilverOrder",
+            tracking_code=order.tracking_code,
+            object_id=order.id,
+            description=f"""
+کاربر: {user.mobile}
+
+روش پرداخت:
+{payment_method}
+
+مبلغ تومانی:
+{total_toman:,}
+
+وزن نقره:
+{total_silver}
+
+موجودی قابل برداشت تومان:
+{wallet.accessible_toman:,}
+
+موجودی قابل برداشت نقره:
+{inventory.accessible_balance}
+""",
+        )
 
         return success_response(
             message="سفارش نقره  آدرس ثبت شد",
@@ -1589,10 +1645,13 @@ class SilverReportsAPIView(APIView):
             )
 
         # ==========================================
-        # DEPOSIT
+        # DEPOSIT (واریز مستقیم + تبدیل طلا -> نقره)
         # ==========================================
         if report_type == "deposit":
 
+            # -----------------------------------------
+            # واریزهای مستقیم (type=DEPOSIT)
+            # -----------------------------------------
             queryset = SilverFinancialTransaction.objects.filter(
                 user=request.user, type="DEPOSIT"
             )
@@ -1615,12 +1674,59 @@ class SilverReportsAPIView(APIView):
                 queryset, many=True, context={"request": request}
             )
 
+            combined_data = list(serializer.data)
+
+            # -----------------------------------------
+            # تبدیل از طلا به نقره (type=TRANSFER)
+            # این‌ها هم از دید کاربر «واریز» به کیف پول نقره هستند
+            # -----------------------------------------
+            transfer_queryset = SilverFinancialTransaction.objects.filter(
+                user=request.user, type="TRANSFER"
+            )
+
+            if status_filter:
+                transfer_queryset = transfer_queryset.filter(status=status_filter)
+
+            if start_date:
+                transfer_queryset = transfer_queryset.filter(created_at__date__gte=start_date)
+
+            if end_date:
+                transfer_queryset = transfer_queryset.filter(created_at__date__lte=end_date)
+
+            transfer_queryset = transfer_queryset.order_by("-created_at")[:50]
+
+            transfer_serializer = SilverFinancialTransactionSerializer(
+                transfer_queryset, many=True, context={"request": request}
+            )
+
+            transfer_data = list(transfer_serializer.data)
+
+            for item in transfer_data:
+                item["type"] = "DEPOSIT"
+                item["type_display"] = "واریز"
+                item["method"] = "GOLD_CONVERT"
+                item["method_display"] = "تبدیل از طلا"
+
+            # -----------------------------------------
+            # فیلتر method روی نتیجه‌ی نهایی (چون method واقعی
+            # در دیتابیس برای این رکوردها BANK است نه GOLD_CONVERT)
+            # -----------------------------------------
+            if method_filter and method_filter.upper() != "GOLD_CONVERT":
+                transfer_data = []
+            elif method_filter and method_filter.upper() == "GOLD_CONVERT":
+                pass  # نگه‌داشتن همه، چون همه از این نوع‌اند
+            # اگر method_filter خالی باشد، همه نمایش داده می‌شوند
+
+            combined_data.extend(transfer_data)
+
+            combined_data.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+
             return success_response(
-                message="گزارش واریزهای نقره دریافت شد", data=serializer.data
+                message="گزارش واریزهای نقره دریافت شد", data=combined_data
             )
 
         # ==========================================
-        # WITHDRAW
+        # WITHDRAW (برداشت مستقیم + انتقال نقره -> طلا)
         # ==========================================
         if report_type == "withdraw":
 
@@ -1628,7 +1734,7 @@ class SilverReportsAPIView(APIView):
                 user=request.user, type="WITHDRAW"
             )
 
-            if method_filter:
+            if method_filter and method_filter.upper() != "GOLD_CONVERT":
                 queryset = queryset.filter(method=method_filter.upper())
 
             if status_filter:
@@ -1646,8 +1752,32 @@ class SilverReportsAPIView(APIView):
                 queryset, many=True, context={"request": request}
             )
 
+            combined_data = list(serializer.data)
+
+            # -----------------------------------------
+            # این رکوردها همان تراکنش‌های انتقال نقره -> طلا هستند
+            # (در WithdrawAPIView نقره با tracking_code شروع‌شونده با
+            # "SLV_TO_GOLD" و method=BANK ساخته می‌شوند)
+            # برچسب دقیق‌تر برای نمایش در گزارش قرار می‌دهیم
+            # -----------------------------------------
+            for item in combined_data:
+                if str(item.get("tracking_code", "")).startswith("SLV_TO_GOLD"):
+                    item["method"] = "GOLD_CONVERT"
+                    item["method_display"] = "تبدیل به طلا"
+
+            # -----------------------------------------
+            # اگر method_filter=GOLD_CONVERT بود، فقط همین‌ها را نگه دار
+            # -----------------------------------------
+            if method_filter and method_filter.upper() == "GOLD_CONVERT":
+                combined_data = [
+                    item for item in combined_data
+                    if item.get("method") == "GOLD_CONVERT"
+                ]
+
+            combined_data.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+
             return success_response(
-                message="گزارش برداشت‌های نقره دریافت شد", data=serializer.data
+                message="گزارش برداشت‌های نقره دریافت شد", data=combined_data
             )
 
         # ==========================================
@@ -1680,8 +1810,6 @@ class SilverReportsAPIView(APIView):
             )
 
         return error_response(message="نوع گزارش نامعتبر است")
-
-
 # =========================================================
 # RECENT TRANSACTIONS (SILVER)
 # =========================================================
