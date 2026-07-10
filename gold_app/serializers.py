@@ -724,154 +724,301 @@ class DepositSerializer(serializers.Serializer):
 
 from rest_framework import serializers
 
+from rest_framework import serializers
+from rest_framework import serializers
+
 # =========================================================
-# BUY GOLD SERIALIZER FIX
+# BUY GOLD SERIALIZER (FIXED)
 # =========================================================
 
+from decimal import Decimal, ROUND_DOWN
+
 from rest_framework import serializers
+
+
+# =========================================================
+# BUY GOLD SERIALIZER (FIXED)
+# =========================================================
+
+from decimal import Decimal, ROUND_DOWN
+
 from rest_framework import serializers
+
+from decimal import Decimal, ROUND_DOWN
+from rest_framework import serializers
+from accounts.models import FeeSetting, UserFee  # نام اپلیکیشن خود را جایگزین کنید
+
+from decimal import Decimal, ROUND_DOWN
+
+from rest_framework import serializers
+
+from accounts.models import FeeSetting
+from decimal import Decimal, ROUND_DOWN
+from rest_framework import serializers
+from accounts.models import FeeSetting
+
+from decimal import Decimal, ROUND_DOWN
+from rest_framework import serializers
+from accounts.models import FeeSetting
+
+
+from accounts.models import FeeSetting
+from rest_framework import serializers
+from decimal import Decimal, ROUND_DOWN
 
 
 class BuyGoldSerializer(serializers.Serializer):
-
+    """
+    خرید طلا
+    
+    اگر weight ارسال شود:
+        قیمت خالص = قیمت طلا × وزن
+        کارمزد = قیمت خالص × نرخ کارمزد
+        مبلغ کل = قیمت خالص + کارمزد
+    
+    اگر toman ارسال شود (مبلغ کل شامل کارمزد):
+        قیمت خالص = مبلغ کل ÷ (۱ + نرخ کارمزد)
+        کارمزد = مبلغ کل - قیمت خالص
+        وزن = قیمت خالص ÷ قیمت طلا
+        مبلغ کل = مبلغ وارد شده (همون toman)
+    """
+    
     payment_method = serializers.ChoiceField(
-        choices=[("WALLET", "کیف پول"), ("GATEWAY", "درگاه")]
+        choices=[("WALLET", "کیف پول")],
+        required=True
     )
-
     toman = serializers.DecimalField(
-        max_digits=25, decimal_places=2, required=False, allow_null=True
+        max_digits=25,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
     )
-
     weight = serializers.DecimalField(
-        max_digits=20, decimal_places=3, required=False, allow_null=True
+        max_digits=20,
+        decimal_places=3,
+        required=False,
+        allow_null=True,
     )
 
     def validate(self, attrs):
-
         toman = attrs.get("toman")
         weight = attrs.get("weight")
 
+        # اعتبارسنجی: حداقل یکی باید وارد شده باشد
         if toman is None and weight is None:
-            raise serializers.ValidationError("مبلغ یا وزن الزامی است")
+            raise serializers.ValidationError(
+                {"non_field_errors": ["وارد کردن مبلغ یا وزن الزامی است."]}
+            )
 
+        # اگر هر دو ارسال شدند، وزن ملاک است
+        if toman is not None and weight is not None:
+            weight = Decimal(str(weight)).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+            if weight <= 0:
+                raise serializers.ValidationError(
+                    {"weight": ["وزن وارد شده باید بزرگتر از صفر باشد."]}
+                )
+            toman = None
+            attrs["toman"] = None
+
+        # دریافت قیمت طلا از context
         gold_price = Decimal(str(self.context["gold_price"]))
+        if gold_price <= 0:
+            raise serializers.ValidationError(
+                {"non_field_errors": ["قیمت طلا نامعتبر است."]}
+            )
 
+        # دریافت نرخ کارمزد
         user = self.context["request"].user
-
         user_fee = getattr(user, "fee", None)
 
-        fee_rate = user_fee.gold_buy_fee if user_fee else Decimal("0.0099")
+        if user_fee:
+            fee_rate = user_fee.gold_buy_fee
+        else:
+            setting = FeeSetting.objects.last()
+            fee_rate = setting.gold_buy_fee if setting else Decimal("0.01")
 
-        if toman is not None:
+        fee_rate = Decimal(str(fee_rate))
+        if fee_rate < 0:
+            raise serializers.ValidationError(
+                {"non_field_errors": ["کارمزد نامعتبر است."]}
+            )
 
-            toman = Decimal(str(toman))
+        # ===========================
+        # خرید بر اساس وزن
+        # ===========================
+        if weight is not None:
+            final_weight = weight
+            pure_gold_price = (gold_price * final_weight).quantize(Decimal("1"))
+            fee = (pure_gold_price * fee_rate).quantize(Decimal("1"))
+            total_toman = (pure_gold_price + fee).quantize(Decimal("1"))
 
+        # ===========================
+        # خرید بر اساس مبلغ کل (کارمزد از مبلغ کم میشه)
+        # ===========================
+        else:
+            toman = Decimal(str(toman)).quantize(Decimal("1"))
             if toman <= 0:
-                raise serializers.ValidationError("مبلغ نامعتبر است")
+                raise serializers.ValidationError(
+                    {"toman": ["مبلغ وارد شده باید بزرگتر از صفر باشد."]}
+                )
 
-            fee = toman * fee_rate
+            # قیمت خالص = مبلغ کل ÷ (۱ + نرخ کارمزد)
+            pure_gold_price = (toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
+            
+            # کارمزد = مبلغ کل - قیمت خالص
+            fee = (toman - pure_gold_price).quantize(Decimal("1"))
+            
+            # وزن = قیمت خالص ÷ قیمت هر گرم
+            final_weight = (pure_gold_price / gold_price).quantize(
+                Decimal("0.001"),
+                rounding=ROUND_DOWN,
+            )
 
-            pure = toman - fee
+            if final_weight <= 0:
+                raise serializers.ValidationError(
+                    {"non_field_errors": ["مبلغ وارد شده برای خرید حتی یک هزارم گرم طلا کافی نیست."]}
+                )
 
-            final_weight = pure / gold_price
-
+            # مبلغ کل = همون مبلغ ورودی
             total_toman = toman
 
-        else:
-
-            weight = Decimal(str(weight))
-
-            if weight <= 0:
-                raise serializers.ValidationError("وزن نامعتبر است")
-
-            pure = weight * gold_price
-
-            fee = pure * fee_rate
-
-            total_toman = pure + fee
-
-            final_weight = weight
-
-        attrs["fee"] = fee
+        # ذخیره در attrs
         attrs["fee_rate"] = fee_rate
+        attrs["fee"] = fee
+        attrs["gold_price"] = gold_price
+        attrs["pure_gold_price"] = pure_gold_price
         attrs["total_toman"] = total_toman
-
-        # مهم
-        attrs["final_weight"] = final_weight.quantize(Decimal("0.001"))
+        attrs["final_weight"] = final_weight
 
         return attrs
 
 
-# =========================================================
-# SELL GOLD
-# =========================================================
 
+
+from decimal import Decimal, ROUND_DOWN
+
+from rest_framework import serializers
+
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+from rest_framework import serializers
+from accounts.models import FeeSetting
 
 class SellGoldSerializer(serializers.Serializer):
-
     toman = serializers.DecimalField(
-        max_digits=20, decimal_places=2, required=False, allow_null=True
+        max_digits=25, 
+        decimal_places=2, 
+        required=False, 
+        allow_null=True
     )
-
     weight = serializers.DecimalField(
-        max_digits=20, decimal_places=4, required=False, allow_null=True
+        max_digits=20, 
+        decimal_places=3, 
+        required=False, 
+        allow_null=True
     )
-
-    fee = None
-    fee_rate = None
-    final_amount = None
-    final_weight = None
 
     def validate(self, attrs):
-
         toman = attrs.get("toman")
         weight = attrs.get("weight")
 
+        # ===========================
+        # اعتبارسنجی: حداقل یکی باید وارد شده باشد
+        # ===========================
         if toman is None and weight is None:
-            raise serializers.ValidationError("مبلغ یا وزن الزامی است")
+            raise serializers.ValidationError(
+                {"non_field_errors": ["وارد کردن مبلغ یا وزن برای فروش الزامی است."]}
+            )
 
-        if toman is not None and Decimal(toman) <= 0:
-            raise serializers.ValidationError("مبلغ نامعتبر است")
+        # ===========================
+        # اگر هر دو ارسال شدند، وزن ملاک است
+        # ===========================
+        if toman is not None and weight is not None:
+            weight = Decimal(str(weight)).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+            if weight <= 0:
+                raise serializers.ValidationError(
+                    {"weight": ["وزن وارد شده باید بزرگتر از صفر باشد."]}
+                )
+            toman = None
+            attrs["toman"] = None
 
-        if weight is not None and Decimal(weight) <= 0:
-            raise serializers.ValidationError("وزن طلا نامعتبر است")
+        # ===========================
+        # دریافت قیمت طلا از context
+        # ===========================
+        gold_price = Decimal(str(self.context["gold_price"]))
+        if gold_price <= 0:
+            raise serializers.ValidationError(
+                {"non_field_errors": ["قیمت طلا نامعتبر است."]}
+            )
 
-        request = self.context.get("request")
-        user = request.user
-
+        # ===========================
+        # دریافت نرخ کارمزد فروش
+        # ===========================
+        user = self.context["request"].user
         user_fee = getattr(user, "fee", None)
 
-        fee_rate = user_fee.gold_sell_fee if user_fee else Decimal("0.0099")
-
-        gold_price = Decimal(str(self.context.get("gold_price")))
-
-        attrs["fee_rate"] = fee_rate
-
-        if toman is not None:
-
-            toman = Decimal(toman)
-
-            final_weight = toman / gold_price
-
-            fee = toman * fee_rate
-
-            final_amount = toman - fee
-
+        if user_fee:
+            fee_rate = user_fee.gold_sell_fee
         else:
+            setting = FeeSetting.objects.last()
+            fee_rate = setting.gold_sell_fee if setting else Decimal("0.01")
 
-            final_weight = Decimal(weight)
+        fee_rate = Decimal(str(fee_rate))
+        if fee_rate < 0:
+            raise serializers.ValidationError(
+                {"non_field_errors": ["کارمزد نامعتبر است."]}
+            )
 
-            pure = final_weight * gold_price
+        # ===========================
+        # فروش بر اساس وزن
+        # ===========================
+        if weight is not None:
+            final_weight = weight
+            pure_value = (gold_price * final_weight).quantize(Decimal("1"))
+            fee = (pure_value * fee_rate).quantize(Decimal("1"))
+            final_amount = (pure_value - fee).quantize(Decimal("1"))  # ✅ کارمزد کم میشه
 
-            fee = pure * fee_rate
+        # ===========================
+        # فروش بر اساس مبلغ (دریافتی کاربر)
+        # ===========================
+        else:
+            toman = Decimal(str(toman)).quantize(Decimal("1"))
+            if toman <= 0:
+                raise serializers.ValidationError(
+                    {"toman": ["مبلغ وارد شده باید بزرگتر از صفر باشد."]}
+                )
 
-            final_amount = pure - fee
+            # ✅ وزن = مبلغ دریافتی / قیمت
+            final_weight = (toman / gold_price).quantize(
+                Decimal("0.001"),
+                rounding=ROUND_DOWN
+            )
 
+            if final_weight <= 0:
+                raise serializers.ValidationError({
+                    "toman": ["مبلغ وارد شده برای فروش، کمتر از ارزش یک هزارم گرم طلا است."]
+                })
+
+            # ✅ ارزش خالص = وزن × قیمت
+            pure_value = (gold_price * final_weight).quantize(Decimal("1"))
+
+            # ✅ کارمزد = ارزش خالص × نرخ کارمزد
+            fee = (pure_value * fee_rate).quantize(Decimal("1"))
+
+            # ✅ مبلغ نهایی = ارزش خالص - کارمزد
+            final_amount = (pure_value - fee).quantize(Decimal("1"))  # ✅ کارمزد کم میشه
+
+        # ===========================
+        # ذخیره در attrs
+        # ===========================
+        attrs["fee_rate"] = fee_rate
         attrs["fee"] = fee
-        attrs["final_weight"] = final_weight
+        attrs["gold_price"] = gold_price
+        attrs["pure_value"] = pure_value
         attrs["final_amount"] = final_amount
+        attrs["final_weight"] = final_weight
 
         return attrs
+
 
 
 # =========================================================
@@ -919,6 +1066,7 @@ class WithdrawSerializer(serializers.Serializer):
             attrs["card"] = card
 
         return attrs
+
 
 
 # =========================================================
@@ -1174,3 +1322,289 @@ class AssetValueSerializer(serializers.Serializer):
     gold_price = serializers.DecimalField(max_digits=20, decimal_places=0)
 
     silver_price = serializers.DecimalField(max_digits=20, decimal_places=0)
+
+
+
+
+# gold_app/serializers.py
+
+from rest_framework import serializers
+from decimal import Decimal, ROUND_DOWN
+from .models import GoldOrder
+from accounts.models import FeeSetting, UserFee
+
+
+class GoldLimitOrderCreateSerializer(serializers.Serializer):
+    order_type = serializers.ChoiceField(
+        choices=[('BUY', 'خرید'), ('SELL', 'فروش')],
+        required=True
+    )
+    target_price = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=0,
+        required=True,
+        min_value=Decimal("1")
+    )
+    amount_toman = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=0,
+        required=False,
+        allow_null=True
+    )
+    gold_weight = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=3,
+        required=False,
+        allow_null=True
+    )
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        order_type = attrs.get('order_type')
+        target_price = attrs.get('target_price')
+        amount_toman = attrs.get('amount_toman')
+        gold_weight = attrs.get('gold_weight')
+
+        # دریافت نرخ کارمزد
+        user_fee = getattr(user, 'fee', None)
+        if user_fee:
+            fee_rate = user_fee.gold_buy_fee if order_type == 'BUY' else user_fee.gold_sell_fee
+        else:
+            setting = FeeSetting.objects.last()
+            fee_rate = setting.gold_buy_fee if order_type == 'BUY' else setting.gold_sell_fee
+            fee_rate = fee_rate if fee_rate else Decimal("0.0099")
+
+        fee_rate = Decimal(str(fee_rate))
+
+        if order_type == 'BUY':
+            if not amount_toman:
+                raise serializers.ValidationError({'amount_toman': 'مبلغ به تومان الزامی است'})
+            
+            toman = amount_toman
+            total_price = toman.quantize(Decimal("1"))
+            estimated_weight = (total_price / (target_price * (Decimal("1") + fee_rate))).quantize(
+                Decimal("0.001"), rounding=ROUND_DOWN
+            )
+            estimated_weight = max(estimated_weight, Decimal("0.001"))
+            
+            pure_price = (target_price * estimated_weight).quantize(Decimal("1"))
+            fee = (pure_price * fee_rate).quantize(Decimal("1"))
+            
+            wallet, _ = Wallet.objects.get_or_create(user=user)
+            if wallet.accessible_toman < total_price:
+                raise serializers.ValidationError({'amount_toman': 'موجودی کیف پول کافی نیست'})
+            
+            attrs['estimated_weight'] = estimated_weight
+            attrs['fee'] = fee
+            attrs['fee_rate'] = fee_rate
+            attrs['pure_price'] = pure_price
+
+        else:  # SELL
+            if not gold_weight:
+                raise serializers.ValidationError({'gold_weight': 'وزن طلا الزامی است'})
+            
+            weight = gold_weight
+            pure_price = (target_price * weight).quantize(Decimal("1"))
+            fee = (pure_price * fee_rate).quantize(Decimal("1"))
+            total_price = (pure_price - fee).quantize(Decimal("1"))
+            estimated_weight = weight
+            
+            if total_price <= 0:
+                raise serializers.ValidationError({'gold_weight': 'وزن وارد شده برای فروش کافی نیست'})
+            
+            inventory, _ = GoldInventory.objects.get_or_create(user=user)
+            if inventory.accessible_balance < weight:
+                raise serializers.ValidationError({'gold_weight': 'موجودی طلای شما کافی نیست'})
+            
+            attrs['estimated_weight'] = estimated_weight
+            attrs['fee'] = fee
+            attrs['fee_rate'] = fee_rate
+            attrs['pure_price'] = pure_price
+            attrs['total_price'] = total_price
+
+        return attrs
+
+
+class GoldOrderListSerializer(serializers.ModelSerializer):
+    order_type_display = serializers.CharField(source='get_order_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+
+    class Meta:
+        model = GoldOrder
+        fields = '__all__'
+        
+        
+        
+        
+# gold_app/serializers.py
+
+from decimal import Decimal
+from rest_framework import serializers
+from .models import GoldShortOrder, GoldShortOrderHistory
+from accounts.models import FeeSetting, UserFee
+
+
+class GoldShortOrderCreateSerializer(serializers.Serializer):
+    """
+    سریالایزر ایجاد سفارش فروش تعهدی
+    """
+    order_type = serializers.ChoiceField(
+        choices=[('MARKET', 'قیمت بازار'), ('LIMIT', 'قیمت هدف')],
+        required=True
+    )
+    weight = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=3,
+        required=True,
+        min_value=Decimal("0.001")
+    )
+    leverage = serializers.IntegerField(
+        required=True,
+        min_value=1,
+        max_value=5
+    )
+    target_price = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=0,
+        required=False,
+        allow_null=True
+    )
+    take_profit = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=0,
+        required=False,
+        allow_null=True
+    )
+    stop_loss = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=0,
+        required=False,
+        allow_null=True
+    )
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        order_type = attrs.get('order_type')
+        weight = attrs.get('weight')
+        leverage = attrs.get('leverage')
+        target_price = attrs.get('target_price')
+        take_profit = attrs.get('take_profit')
+        stop_loss = attrs.get('stop_loss')
+
+        # دریافت قیمت لحظه‌ای طلا
+        from .utils import get_live_gold_price
+        current_price = get_live_gold_price()
+        
+        if not current_price:
+            raise serializers.ValidationError({'non_field_errors': 'خطا در دریافت قیمت طلا'})
+
+        current_price = Decimal(str(current_price))
+
+        # =============================================
+        # اعتبارسنجی قیمت هدف (برای سفارش LIMIT)
+        # =============================================
+        if order_type == 'LIMIT':
+            if not target_price:
+                raise serializers.ValidationError({'target_price': 'قیمت هدف الزامی است'})
+            
+            target_price = Decimal(str(target_price))
+            
+            # قیمت هدف باید کمتر از قیمت فعلی باشد (فروش تعهدی)
+            if target_price >= current_price:
+                raise serializers.ValidationError({
+                    'target_price': f'قیمت هدف باید کمتر از قیمت فعلی ({current_price}) باشد'
+                })
+            
+            entry_price = target_price
+        else:
+            entry_price = current_price
+
+        # =============================================
+        # اعتبارسنجی حد سود و حد ضرر
+        # =============================================
+        if take_profit:
+            take_profit = Decimal(str(take_profit))
+            # حد سود باید کمتر از قیمت ورود باشد (فروش تعهدی)
+            if take_profit >= entry_price:
+                raise serializers.ValidationError({
+                    'take_profit': f'حد سود باید کمتر از قیمت ورود ({entry_price}) باشد'
+                })
+
+        if stop_loss:
+            stop_loss = Decimal(str(stop_loss))
+            # حد ضرر باید بیشتر از قیمت ورود باشد (فروش تعهدی)
+            if stop_loss <= entry_price:
+                raise serializers.ValidationError({
+                    'stop_loss': f'حد ضرر باید بیشتر از قیمت ورود ({entry_price}) باشد'
+                })
+
+        # =============================================
+        # بررسی موجودی طلا
+        # =============================================
+        from .models import GoldInventory
+        inventory, _ = GoldInventory.objects.get_or_create(user=user)
+        
+        # برای فروش تعهدی نیاز به موجودی طلا داریم
+        if inventory.accessible_balance < weight:
+            raise serializers.ValidationError({
+                'weight': f'موجودی طلای شما ({inventory.accessible_balance} گرم) کافی نیست'
+            })
+
+        # =============================================
+        # محاسبه مبلغ کل و کارمزد
+        # =============================================
+        # مبلغ کل = وزن × قیمت ورود × (1 - کارمزد)
+        fee_rate = Decimal("0.01")  # 1%
+        
+        # قیمت خالص
+        pure_price = (weight * entry_price).quantize(Decimal("1"))
+        
+        # کارمزد اولیه (1%)
+        initial_fee = (pure_price * fee_rate).quantize(Decimal("1"))
+        
+        # مبلغ کل = قیمت خالص - کارمزد
+        total_price = (pure_price - initial_fee).quantize(Decimal("1"))
+
+        # ذخیره در attrs
+        attrs['entry_price'] = entry_price
+        attrs['fee_rate'] = fee_rate
+        attrs['initial_fee'] = initial_fee
+        attrs['total_price'] = total_price
+        attrs['pure_price'] = pure_price
+
+        return attrs
+
+
+class GoldShortOrderListSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر لیست سفارشات فروش تعهدی
+    """
+    order_type_display = serializers.CharField(source='get_order_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    profit_loss_display = serializers.SerializerMethodField()
+    leverage_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GoldShortOrder
+        fields = '__all__'
+
+    def get_profit_loss_display(self, obj):
+        if obj.profit_loss > 0:
+            return f"+{obj.profit_loss}"
+        return str(obj.profit_loss)
+
+    def get_leverage_display(self, obj):
+        return f"{obj.leverage}x"
+
+
+class GoldShortOrderHistorySerializer(serializers.ModelSerializer):
+    """
+    سریالایزر تاریخچه سفارش فروش تعهدی
+    """
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = GoldShortOrderHistory
+        fields = '__all__'

@@ -8,6 +8,8 @@ from .views import (
     # =========================
     # DASHBOARD & BALANCE
     # =========================
+    BuySilverCalculateAPIView,
+    SellSilverCalculateAPIView,
     SilverAnnouncementAPIView,
     SilverAnnouncementMarkAllReadAPIView,
     SilverAnnouncementMarkReadAPIView,
@@ -15,10 +17,17 @@ from .views import (
     SilverBannerListAPIView,
     SilverDashboardAPIView,
     SilverDepositInfoAPIView,
+    SilverLimitOrderCancelAPIView,
+    SilverLimitOrderCreateAPIView,
+    SilverLimitOrderDetailAPIView,
+    SilverLimitOrderExecuteAPIView,
+    SilverLimitOrderListAPIView,
+    SilverLimitOrderUpdateAPIView,
     SilverOrderDetailAPIView,
     SilverOrderNoAddressAPIView,
     SilverProductCategoryListAPIView,
     SilverProductDetailAPIView,
+    SilverReferralInfoAPIView,
     SilverStatisticsAPIView,
     SilverUserAddressAPIView,
     SilverUserBalanceAPIView,
@@ -121,10 +130,32 @@ urlpatterns = [
         SilverRecentDeliveriesAPIView.as_view(),
         name="silver-recent-deliveries",
     ),
+    path(
+    "buy/calculate/",
+    BuySilverCalculateAPIView.as_view(),
+    name="buy-silver-calculate",
+),
+# silver_app/urls.py
+
+
+    
+    path('limit-orders/create/', SilverLimitOrderCreateAPIView.as_view(), name='silver-limit-order-create'),
+    path('limit-orders/', SilverLimitOrderListAPIView.as_view(), name='silver-limit-order-list'),
+    path('limit-orders/<int:pk>/', SilverLimitOrderDetailAPIView.as_view(), name='silver-limit-order-detail'),
+    path('limit-orders/<int:pk>/cancel/', SilverLimitOrderCancelAPIView.as_view(), name='silver-limit-order-cancel'),
+    path('limit-orders/<int:pk>/execute/', SilverLimitOrderExecuteAPIView.as_view(), name='silver-limit-order-execute'),
+    path('limit-orders/<int:pk>/update/', SilverLimitOrderUpdateAPIView.as_view(), name='silver-limit-order-update'),
+
+
+path(
+    "sell/calculate/",
+    SellSilverCalculateAPIView.as_view(),
+    name="sell-silver-calculate",
+),
     # =====================================================
     # REFERRAL
     # =====================================================
-    path("referral/", SilverReferralDashboardAPIView.as_view(), name="silver-referral"),
+    path("referral/", SilverReferralInfoAPIView.as_view(),),
     path("asset-value/", SilverAssetValueAPIView.as_view(), name="silver-asset-value"),
     path("statistics/", SilverStatisticsAPIView.as_view(), name="silver-statistics"),
     # silver_app/urls.py

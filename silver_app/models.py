@@ -427,3 +427,48 @@ class UserAddress(models.Model):
     unit = models.CharField(max_length=20, null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+# silver_app/models.py (اضافه کنید)
+
+# silver_app/models.py (اضافه کنید)
+
+class SilverLimitOrder(models.Model):
+    """
+    مدل سفارش با قیمت برای نقره (Limit Order)
+    خرید در قیمت پایین‌تر - فروش در قیمت بالاتر
+    """
+    ORDER_TYPE = (
+        ("BUY", "خرید"),
+        ("SELL", "فروش"),
+    )
+    STATUS = (
+        ("PENDING", "در انتظار"),
+        ("EXECUTED", "انجام شده"),
+        ("CANCELLED", "لغو شده"),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='silver_limit_orders'
+    )
+    order_type = models.CharField(max_length=10, choices=ORDER_TYPE)
+    target_price = models.DecimalField(max_digits=20, decimal_places=0)
+    amount_toman = models.DecimalField(max_digits=20, decimal_places=0, null=True, blank=True)
+    silver_weight = models.DecimalField(max_digits=20, decimal_places=3, null=True, blank=True)
+    estimated_weight = models.DecimalField(max_digits=20, decimal_places=3)
+    fee_rate = models.DecimalField(max_digits=5, decimal_places=4, default=0.0099)
+    status = models.CharField(max_length=20, default="PENDING", choices=STATUS)
+    executed_price = models.DecimalField(max_digits=20, decimal_places=0, null=True, blank=True)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'سفارش با قیمت نقره'
+        verbose_name_plural = 'سفارش‌های با قیمت نقره'
+
+    def __str__(self):
+        return f"{self.get_order_type_display()} - {self.user.mobile} - {self.target_price}"

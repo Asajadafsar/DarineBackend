@@ -873,6 +873,7 @@ class GoldBankInfo(models.Model):
 
         super().save(*args, **kwargs)
 
+# gold_app/models.py
 
 class GoldOrder(models.Model):
 
@@ -886,13 +887,12 @@ class GoldOrder(models.Model):
         ("EXECUTED", "انجام شده"),
         ("CANCELLED", "لغو شده"),
     )
-    fee_rate = models.DecimalField(
-    max_digits=5,
-    decimal_places=4,
-    default=0.0099
-)
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='gold_orders'
+    )
 
     order_type = models.CharField(max_length=10, choices=ORDER_TYPE)
 
@@ -904,12 +904,121 @@ class GoldOrder(models.Model):
 
     estimated_weight = models.DecimalField(max_digits=20, decimal_places=3)
 
+    fee_rate = models.DecimalField(max_digits=5, decimal_places=4, default=0.0099)
+
     status = models.CharField(max_length=20, default="PENDING", choices=STATUS)
 
     executed_price = models.DecimalField(max_digits=20, decimal_places=0, null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    description = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.get_order_type_display()} - {self.user.mobile} - {self.target_price}"
     
     
     
+# gold_app/models.py
+
+class GoldShortOrder(models.Model):
+    """
+    مدل فروش تعهدی طلا (Short Selling)
+    """
+    STATUS_CHOICES = (
+        ('PENDING', 'در انتظار'),
+        ('ACTIVE', 'فعال'),
+        ('CLOSED', 'بسته شده'),
+        ('LIQUIDATED', 'لیکوئید شده'),
+        ('CANCELLED', 'لغو شده'),
+    )
+    
+    ORDER_TYPE_CHOICES = (
+        ('MARKET', 'قیمت بازار'),
+        ('LIMIT', 'قیمت هدف'),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='gold_short_orders'
+    )
+    
+    # نوع سفارش (بازار یا هدف)
+    order_type = models.CharField(max_length=10, choices=ORDER_TYPE_CHOICES)
+    
+    # وزن طلا (گرم)
+    weight = models.DecimalField(max_digits=20, decimal_places=3)
+    
+    # ضریب (1x تا 5x)
+    leverage = models.PositiveSmallIntegerField(default=1, verbose_name='ضریب')
+    
+    # قیمت ورود (قیمتی که سفارش در آن اجرا شده)
+    entry_price = models.DecimalField(max_digits=20, decimal_places=0, verbose_name='قیمت ورود')
+    
+    # قیمت هدف (برای سفارش LIMIT)
+    target_price = models.DecimalField(max_digits=20, decimal_places=0, null=True, blank=True, verbose_name='قیمت هدف')
+    
+    # حد سود (اختیاری)
+    take_profit = models.DecimalField(max_digits=20, decimal_places=0, null=True, blank=True, verbose_name='حد سود')
+    
+    # حد ضرر (اختیاری)
+    stop_loss = models.DecimalField(max_digits=20, decimal_places=0, null=True, blank=True, verbose_name='حد ضرر')
+    
+    # قیمت بسته شدن
+    close_price = models.DecimalField(max_digits=20, decimal_places=0, null=True, blank=True, verbose_name='قیمت بسته شدن')
+    
+    # سود/ضرر نهایی
+    profit_loss = models.DecimalField(max_digits=20, decimal_places=0, default=0, verbose_name='سود/ضرر')
+    
+    # کارمزد اولیه (1%)
+    initial_fee = models.DecimalField(max_digits=20, decimal_places=0, default=0, verbose_name='کارمزد اولیه')
+    
+    # کارمزد روزانه (0.65% در روز)
+    daily_fee = models.DecimalField(max_digits=20, decimal_places=0, default=0, verbose_name='کارمزد روزانه')
+    
+    # کل کارمزد
+    total_fee = models.DecimalField(max_digits=20, decimal_places=0, default=0, verbose_name='کل کارمزد')
+    
+    # وضعیت
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    
+    # توضیحات
+    description = models.TextField(blank=True, null=True)
+    
+    # تاریخ‌ها
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'فروش تعهدی طلا'
+        verbose_name_plural = 'فروش‌های تعهدی طلا'
+
+    def __str__(self):
+        return f"Short - {self.user.mobile} - {self.weight}g - {self.entry_price}"
+
+
+# =========================================================
+# SHORT ORDER HISTORY (تاریخچه تغییرات)
+# =========================================================
+
+class GoldShortOrderHistory(models.Model):
+    """
+    تاریخچه تغییرات سفارش فروش تعهدی
+    """
+    order = models.ForeignKey(GoldShortOrder, on_delete=models.CASCADE, related_name='history')
+    status = models.CharField(max_length=20, choices=GoldShortOrder.STATUS_CHOICES)
+    price = models.DecimalField(max_digits=20, decimal_places=0)
+    profit_loss = models.DecimalField(max_digits=20, decimal_places=0, default=0)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']

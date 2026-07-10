@@ -18,6 +18,7 @@ from admin_panel.views import (
     GoldBankAdminViewSet,
     GoldBannerAdminViewSet,
     GoldPriceOffsetAdminViewSet,
+    GoldTransactionAdminViewSet,
     OrderAdminViewSet,
     ProductAdminViewSet,
     SilverAdminViewSet,
@@ -29,6 +30,7 @@ from admin_panel.views import (
     SilverOrderAdminViewSet,
     SilverPriceOffsetAdminViewSet,
     SilverProductAdminViewSet,
+    SilverTransactionAdminViewSet,
     SilverWithdrawAdminViewSet,
     UserAdminViewSet,
     SilverBalanceWithdrawalViewSet,
@@ -255,7 +257,7 @@ router.register(
     basename="gold-balance-withdrawal",
 )
 
-
+router.register(r"gold-transactions", GoldTransactionAdminViewSet, basename="admin-gold-transactions")
 # =========================================================
 # BALANCE WITHDRAWALS
 # =========================================================
@@ -265,6 +267,7 @@ router.register(
     SilverBalanceWithdrawalViewSet,
     basename="silver-balance-withdrawal",
 )
+router.register(r'silver-transactions', SilverTransactionAdminViewSet, basename='silver-transaction')
 
 # =========================================================
 # URL PATTERNS

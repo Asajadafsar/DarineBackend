@@ -39,44 +39,96 @@ from gold_app.models import Wallet
 from silver_app.models import SilverWallet
 
 
-def apply_referral_bonus(user, amount, source_type):
 
+from decimal import Decimal
+
+from django.db import transaction
+
+from accounts.models import ReferralSetting, ReferralEarning
+
+from gold_app.models import Wallet
+from silver_app.models import SilverWallet
+
+
+
+@transaction.atomic
+def create_referral_profit(
+    user,
+    source_type,
+    transaction_amount,
+):
+
+    # اگر معرف ندارد
     if not user.referred_by:
-        return
+        return None
 
-    referrer = user.referred_by
 
-    settings_obj = FeeSetting.objects.first()
+    # درصد فعلی رفرال
+    setting = ReferralSetting.objects.first()
 
-    if not settings_obj:
-        settings_obj = FeeSetting.objects.create()
+    if not setting:
+        return None
 
-    # درصد سود
-    if source_type == "GOLD":
 
-        percent = settings_obj.gold_referral_percent
+    percent = setting.commission_percent
 
-    else:
 
-        percent = settings_obj.silver_referral_percent
-
-    bonus = Decimal(str(amount)) * Decimal(str(percent)) / Decimal("100")
-
-    ReferralEarning.objects.create(
-        referrer=referrer, user=user, amount=bonus, source_type=source_type
+    # محاسبه سود
+    profit = (
+        Decimal(transaction_amount)
+        *
+        percent
+        /
+        Decimal("100")
     )
 
-    # واریز به کیف پول
+
+    # ثبت تاریخچه سود رفرال
+    earning = ReferralEarning.objects.create(
+
+        referrer=user.referred_by,
+
+        user=user,
+
+        source_type=source_type,
+
+        transaction_amount=transaction_amount,
+
+        commission_percent=percent,
+
+        commission_amount=profit,
+
+        marketer_percent=percent,
+
+        profit=profit,
+    )
+
+
+    # =====================================
+    # واریز به کیف پول معرف
+    # =====================================
+
+
     if source_type == "GOLD":
 
-        wallet, _ = Wallet.objects.get_or_create(user=referrer)
+        wallet, _ = Wallet.objects.get_or_create(
+            user=user.referred_by
+        )
 
-        wallet.balance += bonus
+        wallet.accessible_toman += profit
+
         wallet.save()
 
-    else:
 
-        wallet, _ = SilverWallet.objects.get_or_create(user=referrer)
+    elif source_type == "SILVER":
 
-        wallet.balance += bonus
+        wallet, _ = SilverWallet.objects.get_or_create(
+            user=user.referred_by
+        )
+
+        wallet.accessible_toman += profit
+
         wallet.save()
+
+
+    return earning

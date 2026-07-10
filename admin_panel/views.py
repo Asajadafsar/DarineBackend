@@ -82,7 +82,7 @@ class AdminBaseViewSet(ModelViewSet):
 
 class UserAdminViewSet(AdminBaseViewSet):
     queryset = User.objects.all().order_by("-id")
-
+    
     def get_queryset(self):
         qs = super().get_queryset()
 
@@ -196,7 +196,75 @@ class UserAdminViewSet(AdminBaseViewSet):
 
         return success_response("وضعیت تغییر کرد", {"is_active": user.is_active})
         # =========================================================
-   
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="bulk-update-fees",
+    )
+    def bulk_update_fees(self, request):
+
+        user_ids = request.data.get("user_ids", [])
+
+        if not user_ids:
+            return error_response(
+                message="حداقل یک کاربر انتخاب کنید."
+            )
+
+        fee_data = {
+            key: request.data.get(key)
+            for key in [
+                "gold_buy_fee",
+                "gold_sell_fee",
+                "silver_buy_fee",
+                "silver_sell_fee",
+            ]
+            if request.data.get(key) is not None
+        }
+
+        if not fee_data:
+            return error_response(
+                message="هیچ کارمزدی ارسال نشده است."
+            )
+
+        users = User.objects.filter(
+            id__in=user_ids,
+        )
+
+        if not users.exists():
+            return error_response(
+                message="کاربری یافت نشد."
+            )
+
+        updated_users = 0
+
+        with transaction.atomic():
+
+            for user in users:
+
+                fee, _ = UserFee.objects.get_or_create(
+                    user=user,
+                )
+
+                serializer = UserFeeUpdateSerializer(
+                    fee,
+                    data=fee_data,
+                    partial=True,
+                )
+
+                serializer.is_valid(
+                    raise_exception=True,
+                )
+
+                serializer.save()
+
+                updated_users += 1
+
+        return success_response(
+            message="کارمزد کاربران با موفقیت بروزرسانی شد.",
+            data={
+                "updated_users": updated_users,
+            },
+        )
    
 
 
@@ -5928,3 +5996,543 @@ class SilverPriceOffsetAdminViewSet(AdminBaseViewSet):
         return success_response("Offset نقره حذف شد")
 
 
+
+
+
+from accounts.utils import create_referral_profit
+
+ 
+# =========================================================
+# VIEWSET
+# =========================================================
+
+
+# =========================================================
+# GOLD TRANSACTION ADMIN VIEWSET
+# =========================================================
+
+from decimal import Decimal
+from django.db import transaction
+from django.contrib.auth import get_user_model
+from rest_framework.decorators import action
+import uuid
+
+from accounts.utils import create_referral_profit
+from gold_app.models import Wallet, GoldTransaction, GoldInventory
+
+User = get_user_model()
+
+
+class GoldTransactionAdminViewSet(AdminBaseViewSet):
+    """
+    ویوست مدیریت تراکنش‌های طلا برای ادمین
+    """
+
+    queryset = GoldTransaction.objects.all().order_by("-id")
+    serializer_class = GoldTransactionAdminSerializer
+
+    # =====================================================
+    # QUERYSET FILTER
+    # =====================================================
+    def get_queryset(self):
+
+        qs = super().get_queryset()
+
+        search = self.request.GET.get("search")
+        status = self.request.GET.get("status")
+        type_ = self.request.GET.get("type")  # BUY / SELL
+        tracking_code = self.request.GET.get("tracking_code")
+        start_date = self.request.GET.get("start_date")
+        end_date = self.request.GET.get("end_date")
+        ordering = self.request.GET.get("ordering")
+
+        if search:
+            qs = qs.filter(user__mobile__icontains=search)
+
+        if status:
+            qs = qs.filter(status=status)
+
+        if type_:
+            qs = qs.filter(type=type_)
+
+        if tracking_code:
+            qs = qs.filter(tracking_code__icontains=tracking_code)
+
+        if start_date:
+            qs = qs.filter(created_at__date__gte=start_date)
+
+        if end_date:
+            qs = qs.filter(created_at__date__lte=end_date)
+
+        allowed_ordering = [
+            "id", "-id",
+            "created_at", "-created_at",
+            "status", "-status",
+            "total_amount", "-total_amount",
+            "amount_gr", "-amount_gr",
+        ]
+
+        if ordering in allowed_ordering:
+            qs = qs.order_by(ordering)
+
+        return qs
+
+    # =====================================================
+    # LIST
+    # =====================================================
+    def list(self, request):
+
+        qs = self.get_queryset()
+
+        return success_response(
+            "لیست تراکنش‌های طلا",
+            {
+                "total_results": qs.count(),
+                "results": self.serializer_class(
+                    qs,
+                    many=True,
+                    context={"request": request}
+                ).data
+            }
+        )
+
+    # =====================================================
+    # RETRIEVE
+    # =====================================================
+    def retrieve(self, request, pk=None):
+
+        obj = self.get_object()
+
+        data = self.serializer_class(
+            obj,
+            context={"request": request}
+        ).data
+
+        data["created_at"] = obj.created_at.strftime("%Y-%m-%d %H:%M:%S")
+
+        return success_response(
+            "جزئیات تراکنش طلا",
+            data
+        )
+
+    # =====================================================
+    # PATCH /gold-transactions/{id}/  (ویرایش توضیحات یا تغییر وضعیت)
+    # =====================================================
+    @transaction.atomic
+    def partial_update(self, request, *args, **kwargs):
+
+        if "status" in request.data:
+            return self._change_status(request, kwargs["pk"])
+
+        return super().partial_update(request, *args, **kwargs)
+
+    # =====================================================
+    # PUT /gold-transactions/{id}/
+    # =====================================================
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+
+        if "status" in request.data:
+            return self._change_status(request, kwargs["pk"])
+
+        return super().update(request, *args, **kwargs)
+
+    # =====================================================
+    # POST /gold-transactions/{id}/change_status/
+    # =====================================================
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def change_status(self, request, pk=None):
+        return self._change_status(request, pk)
+
+    # =====================================================
+    # CORE BUSINESS LOGIC (SINGLE SOURCE OF TRUTH)
+    # =====================================================
+    def _change_status(self, request, pk):
+
+        tx = (
+            GoldTransaction.objects
+            .select_for_update()
+            .select_related("user")
+            .get(pk=pk)
+        )
+
+        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=tx.user)
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=tx.user)
+
+        serializer = GoldTransactionStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        new_status = serializer.validated_data["status"]
+        description = serializer.validated_data.get("description", "")
+
+        old_status = tx.status
+
+        if old_status == new_status:
+            return error_response("وضعیت تغییری نکرده است.")
+
+        # فقط از حالت PENDING می‌توان به COMPLETED یا FAILED رفت
+        if old_status != "PENDING":
+            return error_response(
+                f"تراکنشی که در وضعیت «{tx.get_status_display()}» است، قابل تغییر نیست."
+            )
+
+        if new_status not in ("COMPLETED", "FAILED"):
+            return error_response("وضعیت مقصد نامعتبر است.")
+
+        # =================================================
+        # BUY - COMPLETED (تایید خرید)
+        # =================================================
+        if tx.type == "BUY" and new_status == "COMPLETED":
+
+            if wallet.blocked_toman < tx.total_amount:
+                return error_response("مغایرت در موجودی بلوکه‌شده تومانی کاربر.")
+
+            wallet.blocked_toman = max(0, wallet.blocked_toman - tx.total_amount)
+            wallet.save(update_fields=["blocked_toman"])
+
+            inventory.accessible_balance += tx.amount_gr
+            inventory.save(update_fields=["accessible_balance"])
+
+            # ✅ ایجاد پاداش معرفی
+            try:
+                create_referral_profit(
+                    user=tx.user,
+                    source_type="GOLD",
+                    transaction_amount=tx.total_amount,
+                )
+            except Exception as e:
+                print(f"❌ خطا در ایجاد پاداش معرفی: {e}")
+
+        # =================================================
+        # BUY - FAILED (لغو خرید)
+        # =================================================
+        elif tx.type == "BUY" and new_status == "FAILED":
+
+            wallet.accessible_toman += tx.total_amount
+            wallet.blocked_toman = max(0, wallet.blocked_toman - tx.total_amount)
+            wallet.save(update_fields=["accessible_toman", "blocked_toman"])
+
+        # =================================================
+        # SELL - COMPLETED (تایید فروش)
+        # =================================================
+        elif tx.type == "SELL" and new_status == "COMPLETED":
+
+            if inventory.blocked_balance < tx.amount_gr:
+                return error_response("مغایرت در موجودی بلوکه‌شده طلای کاربر.")
+
+            inventory.blocked_balance = max(0, inventory.blocked_balance - tx.amount_gr)
+            inventory.save(update_fields=["blocked_balance"])
+
+            wallet.accessible_toman += tx.total_amount
+            wallet.save(update_fields=["accessible_toman"])
+
+        # =================================================
+        # SELL - FAILED (لغو فروش)
+        # =================================================
+        elif tx.type == "SELL" and new_status == "FAILED":
+
+            inventory.accessible_balance += tx.amount_gr
+            inventory.blocked_balance = max(0, inventory.blocked_balance - tx.amount_gr)
+            inventory.save(update_fields=["accessible_balance", "blocked_balance"])
+
+        # =================================================
+        # UPDATE TRANSACTION
+        # =================================================
+        tx.status = new_status
+        if description:
+            tx.description = (
+                f"{tx.description}\n{description}" if tx.description else description
+            )
+        tx.save(update_fields=["status", "description", "updated_at"])
+
+        # =================================================
+        # CREATE ADMIN LOG
+        # =================================================
+        create_admin_log(
+            request=request,
+            user=tx.user,
+            action_type=f"{tx.type}_GOLD_{new_status}",
+            action=f"تغییر وضعیت تراکنش طلا به {tx.get_status_display()}",
+            model_name="GoldTransaction",
+            object_id=tx.id,
+            tracking_code=tx.tracking_code,
+            success=True,
+            description=description or f"{tx.type} -> {new_status}",
+        )
+
+        tx.refresh_from_db()
+
+        return success_response(
+            "وضعیت تراکنش با موفقیت تغییر کرد.",
+            self.serializer_class(
+                tx,
+                context={"request": request}
+            ).data
+        )
+        
+        
+        
+# =========================================================
+# SILVER TRANSACTION ADMIN VIEWSET
+# =========================================================
+
+from decimal import Decimal
+from django.db import transaction
+from django.contrib.auth import get_user_model
+from rest_framework.decorators import action
+import uuid
+
+from accounts.utils import create_referral_profit
+from silver_app.models import SilverWallet, SilverTransaction, SilverInventory
+
+User = get_user_model()
+
+
+class SilverTransactionAdminViewSet(AdminBaseViewSet):
+    """
+    ویوست مدیریت تراکنش‌های نقره برای ادمین
+    """
+
+    queryset = SilverTransaction.objects.all().order_by("-id")
+    serializer_class = SilverTransactionAdminSerializer
+
+    # =====================================================
+    # QUERYSET FILTER
+    # =====================================================
+    def get_queryset(self):
+
+        qs = super().get_queryset()
+
+        search = self.request.GET.get("search")
+        status = self.request.GET.get("status")
+        type_ = self.request.GET.get("type")  # BUY / SELL
+        tracking_code = self.request.GET.get("tracking_code")
+        start_date = self.request.GET.get("start_date")
+        end_date = self.request.GET.get("end_date")
+        ordering = self.request.GET.get("ordering")
+
+        if search:
+            qs = qs.filter(user__mobile__icontains=search)
+
+        if status:
+            qs = qs.filter(status=status)
+
+        if type_:
+            qs = qs.filter(type=type_)
+
+        if tracking_code:
+            qs = qs.filter(tracking_code__icontains=tracking_code)
+
+        if start_date:
+            qs = qs.filter(created_at__date__gte=start_date)
+
+        if end_date:
+            qs = qs.filter(created_at__date__lte=end_date)
+
+        allowed_ordering = [
+            "id", "-id",
+            "created_at", "-created_at",
+            "status", "-status",
+            "total_amount", "-total_amount",
+            "amount_gr", "-amount_gr",
+        ]
+
+        if ordering in allowed_ordering:
+            qs = qs.order_by(ordering)
+
+        return qs
+
+    # =====================================================
+    # LIST
+    # =====================================================
+    def list(self, request):
+
+        qs = self.get_queryset()
+
+        return success_response(
+            "لیست تراکنش‌های نقره",
+            {
+                "total_results": qs.count(),
+                "results": self.serializer_class(
+                    qs,
+                    many=True,
+                    context={"request": request}
+                ).data
+            }
+        )
+
+    # =====================================================
+    # RETRIEVE
+    # =====================================================
+    def retrieve(self, request, pk=None):
+
+        obj = self.get_object()
+
+        data = self.serializer_class(
+            obj,
+            context={"request": request}
+        ).data
+
+        data["created_at"] = obj.created_at.strftime("%Y-%m-%d %H:%M:%S")
+
+        return success_response(
+            "جزئیات تراکنش نقره",
+            data
+        )
+
+    # =====================================================
+    # PATCH /silver-transactions/{id}/  (ویرایش توضیحات یا تغییر وضعیت)
+    # =====================================================
+    @transaction.atomic
+    def partial_update(self, request, *args, **kwargs):
+
+        if "status" in request.data:
+            return self._change_status(request, kwargs["pk"])
+
+        return super().partial_update(request, *args, **kwargs)
+
+    # =====================================================
+    # PUT /silver-transactions/{id}/
+    # =====================================================
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+
+        if "status" in request.data:
+            return self._change_status(request, kwargs["pk"])
+
+        return super().update(request, *args, **kwargs)
+
+    # =====================================================
+    # POST /silver-transactions/{id}/change_status/
+    # =====================================================
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def change_status(self, request, pk=None):
+        return self._change_status(request, pk)
+
+    # =====================================================
+    # CORE BUSINESS LOGIC (SINGLE SOURCE OF TRUTH)
+    # =====================================================
+    def _change_status(self, request, pk):
+
+        tx = (
+            SilverTransaction.objects
+            .select_for_update()
+            .select_related("user")
+            .get(pk=pk)
+        )
+
+        wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=tx.user)
+        inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=tx.user)
+
+        serializer = SilverTransactionStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        new_status = serializer.validated_data["status"]
+        description = serializer.validated_data.get("description", "")
+
+        old_status = tx.status
+
+        if old_status == new_status:
+            return error_response("وضعیت تغییری نکرده است.")
+
+        # فقط از حالت PENDING می‌توان به COMPLETED یا FAILED رفت
+        if old_status != "PENDING":
+            return error_response(
+                f"تراکنشی که در وضعیت «{tx.get_status_display()}» است، قابل تغییر نیست."
+            )
+
+        if new_status not in ("COMPLETED", "FAILED"):
+            return error_response("وضعیت مقصد نامعتبر است.")
+
+        # =================================================
+        # BUY - COMPLETED (تایید خرید نقره)
+        # =================================================
+        if tx.type == "BUY" and new_status == "COMPLETED":
+
+            if wallet.blocked_toman < tx.total_amount:
+                return error_response("مغایرت در موجودی بلوکه‌شده تومانی کاربر.")
+
+            wallet.blocked_toman = max(0, wallet.blocked_toman - tx.total_amount)
+            wallet.save(update_fields=["blocked_toman"])
+
+            inventory.accessible_balance += tx.amount_gr
+            inventory.save(update_fields=["accessible_balance"])
+
+            # ✅ ایجاد پاداش معرفی
+            try:
+                create_referral_profit(
+                    user=tx.user,
+                    source_type="SILVER",
+                    transaction_amount=tx.total_amount,
+                )
+            except Exception as e:
+                print(f"❌ خطا در ایجاد پاداش معرفی: {e}")
+
+        # =================================================
+        # BUY - FAILED (لغو خرید نقره)
+        # =================================================
+        elif tx.type == "BUY" and new_status == "FAILED":
+
+            wallet.accessible_toman += tx.total_amount
+            wallet.blocked_toman = max(0, wallet.blocked_toman - tx.total_amount)
+            wallet.save(update_fields=["accessible_toman", "blocked_toman"])
+
+        # =================================================
+        # SELL - COMPLETED (تایید فروش نقره)
+        # =================================================
+        elif tx.type == "SELL" and new_status == "COMPLETED":
+
+            if inventory.blocked_balance < tx.amount_gr:
+                return error_response("مغایرت در موجودی بلوکه‌شده نقره کاربر.")
+
+            inventory.blocked_balance = max(0, inventory.blocked_balance - tx.amount_gr)
+            inventory.save(update_fields=["blocked_balance"])
+
+            wallet.accessible_toman += tx.total_amount
+            wallet.save(update_fields=["accessible_toman"])
+
+        # =================================================
+        # SELL - FAILED (لغو فروش نقره)
+        # =================================================
+        elif tx.type == "SELL" and new_status == "FAILED":
+
+            inventory.accessible_balance += tx.amount_gr
+            inventory.blocked_balance = max(0, inventory.blocked_balance - tx.amount_gr)
+            inventory.save(update_fields=["accessible_balance", "blocked_balance"])
+
+        # =================================================
+        # UPDATE TRANSACTION
+        # =================================================
+        tx.status = new_status
+        if description:
+            tx.description = (
+                f"{tx.description}\n{description}" if tx.description else description
+            )
+        tx.save(update_fields=["status", "description", "updated_at"])
+
+        # =================================================
+        # CREATE ADMIN LOG
+        # =================================================
+        create_admin_log(
+            request=request,
+            user=tx.user,
+            action_type=f"{tx.type}_SILVER_{new_status}",
+            action=f"تغییر وضعیت تراکنش نقره به {tx.get_status_display()}",
+            model_name="SilverTransaction",
+            object_id=tx.id,
+            tracking_code=tx.tracking_code,
+            success=True,
+            description=description or f"{tx.type} -> {new_status}",
+        )
+
+        tx.refresh_from_db()
+
+        return success_response(
+            "وضعیت تراکنش با موفقیت تغییر کرد.",
+            self.serializer_class(
+                tx,
+                context={"request": request}
+            ).data
+        )

@@ -118,61 +118,175 @@ from silver_app.models import (
 from accounts.models import User
 
 
+# admin_panel/serializers.py
+
+from decimal import Decimal
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from django.db.models import Sum, Count
+import jdatetime
+
+from accounts.models import User, UserFee, FeeSetting, ReferralEarning
+from gold_app.models import Wallet, GoldInventory
+from silver_app.models import SilverWallet, SilverInventory
+
+User = get_user_model()
+
+
+class UserFeeSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر کارمزد کاربر
+    """
+    class Meta:
+        model = UserFee
+        fields = [
+            'id',
+            'gold_buy_fee',
+            'gold_sell_fee',
+            'silver_buy_fee',
+            'silver_sell_fee',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'updated_at']
+
+
+class AdminUserListSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر لیست کاربران برای ادمین
+    """
+    referral_profit = serializers.SerializerMethodField()
+    referral_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = [
+            'id', 'mobile', 'first_name', 'last_name',
+            'email', 'national_code', 'is_active',
+            'role', 'auth_status',
+            'referral_code', 'referred_by',
+            'referral_profit', 'referral_count',
+            # ❌ 'date_joined' حذف شد
+        ]
+    
+    def get_referral_profit(self, obj):
+        total = ReferralEarning.objects.filter(
+            referrer=obj
+        ).aggregate(total=Sum('profit'))
+        return float(total.get('total', 0) or 0)
+    
+    def get_referral_count(self, obj):
+        return ReferralEarning.objects.filter(referrer=obj).count()
+
+
 class AdminUserDetailSerializer(serializers.ModelSerializer):
-
+    """
+    سریالایزر جزئیات کاربر برای ادمین
+    """
     created_at = serializers.DateTimeField(source="date_joined", read_only=True)
-
     birth_date = serializers.SerializerMethodField()
-
     balances = serializers.SerializerMethodField()
+    
+    # ✅ فیلدهای رفرال
+    referral_profit = serializers.SerializerMethodField()
+    referral_count = serializers.SerializerMethodField()
+    referral_earnings = serializers.SerializerMethodField()
+    
+    # ✅ تنظیمات کارمزد و رفرال
+    fee_settings = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         exclude = ["password"]
 
     def get_birth_date(self, obj):
-
         if not obj.birth_date:
             return None
-
         return jdatetime.date.fromgregorian(
             date=obj.birth_date
         ).strftime("%Y/%m/%d")
 
     def get_balances(self, obj):
-
         gold_wallet = Wallet.objects.filter(user=obj).first()
-
         silver_wallet = SilverWallet.objects.filter(user=obj).first()
-
         gold_inventory = GoldInventory.objects.filter(user=obj).first()
-
         silver_inventory = SilverInventory.objects.filter(user=obj).first()
 
         return {
-
             "gold_wallet": {
                 "accessible_toman": float(gold_wallet.accessible_toman) if gold_wallet else 0,
                 "blocked_toman": float(gold_wallet.blocked_toman) if gold_wallet else 0,
             },
-
             "silver_wallet": {
                 "accessible_toman": float(silver_wallet.accessible_toman) if silver_wallet else 0,
                 "blocked_toman": float(silver_wallet.blocked_toman) if silver_wallet else 0,
             },
-
             "gold_inventory": {
                 "accessible_balance": float(gold_inventory.accessible_balance) if gold_inventory else 0,
                 "blocked_balance": float(gold_inventory.blocked_balance) if gold_inventory else 0,
             },
-
             "silver_inventory": {
                 "accessible_balance": float(silver_inventory.accessible_balance) if silver_inventory else 0,
                 "blocked_balance": float(silver_inventory.blocked_balance) if silver_inventory else 0,
             },
         }
 
+    def get_referral_profit(self, obj):
+        total = ReferralEarning.objects.filter(
+            referrer=obj
+        ).aggregate(total=Sum('profit'))
+        return float(total.get('total', 0) or 0)
+
+    def get_referral_count(self, obj):
+        return ReferralEarning.objects.filter(referrer=obj).count()
+
+    def get_referral_earnings(self, obj):
+        earnings = ReferralEarning.objects.filter(
+            referrer=obj
+        ).order_by('-created_at')[:10]
+        
+        return [
+            {
+                "id": e.id,
+                "from_user_mobile": e.user.mobile,
+                "from_user_name": f"{e.user.first_name} {e.user.last_name}".strip() or e.user.mobile,
+                "source_type": e.get_source_type_display(),
+                "source_type_raw": e.source_type,
+                "transaction_amount": float(e.transaction_amount),
+                "commission_percent": float(e.commission_percent),
+                "profit": float(e.profit),
+                "created_at": e.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            for e in earnings
+        ]
+
+    def get_fee_settings(self, obj):
+        setting = FeeSetting.objects.first()
+        
+        if not setting:
+            return {
+                "gold_buy_fee": 0.01,
+                "gold_sell_fee": 0.01,
+                "silver_buy_fee": 0.01,
+                "silver_sell_fee": 0.01,
+                "gold_referral_percent": 20.0,
+                "silver_referral_percent": 20.0,
+            }
+        
+        return {
+            "gold_buy_fee": float(setting.gold_buy_fee),
+            "gold_sell_fee": float(setting.gold_sell_fee),
+            "silver_buy_fee": float(setting.silver_buy_fee),
+            "silver_sell_fee": float(setting.silver_sell_fee),
+            "gold_referral_percent": float(setting.gold_referral_percent),
+            "silver_referral_percent": float(setting.silver_referral_percent),
+            "updated_at": setting.updated_at.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+
 class AdminUserUpdateSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر بروزرسانی کاربر برای ادمین
+    """
     class Meta:
         model = User
         fields = [
@@ -189,9 +303,22 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
             "role",
             "auth_status",
             "is_active",
-            "referred_by",
+            "referred_by",  # ✅ اینجا کاربر میتونه معرف خودش رو عوض کنه
         ]
 
+
+class UserFeeUpdateSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر بروزرسانی کارمزد کاربر
+    """
+    class Meta:
+        model = UserFee
+        fields = [
+            'gold_buy_fee',
+            'gold_sell_fee',
+            'silver_buy_fee',
+            'silver_sell_fee',
+        ]
 from rest_framework import serializers
 class UserTransactionSerializer(serializers.Serializer):
 
@@ -1720,3 +1847,128 @@ class AdminLogCreateSerializer(serializers.ModelSerializer):
         model = AdminLog
 
         exclude = ("created_at",)
+
+
+
+
+# =========================================================
+# GOLD TRANSACTIONS - ADMIN
+# =========================================================
+ 
+from rest_framework import serializers
+from rest_framework.decorators import action
+ 
+from django.db import transaction
+ 
+from gold_app.models import GoldTransaction, Wallet, GoldInventory
+# from core.responses import success_response, error_response
+# from core.views import AdminBaseViewSet   # همون بیس‌کلاسی که OrderAdminViewSet ازش ارث‌بری می‌کنه
+ 
+ 
+# =========================================================
+# SERIALIZERS
+# =========================================================
+ 
+class GoldTransactionAdminSerializer(serializers.ModelSerializer):
+ 
+    user_mobile = serializers.CharField(source="user.mobile", read_only=True)
+ 
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
+ 
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+ 
+    # موجودی فعلی کاربر برای دید سریع ادمین موقع تصمیم‌گیری
+    wallet_accessible_toman = serializers.SerializerMethodField()
+    wallet_blocked_toman = serializers.SerializerMethodField()
+    gold_accessible_balance = serializers.SerializerMethodField()
+    gold_blocked_balance = serializers.SerializerMethodField()
+ 
+    class Meta:
+        model = GoldTransaction
+        fields = "__all__"
+ 
+    def get_wallet_accessible_toman(self, obj):
+        wallet = getattr(obj.user, "wallet", None)
+        return float(wallet.accessible_toman) if wallet else None
+ 
+    def get_wallet_blocked_toman(self, obj):
+        wallet = getattr(obj.user, "wallet", None)
+        return float(wallet.blocked_toman) if wallet else None
+ 
+    def get_gold_accessible_balance(self, obj):
+        inv = getattr(obj.user, "gold_inventory", None)
+        return float(inv.accessible_balance) if inv else None
+ 
+    def get_gold_blocked_balance(self, obj):
+        inv = getattr(obj.user, "gold_inventory", None)
+        return float(inv.blocked_balance) if inv else None
+ 
+ 
+ 
+class GoldTransactionStatusUpdateSerializer(serializers.Serializer):
+ 
+    status = serializers.ChoiceField(
+        choices=[c[0] for c in GoldTransaction.STATUS_CHOICES]
+    )
+ 
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    
+    
+    
+    
+    
+    
+    
+# =========================================================
+# SILVER TRANSACTIONS - ADMIN SERIALIZERS
+# =========================================================
+
+from rest_framework import serializers
+from silver_app.models import SilverTransaction, SilverWallet, SilverInventory
+
+
+class SilverTransactionAdminSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر مدیریت تراکنش‌های نقره برای ادمین
+    """
+    
+    user_mobile = serializers.CharField(source="user.mobile", read_only=True)
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    
+    # موجودی فعلی کاربر برای دید سریع ادمین موقع تصمیم‌گیری
+    wallet_accessible_toman = serializers.SerializerMethodField()
+    wallet_blocked_toman = serializers.SerializerMethodField()
+    silver_accessible_balance = serializers.SerializerMethodField()
+    silver_blocked_balance = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = SilverTransaction
+        fields = "__all__"
+    
+    def get_wallet_accessible_toman(self, obj):
+        wallet = getattr(obj.user, "wallet", None)
+        return float(wallet.accessible_toman) if wallet else None
+    
+    def get_wallet_blocked_toman(self, obj):
+        wallet = getattr(obj.user, "wallet", None)
+        return float(wallet.blocked_toman) if wallet else None
+    
+    def get_silver_accessible_balance(self, obj):
+        inv = getattr(obj.user, "silver_inventory", None)
+        return float(inv.accessible_balance) if inv else None
+    
+    def get_silver_blocked_balance(self, obj):
+        inv = getattr(obj.user, "silver_inventory", None)
+        return float(inv.blocked_balance) if inv else None
+
+
+class SilverTransactionStatusUpdateSerializer(serializers.Serializer):
+    """
+    سریالایزر برای تغییر وضعیت تراکنش نقره
+    """
+    
+    status = serializers.ChoiceField(
+        choices=[c[0] for c in SilverTransaction.STATUS_CHOICES]
+    )
+    description = serializers.CharField(required=False, allow_blank=True, default="")

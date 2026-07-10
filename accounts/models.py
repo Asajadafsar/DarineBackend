@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
@@ -9,8 +11,14 @@ from darine_config import settings
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
 
+import uuid
+
+from django.db import models
+from django.contrib.auth.models import AbstractUser
+
 
 class User(AbstractUser):
+
     ROLE_CHOICES = (
         ("customer", "خریدار"),
         ("agent", "نماینده فروش"),
@@ -22,41 +30,73 @@ class User(AbstractUser):
         ("verified", "تایید شده"),
         ("rejected", "رد شده"),
     )
-    TYPE_CHOICES = (
-        ("BUY", "خرید نقره"),
-        ("SELL", "فروش نقره"),
-        ("CONVERT", "تبدیل از ریال"),
-        ("REFERRAL_REWARD", "پاداش معرفی دوستان"),  # اضافه شود
+
+
+    mobile = models.CharField(
+        max_length=11,
+        unique=True,
+        verbose_name="شماره موبایل",
     )
 
-    mobile = models.CharField(max_length=11, unique=True, verbose_name="شماره موبایل")
+
     national_code = models.CharField(
-        max_length=10, unique=True, null=True, blank=True, verbose_name="کد ملی"
-    )
-    birth_date = models.DateField(null=True, blank=True, verbose_name="تاریخ تولد")
-    card_number = models.CharField(
-        max_length=16, null=True, blank=True, verbose_name="شماره کارت"
-    )
-    shaba_number = models.CharField(
-        max_length=26, null=True, blank=True, verbose_name="شماره شبا"
-    )
-
-    # سیستم معرف
-    referred_by = models.ForeignKey(
-        "self",
-        on_delete=models.SET_NULL,
+        max_length=10,
+        unique=True,
         null=True,
         blank=True,
-        related_name="subscribers",
-        verbose_name="معرف",
+        verbose_name="کد ملی",
     )
+
+
+    birth_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="تاریخ تولد",
+    )
+
+
+    card_number = models.CharField(
+        max_length=16,
+        null=True,
+        blank=True,
+        verbose_name="شماره کارت",
+    )
+
+
+    shaba_number = models.CharField(
+        max_length=26,
+        null=True,
+        blank=True,
+        verbose_name="شماره شبا",
+    )
+
+
+    # =====================================
+    # REFERRAL SYSTEM
+    # =====================================
+
     referral_code = models.CharField(
-        max_length=10,
+        max_length=12,
         unique=True,
         null=True,
         blank=True,
         verbose_name="کد معرف اختصاصی",
     )
+
+
+    referred_by = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="referrals",
+        verbose_name="معرف",
+    )
+
+
+    # =====================================
+    # USER INFO
+    # =====================================
 
     role = models.CharField(
         max_length=20,
@@ -64,31 +104,56 @@ class User(AbstractUser):
         default="customer",
         verbose_name="نقش کاربر",
     )
+
+
     auth_status = models.CharField(
         max_length=20,
         choices=AUTH_STATUS_CHOICES,
         default="pending",
         verbose_name="وضعیت تایید هویت",
     )
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاریخ آخرین ویرایش")
+
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="تاریخ آخرین ویرایش",
+    )
+
 
     USERNAME_FIELD = "mobile"
-    REQUIRED_FIELDS = ["username"]
+
+    REQUIRED_FIELDS = [
+        "username",
+    ]
+
 
     class Meta:
         verbose_name = "کاربر"
         verbose_name_plural = "کاربران"
 
+
+    def generate_referral_code(self):
+
+        return uuid.uuid4().hex[:8].upper()
+
+
     def save(self, *args, **kwargs):
+
         if not self.referral_code:
-            self.referral_code = str(uuid.uuid4()).split("-")[0][
-                :8
-            ]  # تولید کد معرف خودکار
+            self.referral_code = self.generate_referral_code()
+
+
         super().save(*args, **kwargs)
 
-    def __str__(self):
-        return f"{self.mobile} - {self.first_name} {self.last_name}"
 
+    def __str__(self):
+
+        return (
+            f"{self.mobile} - "
+            f"{self.first_name} {self.last_name}"
+        )
+        
+        
 
 class OTPRequest(models.Model):
     mobile = models.CharField(max_length=11, verbose_name="شماره موبایل")
@@ -205,70 +270,112 @@ class ReferralEarning(models.Model):
         return f"{self.referrer.mobile} -> {self.user.mobile}"
 
 
+class ReferralSetting(models.Model):
+
+    commission_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=20,
+        verbose_name="درصد سود رفرال",
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        verbose_name = "تنظیمات رفرال"
+        verbose_name_plural = "تنظیمات رفرال"
+
+    def __str__(self):
+        return f"{self.commission_percent}%"
+
+
 from django.db import models
+from django.conf import settings
+from django.core.exceptions import ValidationError
 
 
 class FeeSetting(models.Model):
 
-    # =========================
-    # DEFAULT BUY/SELL FEES
-    # =========================
-
     gold_buy_fee = models.DecimalField(
-        max_digits=5, decimal_places=2, default=1.00, help_text="درصد کارمزد خرید طلا"
+        max_digits=5,
+        decimal_places=4,
+        default=Decimal("0.01"),
+        help_text="نرخ کارمزد خرید طلا (مثال: 0.01 = 1% ، 0.03 = 3%)"
     )
 
     gold_sell_fee = models.DecimalField(
-        max_digits=5, decimal_places=2, default=1.00, help_text="درصد کارمزد فروش طلا"
+        max_digits=5,
+        decimal_places=4,
+        default=Decimal("0.01"),
+        help_text="نرخ کارمزد فروش طلا"
     )
 
     silver_buy_fee = models.DecimalField(
-        max_digits=5, decimal_places=2, default=1.00, help_text="درصد کارمزد خرید نقره"
+        max_digits=5,
+        decimal_places=4,
+        default=Decimal("0.01"),
+        help_text="نرخ کارمزد خرید نقره"
     )
 
     silver_sell_fee = models.DecimalField(
-        max_digits=5, decimal_places=2, default=1.00, help_text="درصد کارمزد فروش نقره"
+        max_digits=5,
+        decimal_places=4,
+        default=Decimal("0.01"),
+        help_text="نرخ کارمزد فروش نقره"
     )
-
-    # =========================
-    # REFERRAL PERCENT
-    # =========================
 
     gold_referral_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
-        default=20.00,
-        help_text="درصد سود معرف از کارمزد طلا",
+        default=20
     )
 
     silver_referral_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
-        default=20.00,
-        help_text="درصد سود معرف از کارمزد نقره",
+        default=20
     )
 
     updated_at = models.DateTimeField(auto_now=True)
+    
 
-    def __str__(self):
-        return "Fee Settings"
+
+
+
 
 
 class UserFee(models.Model):
 
     user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="fee"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="fee"
     )
 
-    gold_buy_fee = models.DecimalField(max_digits=5, decimal_places=2, default=1.00)
+    gold_buy_fee = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        default=Decimal("0.01")
+    )
 
-    gold_sell_fee = models.DecimalField(max_digits=5, decimal_places=2, default=1.00)
+    gold_sell_fee = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        default=Decimal("0.01")
+    )
 
-    silver_buy_fee = models.DecimalField(max_digits=5, decimal_places=2, default=1.00)
+    silver_buy_fee = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        default=Decimal("0.01")
+    )
 
-    silver_sell_fee = models.DecimalField(max_digits=5, decimal_places=2, default=1.00)
+    silver_sell_fee = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        default=Decimal("0.01")
+    )
 
     updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return self.user.mobile
