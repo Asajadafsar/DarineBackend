@@ -64,7 +64,6 @@ from .views import (
     # =========================
     # REFERRAL
     # =========================
-    SilverReferralDashboardAPIView,
     SilverUserAddressCreateAPIView,
 )
 

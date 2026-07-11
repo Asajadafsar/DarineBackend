@@ -519,6 +519,14 @@ def generate_tracking_code(prefix="S"):
 # SILVER PRICE
 # =========================================================
 
+# =========================================================
+# SILVER PRICE
+# =========================================================
+
+# =========================================================
+# SILVER PRICE
+# =========================================================
+
 def get_live_silver_price():
     url = "https://api.noghresea.ir/api/market/getSilverPrice"
 
@@ -536,6 +544,10 @@ def get_live_silver_price():
         if raw_price <= 0:
             return None
 
+        # ✅ قیمت به هزار تومان است (۳۵۶.۹۸ = ۳۵۶,۹۸۰ تومان)
+        # ❌ این خط رو با خط پایین عوض کنید:
+        # price = raw_price * 1000
+        # ✅ به این:
         price = raw_price * 1000
 
     except Exception as e:
@@ -553,7 +565,6 @@ def get_live_silver_price():
         pass
 
     return price
-
 
 # =========================================================
 # SAVE SILVER PRICE HISTORY
@@ -619,15 +630,12 @@ def get_silver_chart_data(filter_type="24H"):
     if filter_type == "24H":
         start_date = now - timedelta(hours=24)
         trunc_fn = TruncHour
-
     elif filter_type == "WEEKLY":
         start_date = now - timedelta(days=7)
-        trunc_fn = TruncHour
-
+        trunc_fn = TruncDate
     elif filter_type == "MONTHLY":
         start_date = now - timedelta(days=30)
         trunc_fn = TruncDate
-
     else:
         start_date = now - timedelta(hours=24)
         trunc_fn = TruncHour
@@ -709,8 +717,6 @@ def get_silver_chart_data(filter_type="24H"):
             "max_y": highest_price + padding,
         },
     }
-
-
 def get_silver_bubble():
     try:
         from gold_app.utils import get_world_prices

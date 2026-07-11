@@ -1,5 +1,5 @@
 # gold_app/views.py
-
+from django.utils import timezone
 from decimal import ROUND_DOWN, Decimal
 import jdatetime
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -17,7 +17,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
-from accounts.models import ReferralEarning
+from accounts.models import FeeSetting, ReferralEarning
 from admin_panel.models import GoldAnnouncement, GoldAnnouncementRead, GoldBanner
 from admin_panel.serializers import GoldAnnouncementSerializer, GoldBannerSerializer
 from admin_panel.utils import create_admin_log
@@ -297,7 +297,7 @@ class BuyGoldCalculateAPIView(APIView):
 
 
 # =========================================================
-# BUY GOLD (FIXED) + ADMIN CONFIRM / CANCEL
+# BUY GOLD (1)
 # =========================================================
 
 class BuyGoldAPIView(APIView):
@@ -430,170 +430,207 @@ from .serializers import BuyGoldSerializer
 
 
 
-# =========================================================
-# BUY GOLD
-# =========================================================
+# # =========================================================
+# # BUY GOLD(2)
+# # =========================================================
 
-class BuyGoldAPIView(APIView):
+# class BuyGoldAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+#     permission_classes = [IsAuthenticated]
 
-    @transaction.atomic
-    def post(self, request):
+#     @transaction.atomic
+#     def post(self, request):
 
-        user = request.user
+#         user = request.user
 
-        gold_price = get_live_gold_price()
+#         gold_price = get_live_gold_price()
 
-        if not gold_price:
-            return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
+#         if not gold_price:
+#             return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
 
-        serializer = BuyGoldSerializer(
-            data=request.data, context={"request": request, "gold_price": gold_price}
-        )
+#         serializer = BuyGoldSerializer(
+#             data=request.data, context={"request": request, "gold_price": gold_price}
+#         )
 
-        if not serializer.is_valid():
-            return error_response(
-                message="اطلاعات خرید نامعتبر است", data=serializer.errors
-            )
+#         if not serializer.is_valid():
+#             return error_response(
+#                 message="اطلاعات خرید نامعتبر است", data=serializer.errors
+#             )
 
-        weight = serializer.validated_data["final_weight"]
-        fee = serializer.validated_data["fee"]
-        fee_rate = serializer.validated_data["fee_rate"]
-        total_toman = serializer.validated_data["total_toman"]
+#         weight = serializer.validated_data["final_weight"]
+#         fee = serializer.validated_data["fee"]
+#         fee_rate = serializer.validated_data["fee_rate"]
+#         total_toman = serializer.validated_data["total_toman"]
 
-        if weight <= Decimal("0"):
-            return error_response(message="وزن طلا نامعتبر است")
+#         if weight <= Decimal("0"):
+#             return error_response(message="وزن طلا نامعتبر است")
 
-        # select_for_update تا در صورت درخواست‌های همزمان، race condition روی موجودی نداشته باشیم
-        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
-        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+#         # select_for_update تا در صورت درخواست‌های همزمان، race condition روی موجودی نداشته باشیم
+#         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+#         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
 
-        # ==========================
-        # بررسی و بلوکه‌کردن موجودی نقدی
-        # ==========================
+#         # ==========================
+#         # بررسی و بلوکه‌کردن موجودی نقدی
+#         # ==========================
 
-        if wallet.accessible_toman < total_toman:
-            return error_response(message="موجودی کیف پول کافی نیست")
+#         if wallet.accessible_toman < total_toman:
+#             return error_response(message="موجودی کیف پول کافی نیست")
 
-        wallet.accessible_toman -= total_toman
-        wallet.blocked_toman += total_toman
-        wallet.save(update_fields=["accessible_toman", "blocked_toman", "updated_at"])
+#         wallet.accessible_toman -= total_toman
+#         wallet.blocked_toman += total_toman
+#         wallet.save(update_fields=["accessible_toman", "blocked_toman", "updated_at"])
 
-        # توجه: موجودی طلا (inventory) در این مرحله دست نمی‌خوره؛
-        # فقط بعد از تایید ادمین به accessible_balance اضافه می‌شه
+#         # توجه: موجودی طلا (inventory) در این مرحله دست نمی‌خوره؛
+#         # فقط بعد از تایید ادمین به accessible_balance اضافه می‌شه
 
-        # ==========================
-        # تراکنش طلا - در انتظار تایید ادمین
-        # ==========================
+#         # ==========================
+#         # تراکنش طلا - در انتظار تایید ادمین
+#         # ==========================
 
-        tx = GoldTransaction.objects.create(
-            user=user,
-            type="BUY",
-            status="PENDING",
-            amount_gr=weight,
-            price_per_gram=gold_price,
-            fee=fee,
-            commission_percent=(fee_rate * Decimal("100")),
-            commission_amount=fee,
-            total_amount=total_toman,
-            tracking_code=generate_tracking_code("BUY"),
-        )
+#         tx = GoldTransaction.objects.create(
+#             user=user,
+#             type="BUY",
+#             status="PENDING",
+#             amount_gr=weight,
+#             price_per_gram=gold_price,
+#             fee=fee,
+#             commission_percent=(fee_rate * Decimal("100")),
+#             commission_amount=fee,
+#             total_amount=total_toman,
+#             tracking_code=generate_tracking_code("BUY"),
+#         )
 
-        create_admin_log(
-            request=request,
-            user=user,
-            action_type="BUY_GOLD",
-            action="درخواست خرید طلا (در انتظار تایید)",
-            model_name="GoldTransaction",
-            object_id=tx.id,
-            tracking_code=tx.tracking_code,
-            success=True,
-            description=f"""
-درخواست خرید طلا
+#         create_admin_log(
+#             request=request,
+#             user=user,
+#             action_type="BUY_GOLD",
+#             action="درخواست خرید طلا (در انتظار تایید)",
+#             model_name="GoldTransaction",
+#             object_id=tx.id,
+#             tracking_code=tx.tracking_code,
+#             success=True,
+#             description=f"""
+# درخواست خرید طلا
 
-کاربر:
-{user.mobile}
+# کاربر:
+# {user.mobile}
 
-وزن:
-{weight} گرم
+# وزن:
+# {weight} گرم
 
-قیمت هر گرم:
-{gold_price}
+# قیمت هر گرم:
+# {gold_price}
 
-کارمزد:
-{fee}
+# کارمزد:
+# {fee}
 
-مبلغ کل بلوکه‌شده:
-{total_toman}
+# مبلغ کل بلوکه‌شده:
+# {total_toman}
 
-موجودی بلوکه فعلی کیف پول:
-{wallet.blocked_toman}
-""",
-        )
+# موجودی بلوکه فعلی کیف پول:
+# {wallet.blocked_toman}
+# """,
+#         )
 
-        return success_response(
-            message="درخواست خرید طلا ثبت شد و در انتظار تایید ادمین است",
-            status_code=201,
-            data={
-                "transaction_id": tx.id,
-                "tracking_code": tx.tracking_code,
-                "status": tx.status,
-                "gold_weight": float(weight),
-                "fee": float(fee),
-                "pure_gold_price": float(serializer.validated_data["pure_gold_price"]),  # ✅ اضافه شد
-                "fee_rate": float(fee_rate),
-                "total_toman": float(total_toman),
-                "accessible_toman": float(wallet.accessible_toman),
-                "blocked_toman": float(wallet.blocked_toman),
-            },
-        )
-
-
+#         return success_response(
+#             message="درخواست خرید طلا ثبت شد و در انتظار تایید ادمین است",
+#             status_code=201,
+#             data={
+#                 "transaction_id": tx.id,
+#                 "tracking_code": tx.tracking_code,
+#                 "status": tx.status,
+#                 "gold_weight": float(weight),
+#                 "fee": float(fee),
+#                 "pure_gold_price": float(serializer.validated_data["pure_gold_price"]),  # ✅ اضافه شد
+#                 "fee_rate": float(fee_rate),
+#                 "total_toman": float(total_toman),
+#                 "accessible_toman": float(wallet.accessible_toman),
+#                 "blocked_toman": float(wallet.blocked_toman),
+#             },
+#         )
 
 
 # =========================================================
-# SELL GOLD
+# SELL GOLD CALCULATE API VIEW - اصلاح نهایی ✅
 # =========================================================
+
+# =========================================================
+# SELL GOLD CALCULATE - ورودی وزن ✅
+# =========================================================
+# =========================================================
+# SELL GOLD CALCULATE - ورودی وزن ✅
+# =========================================================
+
 class SellGoldCalculateAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         gold_price = get_live_gold_price()
+
         if not gold_price:
-            return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
+            return error_response(
+                message="خطا در دریافت قیمت طلا",
+                status_code=500,
+            )
 
         serializer = SellGoldSerializer(
             data=request.data,
-            context={"request": request, "gold_price": gold_price},
+            context={
+                "request": request,
+                "gold_price": gold_price,
+            },
         )
 
         if not serializer.is_valid():
-            return error_response(message="اطلاعات نامعتبر است.", data=serializer.errors)
+            # گرفتن اولین خطا برای نمایش به کاربر
+            first_error = None
+            for errors in serializer.errors.values():
+                if errors:
+                    first_error = errors[0] if isinstance(errors, list) else errors
+                    break
+            
+            error_message = first_error if first_error else "اطلاعات نامعتبر است."
+            
+            return error_response(
+                message=error_message,
+                status_code=400,
+            )
 
+        wallet, _ = Wallet.objects.get_or_create(user=request.user)
         inventory, _ = GoldInventory.objects.get_or_create(user=request.user)
+
         final_weight = serializer.validated_data["final_weight"]
+        final_amount = serializer.validated_data["final_amount"]
+
         remaining_gold = inventory.accessible_balance - final_weight
+        remaining_toman = wallet.accessible_toman + final_amount
 
         return success_response(
             message="محاسبه با موفقیت انجام شد.",
             data={
                 "gold_price": float(serializer.validated_data["gold_price"]),
                 "gold_weight": float(final_weight),
-                "pure_value": float(serializer.validated_data["pure_value"]),
+                "pure_gold_price": float(serializer.validated_data["pure_value"]),
                 "fee_rate": float(serializer.validated_data["fee_rate"] * Decimal("100")),
                 "fee": float(serializer.validated_data["fee"]),
-                "final_amount": float(serializer.validated_data["final_amount"]),
+                "total_toman": float(final_amount),
                 "enough_balance": inventory.accessible_balance >= final_weight,
+                "wallet": {
+                    "accessible_toman": float(wallet.accessible_toman),
+                    "blocked_toman": float(wallet.blocked_toman),
+                    "remaining_toman": float(
+                        max(Decimal("0"), remaining_toman)
+                    ),
+                },
                 "inventory": {
                     "accessible_gold": float(inventory.accessible_balance),
                     "blocked_gold": float(inventory.blocked_balance),
-                    "remaining_gold": float(max(Decimal("0"), remaining_gold)),
+                    "remaining_gold": float(
+                        max(Decimal("0"), remaining_gold)
+                    ),
                 },
             },
-        )
-
-
+        )  
 class SellGoldAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -2047,6 +2084,10 @@ from accounts.models import ReferralEarning, ReferralSetting
 from accounts.utils import create_referral_profit, success_response
 
 
+# =========================================================
+# GOLD REFERRAL INFO API VIEW - اصلاح شده ✅
+# =========================================================
+
 class GoldReferralInfoAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -2066,22 +2107,35 @@ class GoldReferralInfoAPIView(APIView):
             total=Sum("transaction_amount")
         )["total"] or 0
 
-        # ✅ دریافت یا ایجاد تنظیمات رفرال
-        setting, _ = ReferralSetting.objects.get_or_create(
-            defaults={'commission_percent': 20}
-        )
+        # ✅ دریافت از FeeSetting (نه ReferralSetting)
+        from accounts.models import FeeSetting
+        
+        setting = FeeSetting.objects.first()
+        if not setting:
+            setting = FeeSetting.objects.create(
+                gold_buy_fee=0.01,
+                gold_sell_fee=0.01,
+                silver_buy_fee=0.01,
+                silver_sell_fee=0.01,
+                gold_referral_percent=20,
+                silver_referral_percent=20,
+            )
 
         return success_response(
             message="اطلاعات رفرال طلا",
             data={
                 "referral_code": request.user.referral_code,
-                "referral_percent": float(setting.commission_percent),
+                "referral_percent": float(setting.gold_referral_percent),  # ✅ از FeeSetting
                 "total_gold_sales": float(total_transactions),
                 "total_earnings": float(total_profit),
                 "referrals_count": earnings.count(),
                 "wallet_type": "GOLD",
             }
         )
+
+
+
+
 # =========================================================
 # REPORTS (GOLD)
 # =========================================================
@@ -2976,72 +3030,8 @@ class UserAddressesAPIView(APIView):
 
 
 # =========================================================
-# CREATE GOLD LIMIT ORDER
+# GOLD LIMIT ORDER CREATE - با پیام فارسی ✅
 # =========================================================
-
-
-class GoldLimitOrderCreateAPIView(APIView):
-
-    permission_classes = [IsAuthenticated]
-
-    @transaction.atomic
-    def post(self, request):
-
-        serializer = GoldOrderSerializer(data=request.data)
-
-        if not serializer.is_valid():
-
-            return error_response(message="اطلاعات نامعتبر است", data=serializer.errors)
-
-        user = request.user
-
-        order_type = serializer.validated_data["order_type"]
-
-        target_price = Decimal(serializer.validated_data["target_price"])
-
-        amount_toman = serializer.validated_data.get("amount_toman")
-
-        gold_weight = serializer.validated_data.get("gold_weight")
-
-        fee_rate = Decimal("0.0099")
-
-        if order_type == "BUY":
-
-            amount_toman = Decimal(amount_toman)
-
-            fee = amount_toman * fee_rate
-
-            net_amount = amount_toman - fee
-
-            estimated_weight = net_amount / target_price
-
-        else:
-
-            gold_weight = Decimal(gold_weight)
-
-            estimated_weight = gold_weight
-
-        order = GoldOrder.objects.create(
-            user=user,
-            order_type=order_type,
-            target_price=target_price,
-            amount_toman=amount_toman,
-            gold_weight=gold_weight,
-            estimated_weight=estimated_weight,
-            status="PENDING",
-        )
-
-        return success_response(
-            message="سفارش با موفقیت ثبت شد",
-            status_code=201,
-            data={
-                "order_id": order.id,
-                "status": order.status,
-            },
-        )
-
-
-# gold_app/views.py
 
 class GoldLimitOrderCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -3056,9 +3046,46 @@ class GoldLimitOrderCreateAPIView(APIView):
         )
 
         if not serializer.is_valid():
+            # ✅ ساخت پیام فارسی برای خطاها
+            error_messages = []
+            
+            for field, errors in serializer.errors.items():
+                # اسم فارسی فیلدها
+                field_names = {
+                    'order_type': 'نوع سفارش',
+                    'target_price': 'قیمت مد نظر',
+                    'amount_toman': 'مبلغ (تومان)',
+                    'gold_weight': 'وزن طلا (گرم)',
+                    'description': 'توضیحات',
+                }
+                
+                field_name = field_names.get(field, field)
+                
+                if isinstance(errors, list):
+                    for error in errors:
+                        if "required" in str(error).lower():
+                            error_messages.append(f"فیلد {field_name} الزامی است.")
+                        elif "invalid" in str(error).lower():
+                            error_messages.append(f"فیلد {field_name} نامعتبر است.")
+                        else:
+                            error_messages.append(f"{field_name}: {error}")
+                elif isinstance(errors, dict):
+                    for sub_field, sub_errors in errors.items():
+                        sub_field_name = field_names.get(sub_field, sub_field)
+                        if isinstance(sub_errors, list):
+                            for error in sub_errors:
+                                error_messages.append(f"{sub_field_name}: {error}")
+            
+            # اگر پیامی وجود نداشت، پیام پیش‌فرض
+            if not error_messages:
+                error_messages.append("اطلاعات سفارش نامعتبر است.")
+            
+            # پیام نهایی
+            final_message = " | ".join(error_messages)
+            
             return error_response(
-                message="اطلاعات سفارش نامعتبر است",
-                data=serializer.errors
+                message=final_message,
+                status_code=400
             )
 
         validated_data = serializer.validated_data
@@ -3076,17 +3103,23 @@ class GoldLimitOrderCreateAPIView(APIView):
             wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
 
             if wallet.accessible_toman < amount_toman:
-                return error_response("موجودی کیف پول کافی نیست")
+                return error_response(
+                    message="موجودی کیف پول کافی نیست",
+                    status_code=400
+                )
 
             wallet.accessible_toman -= amount_toman
             wallet.blocked_toman += amount_toman
             wallet.save(update_fields=['accessible_toman', 'blocked_toman'])
 
-        else:
+        else:  # SELL
             inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
 
             if inventory.accessible_balance < gold_weight:
-                return error_response("موجودی طلای شما کافی نیست")
+                return error_response(
+                    message="موجودی طلای شما کافی نیست",
+                    status_code=400
+                )
 
             inventory.accessible_balance -= gold_weight
             inventory.blocked_balance += gold_weight
@@ -3109,8 +3142,12 @@ class GoldLimitOrderCreateAPIView(APIView):
             data=GoldOrderListSerializer(order).data
         )
 
+# gold_app/views.py
 
 class GoldLimitOrderListAPIView(APIView):
+    """
+    لیست سفارشات با قیمت طلا
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -3132,7 +3169,6 @@ class GoldLimitOrderListAPIView(APIView):
 
         if start_date:
             try:
-                from datetime import datetime
                 start = datetime.strptime(start_date, '%Y-%m-%d')
                 orders = orders.filter(created_at__date__gte=start)
             except ValueError:
@@ -3140,7 +3176,6 @@ class GoldLimitOrderListAPIView(APIView):
 
         if end_date:
             try:
-                from datetime import datetime
                 end = datetime.strptime(end_date, '%Y-%m-%d')
                 orders = orders.filter(created_at__date__lte=end)
             except ValueError:
@@ -3154,13 +3189,12 @@ class GoldLimitOrderListAPIView(APIView):
         serializer = GoldOrderListSerializer(orders, many=True)
 
         return success_response(
-            message="لیست سفارشات با قیمت طلا",
-            data={
-                "total_results": orders.count(),
-                "results": serializer.data
-            }
+            message="گزارش معاملات طلا",
+            data=serializer.data
         )
-
+        
+        
+        
 
 class GoldLimitOrderDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -3359,6 +3393,10 @@ class GoldLimitOrderExecuteAPIView(APIView):
 
 # gold_app/views.py
 
+# =========================================================
+# GOLD LIMIT ORDER UPDATE API VIEW - اصلاح شده ✅
+# =========================================================
+
 class GoldLimitOrderUpdateAPIView(APIView):
     """
     ویرایش مبلغ یا وزن سفارش با قیمت (فقط در حالت PENDING)
@@ -3407,7 +3445,7 @@ class GoldLimitOrderUpdateAPIView(APIView):
                     # برداشت از accessible و اضافه به blocked
                     wallet.accessible_toman -= diff
                     wallet.blocked_toman += diff
-                    wallet.save(update_fields=['accessible_toman', 'blocked_toman'])
+                    wallet.save(update_fields=['accessible_toman', 'blocked_toman', 'updated_at'])
                     
                 elif diff < 0:
                     # کاهش مبلغ - برگشت به accessible
@@ -3417,16 +3455,10 @@ class GoldLimitOrderUpdateAPIView(APIView):
                     
                     wallet.blocked_toman -= diff_abs
                     wallet.accessible_toman += diff_abs
-                    wallet.save(update_fields=['accessible_toman', 'blocked_toman'])
+                    wallet.save(update_fields=['accessible_toman', 'blocked_toman', 'updated_at'])
                 
-                # به‌روزرسانی مبلغ و وزن تخمینی
+                # به‌روزرسانی مبلغ
                 order.amount_toman = new_amount_toman
-                
-                # محاسبه مجدد وزن تخمینی
-                fee_rate = Decimal(str(order.fee_rate))
-                pure_price = (new_amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
-                estimated_weight = (pure_price / order.target_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
-                order.estimated_weight = max(estimated_weight, Decimal("0.001"))
                 
             if new_target_price:
                 new_target_price = Decimal(str(new_target_price)).quantize(Decimal("1"))
@@ -3434,11 +3466,11 @@ class GoldLimitOrderUpdateAPIView(APIView):
                     return error_response("قیمت مد نظر باید بزرگتر از صفر باشد")
                 order.target_price = new_target_price
                 
-                # محاسبه مجدد وزن تخمینی با قیمت جدید
-                fee_rate = Decimal(str(order.fee_rate))
-                pure_price = (order.amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
-                estimated_weight = (pure_price / order.target_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
-                order.estimated_weight = max(estimated_weight, Decimal("0.001"))
+            # ✅ محاسبه مجدد وزن تخمینی (همیشه بعد از تغییرات)
+            fee_rate = Decimal(str(order.fee_rate))
+            pure_price = (order.amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
+            estimated_weight = (pure_price / order.target_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+            order.estimated_weight = max(estimated_weight, Decimal("0.001"))
 
         # =============================================
         # ویرایش وزن فروش (برای سفارش SELL)
@@ -3460,7 +3492,7 @@ class GoldLimitOrderUpdateAPIView(APIView):
                     
                     inventory.accessible_balance -= diff
                     inventory.blocked_balance += diff
-                    inventory.save(update_fields=['accessible_balance', 'blocked_balance'])
+                    inventory.save(update_fields=['accessible_balance', 'blocked_balance', 'updated_at'])
                     
                 elif diff < 0:
                     # کاهش وزن - برگشت به accessible
@@ -3470,7 +3502,7 @@ class GoldLimitOrderUpdateAPIView(APIView):
                     
                     inventory.blocked_balance -= diff_abs
                     inventory.accessible_balance += diff_abs
-                    inventory.save(update_fields=['accessible_balance', 'blocked_balance'])
+                    inventory.save(update_fields=['accessible_balance', 'blocked_balance', 'updated_at'])
                 
                 # به‌روزرسانی وزن
                 order.gold_weight = new_gold_weight
@@ -3481,20 +3513,17 @@ class GoldLimitOrderUpdateAPIView(APIView):
                 if new_target_price <= 0:
                     return error_response("قیمت مد نظر باید بزرگتر از صفر باشد")
                 order.target_price = new_target_price
-                
-                # محاسبه مجدد مبلغ با قیمت جدید (فقط برای نمایش)
-                fee_rate = Decimal(str(order.fee_rate))
-                pure_price = (order.target_price * order.gold_weight).quantize(Decimal("1"))
-                fee = (pure_price * fee_rate).quantize(Decimal("1"))
-                total_price = (pure_price - fee).quantize(Decimal("1"))
-                
-                # مبلغ رو توی description ذخیره میکنیم برای نمایش
-                order.description = f"{order.description or ''}\n💰 قیمت جدید: {order.target_price} - مبلغ قابل دریافت: {total_price}"
 
-        # ذخیره تغییرات
+        # ===========================
+        # ✅ ذخیره تغییرات با تمام فیلدها
+        # ===========================
+        order.updated_at = timezone.now()
         order.save(update_fields=[
-            'amount_toman', 'gold_weight', 'target_price', 
-            'estimated_weight', 'description', 'updated_at'
+            'amount_toman', 
+            'gold_weight', 
+            'target_price', 
+            'estimated_weight', 
+            'updated_at'
         ])
 
         return success_response(
@@ -3502,6 +3531,10 @@ class GoldLimitOrderUpdateAPIView(APIView):
             data=GoldOrderListSerializer(order).data
         )
 
+
+# =========================================================
+# GOLD LIMIT ORDER PARTIAL UPDATE API VIEW - اصلاح شده ✅
+# =========================================================
 
 class GoldLimitOrderPartialUpdateAPIView(APIView):
     """
@@ -3539,7 +3572,7 @@ class GoldLimitOrderPartialUpdateAPIView(APIView):
                         return error_response("موجودی کیف پول برای افزایش مبلغ کافی نیست")
                     wallet.accessible_toman -= diff
                     wallet.blocked_toman += diff
-                    wallet.save(update_fields=['accessible_toman', 'blocked_toman'])
+                    wallet.save(update_fields=['accessible_toman', 'blocked_toman', 'updated_at'])
                     
                 elif diff < 0:
                     diff_abs = abs(diff)
@@ -3547,25 +3580,24 @@ class GoldLimitOrderPartialUpdateAPIView(APIView):
                         return error_response("مغایرت در موجودی بلوکه شده")
                     wallet.blocked_toman -= diff_abs
                     wallet.accessible_toman += diff_abs
-                    wallet.save(update_fields=['accessible_toman', 'blocked_toman'])
+                    wallet.save(update_fields=['accessible_toman', 'blocked_toman', 'updated_at'])
                 
                 order.amount_toman = new_amount_toman
-                updated_fields.extend(['amount_toman'])
+                updated_fields.append('amount_toman')
             
             if new_target_price:
                 new_target_price = Decimal(str(new_target_price)).quantize(Decimal("1"))
                 if new_target_price <= 0:
                     return error_response("قیمت مد نظر باید بزرگتر از صفر باشد")
                 order.target_price = new_target_price
-                updated_fields.extend(['target_price'])
+                updated_fields.append('target_price')
             
-            # محاسبه مجدد وزن تخمینی
-            if new_amount_toman or new_target_price:
-                fee_rate = Decimal(str(order.fee_rate))
-                pure_price = (order.amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
-                estimated_weight = (pure_price / order.target_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
-                order.estimated_weight = max(estimated_weight, Decimal("0.001"))
-                updated_fields.extend(['estimated_weight'])
+            # ✅ محاسبه مجدد وزن تخمینی (همیشه)
+            fee_rate = Decimal(str(order.fee_rate))
+            pure_price = (order.amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
+            estimated_weight = (pure_price / order.target_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+            order.estimated_weight = max(estimated_weight, Decimal("0.001"))
+            updated_fields.append('estimated_weight')
 
         # =============================================
         # ویرایش وزن فروش
@@ -3585,7 +3617,7 @@ class GoldLimitOrderPartialUpdateAPIView(APIView):
                         return error_response("موجودی طلا برای افزایش وزن کافی نیست")
                     inventory.accessible_balance -= diff
                     inventory.blocked_balance += diff
-                    inventory.save(update_fields=['accessible_balance', 'blocked_balance'])
+                    inventory.save(update_fields=['accessible_balance', 'blocked_balance', 'updated_at'])
                     
                 elif diff < 0:
                     diff_abs = abs(diff)
@@ -3593,7 +3625,7 @@ class GoldLimitOrderPartialUpdateAPIView(APIView):
                         return error_response("مغایرت در موجودی بلوکه شده طلا")
                     inventory.blocked_balance -= diff_abs
                     inventory.accessible_balance += diff_abs
-                    inventory.save(update_fields=['accessible_balance', 'blocked_balance'])
+                    inventory.save(update_fields=['accessible_balance', 'blocked_balance', 'updated_at'])
                 
                 order.gold_weight = new_gold_weight
                 order.estimated_weight = new_gold_weight
@@ -3604,22 +3636,24 @@ class GoldLimitOrderPartialUpdateAPIView(APIView):
                 if new_target_price <= 0:
                     return error_response("قیمت مد نظر باید بزرگتر از صفر باشد")
                 order.target_price = new_target_price
-                updated_fields.extend(['target_price'])
+                updated_fields.append('target_price')
 
         # ویرایش توضیحات
         if 'description' in request.data:
             order.description = request.data.get('description')
-            updated_fields.extend(['description'])
+            updated_fields.append('description')
 
         if updated_fields:
             updated_fields.append('updated_at')
+            order.updated_at = timezone.now()
             order.save(update_fields=updated_fields)
 
         return success_response(
             message="سفارش با موفقیت ویرایش شد",
             data=GoldOrderListSerializer(order).data
         )
-
+        
+        
 
 # =========================================================
 # GOLD DEPOSIT INFORMATION
@@ -3930,6 +3964,9 @@ from decimal import Decimal
 # ASSET VALUE
 # =========================================================
 
+# =========================================================
+# ASSET VALUE
+# =========================================================
 
 class AssetValueAPIView(APIView):
 
@@ -4001,6 +4038,30 @@ class AssetValueAPIView(APIView):
         silver_price = get_live_silver_price() or Decimal("0")
 
         # =====================================================
+        # دریافت نرخ کارمزد کاربر
+        # =====================================================
+
+        user_fee = getattr(user, "fee", None)
+
+        if user_fee:
+            gold_buy_fee = user_fee.gold_buy_fee
+            gold_sell_fee = user_fee.gold_sell_fee
+            silver_buy_fee = user_fee.silver_buy_fee
+            silver_sell_fee = user_fee.silver_sell_fee
+        else:
+            setting = FeeSetting.objects.last()
+            if setting:
+                gold_buy_fee = setting.gold_buy_fee
+                gold_sell_fee = setting.gold_sell_fee
+                silver_buy_fee = setting.silver_buy_fee
+                silver_sell_fee = setting.silver_sell_fee
+            else:
+                gold_buy_fee = Decimal("0.01")
+                gold_sell_fee = Decimal("0.01")
+                silver_buy_fee = Decimal("0.01")
+                silver_sell_fee = Decimal("0.01")
+
+        # =====================================================
         # Asset Values
         # =====================================================
 
@@ -4010,19 +4071,53 @@ class AssetValueAPIView(APIView):
 
         total_asset_value = wallet_balance + gold_asset_value + silver_asset_value
 
+        # =====================================================
+        # قیمت طلا با احتساب کارمزد خرید و فروش
+        # =====================================================
+
+        gold_price_with_buy_fee = gold_price * (1 + gold_buy_fee)
+
+        gold_price_with_sell_fee = gold_price * (1 - gold_sell_fee)
+
+        # =====================================================
+        # قیمت نقره با احتساب کارمزد خرید و فروش
+        # =====================================================
+
+        silver_price_with_buy_fee = silver_price * (1 + silver_buy_fee)
+
+        silver_price_with_sell_fee = silver_price * (1 - silver_sell_fee)
+
+        # =====================================================
+        # Response
+        # =====================================================
+
         return Response(
             {
                 "total_asset_value": round(total_asset_value),
-                "gold_balance": gold_balance,
-                "silver_balance": silver_balance,
+                "gold_balance": float(gold_balance),
+                "silver_balance": float(silver_balance),
                 "wallet_balance": round(wallet_balance),
                 "gold_asset_value": round(gold_asset_value),
                 "silver_asset_value": round(silver_asset_value),
                 "gold_price": round(gold_price),
                 "silver_price": round(silver_price),
+                "fees": {
+                    "gold_buy_fee": float(gold_buy_fee * 100),
+                    "gold_sell_fee": float(gold_sell_fee * 100),
+                    "silver_buy_fee": float(silver_buy_fee * 100),
+                    "silver_sell_fee": float(silver_sell_fee * 100),
+                },
+                "gold_price_with_fees": {
+                    "buy": round(gold_price_with_buy_fee),
+                    "sell": round(gold_price_with_sell_fee),
+                },
+                "silver_price_with_fees": {
+                    "buy": round(silver_price_with_buy_fee),
+                    "sell": round(silver_price_with_sell_fee),
+                },
             }
         )
-
+        
 
 # =========================================================
 # GOLD STATISTICS
@@ -4232,6 +4327,9 @@ class GoldShortOrderCreateAPIView(APIView):
         )
 
 
+# =========================================================
+# GOLD SHORT ORDER LIST API VIEW
+# =========================================================
 class GoldShortOrderListAPIView(APIView):
     """
     لیست سفارشات فروش تعهدی
@@ -4266,11 +4364,9 @@ class GoldShortOrderListAPIView(APIView):
 
         return success_response(
             message="لیست فروش‌های تعهدی",
-            data={
-                "total_results": orders.count(),
-                "results": serializer.data
-            }
+            data=serializer.data  # ✅ حذف total_results و results
         )
+
 
 
 class GoldShortOrderDetailAPIView(APIView):

@@ -3,6 +3,7 @@ from decimal import Decimal
 import uuid
 
 from accounts.models import CooperationRequest, User, UserFee
+from gold_app.models import GoldShortOrder, GoldShortOrderHistory, GoldInventory
 
 from gold_app.models import (
     GoldInventory,
@@ -149,14 +150,13 @@ class UserFeeSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'updated_at']
 
-
 class AdminUserListSerializer(serializers.ModelSerializer):
     """
     سریالایزر لیست کاربران برای ادمین
     """
     referral_profit = serializers.SerializerMethodField()
     referral_count = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = User
         fields = [
@@ -165,15 +165,14 @@ class AdminUserListSerializer(serializers.ModelSerializer):
             'role', 'auth_status',
             'referral_code', 'referred_by',
             'referral_profit', 'referral_count',
-            # ❌ 'date_joined' حذف شد
         ]
-    
+
     def get_referral_profit(self, obj):
         total = ReferralEarning.objects.filter(
             referrer=obj
         ).aggregate(total=Sum('profit'))
         return float(total.get('total', 0) or 0)
-    
+
     def get_referral_count(self, obj):
         return ReferralEarning.objects.filter(referrer=obj).count()
 
@@ -185,13 +184,13 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(source="date_joined", read_only=True)
     birth_date = serializers.SerializerMethodField()
     balances = serializers.SerializerMethodField()
-    
-    # ✅ فیلدهای رفرال
+
+    # ✅ رفرال کلی (طلا و نقره با هم)
     referral_profit = serializers.SerializerMethodField()
     referral_count = serializers.SerializerMethodField()
     referral_earnings = serializers.SerializerMethodField()
-    
-    # ✅ تنظیمات کارمزد و رفرال
+
+    # ✅ تنظیمات کارمزد و رفرال کلی
     fee_settings = serializers.SerializerMethodField()
 
     class Meta:
@@ -230,20 +229,27 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
             },
         }
 
+    # =========================================================
+    # ✅ رفرال کلی (طلا و نقره یکجا)
+    # =========================================================
+
     def get_referral_profit(self, obj):
+        """مجموع سود رفرال (طلا + نقره)"""
         total = ReferralEarning.objects.filter(
             referrer=obj
         ).aggregate(total=Sum('profit'))
         return float(total.get('total', 0) or 0)
 
     def get_referral_count(self, obj):
+        """تعداد کل سودهای رفرال (طلا + نقره)"""
         return ReferralEarning.objects.filter(referrer=obj).count()
 
     def get_referral_earnings(self, obj):
+        """لیست آخرین سودهای رفرال (طلا و نقره با هم)"""
         earnings = ReferralEarning.objects.filter(
             referrer=obj
         ).order_by('-created_at')[:10]
-        
+
         return [
             {
                 "id": e.id,
@@ -259,26 +265,29 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
             for e in earnings
         ]
 
+    # =========================================================
+    # ✅ تنظیمات کارمزد و رفرال کلی
+    # =========================================================
+
     def get_fee_settings(self, obj):
+        """دریافت تنظیمات کارمزد و درصد رفرال کلی"""
         setting = FeeSetting.objects.first()
-        
+
         if not setting:
             return {
                 "gold_buy_fee": 0.01,
                 "gold_sell_fee": 0.01,
                 "silver_buy_fee": 0.01,
                 "silver_sell_fee": 0.01,
-                "gold_referral_percent": 20.0,
-                "silver_referral_percent": 20.0,
+                "referral_percent": 20.0,  # ✅ کلی
             }
-        
+
         return {
             "gold_buy_fee": float(setting.gold_buy_fee),
             "gold_sell_fee": float(setting.gold_sell_fee),
             "silver_buy_fee": float(setting.silver_buy_fee),
             "silver_sell_fee": float(setting.silver_sell_fee),
-            "gold_referral_percent": float(setting.gold_referral_percent),
-            "silver_referral_percent": float(setting.silver_referral_percent),
+            "referral_percent": float(setting.gold_referral_percent or 20.0),  # ✅ کلی
             "updated_at": setting.updated_at.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
@@ -303,7 +312,7 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
             "role",
             "auth_status",
             "is_active",
-            "referred_by",  # ✅ اینجا کاربر میتونه معرف خودش رو عوض کنه
+            "referred_by",
         ]
 
 
@@ -1972,3 +1981,163 @@ class SilverTransactionStatusUpdateSerializer(serializers.Serializer):
         choices=[c[0] for c in SilverTransaction.STATUS_CHOICES]
     )
     description = serializers.CharField(required=False, allow_blank=True, default="")
+    
+    
+    
+    
+    
+# gold_app/serializers.py
+
+from rest_framework import serializers
+from decimal import Decimal
+
+
+# =========================================================
+# 1️⃣ اول تاریخچه سریالایزر را تعریف کنید
+# =========================================================
+class AdminGoldShortOrderHistorySerializer(serializers.ModelSerializer):
+    """
+    سریالایزر تاریخچه سفارش فروش تعهدی برای ادمین
+    """
+    status_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GoldShortOrderHistory
+        fields = [
+            'id',
+            'status',
+            'status_display',
+            'price',
+            'profit_loss',
+            'description',
+            'created_at'
+        ]
+
+    def get_status_display(self, obj):
+        status_map = {
+            'ACTIVE': 'فعال',
+            'CLOSED': 'بسته شده',
+            'LIQUIDATED': 'لیکوئید شده',
+            'CANCELLED': 'لغو شده',
+        }
+        return status_map.get(obj.status, obj.status)
+
+
+# =========================================================
+# 2️⃣ سپس سریالایزرهای دیگر را تعریف کنید
+# =========================================================
+class AdminGoldShortOrderListSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر لیست سفارشات فروش تعهدی برای ادمین
+    """
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    order_type_display = serializers.CharField(source='get_order_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    leverage_display = serializers.SerializerMethodField()
+    profit_loss_display = serializers.SerializerMethodField()
+    current_price = serializers.SerializerMethodField()
+    current_profit_loss = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GoldShortOrder
+        fields = [
+            'id',
+            'user',
+            'user_mobile',
+            'user_full_name',
+            'order_type',
+            'order_type_display',
+            'status',
+            'status_display',
+            'weight',
+            'leverage',
+            'leverage_display',
+            'entry_price',
+            'target_price',
+            'take_profit',
+            'stop_loss',
+            'close_price',
+            'profit_loss',
+            'profit_loss_display',
+            'initial_fee',
+            'daily_fee',
+            'total_fee',
+            'current_price',
+            'current_profit_loss',
+            'description',
+            'created_at',
+            'updated_at',
+            'closed_at'
+        ]
+
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+
+    def get_leverage_display(self, obj):
+        return f"{obj.leverage}x"
+
+    def get_profit_loss_display(self, obj):
+        if obj.profit_loss > 0:
+            return f"+{obj.profit_loss}"
+        return str(obj.profit_loss)
+
+    def get_current_price(self, obj):
+        from .utils import get_live_gold_price
+        return get_live_gold_price()
+
+    def get_current_profit_loss(self, obj):
+        current_price = self.get_current_price(obj)
+        if current_price:
+            profit_loss = (obj.entry_price - current_price) * obj.weight * obj.leverage
+            return profit_loss.quantize(Decimal("1"))
+        return None
+
+
+class AdminGoldShortOrderDetailSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر جزئیات سفارش فروش تعهدی برای ادمین
+    """
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    order_type_display = serializers.CharField(source='get_order_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    leverage_display = serializers.SerializerMethodField()
+    profit_loss_display = serializers.SerializerMethodField()
+    history = AdminGoldShortOrderHistorySerializer(many=True, read_only=True)  # ✅ الان تعریف شده
+
+    class Meta:
+        model = GoldShortOrder
+        fields = '__all__'
+
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+
+    def get_leverage_display(self, obj):
+        return f"{obj.leverage}x"
+
+    def get_profit_loss_display(self, obj):
+        if obj.profit_loss > 0:
+            return f"+{obj.profit_loss}"
+        return str(obj.profit_loss)
+
+
+# =========================================================
+# 3️⃣ سریالایزر بروزرسانی
+# =========================================================
+class AdminGoldShortOrderUpdateSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر بروزرسانی سفارش فروش تعهدی برای ادمین
+    """
+    class Meta:
+        model = GoldShortOrder
+        fields = [
+            'status',
+            'description'
+        ]
+
+    def validate_status(self, value):
+        valid_statuses = ['ACTIVE', 'CLOSED', 'LIQUIDATED', 'CANCELLED']
+        if value not in valid_statuses:
+            raise serializers.ValidationError(f"وضعیت باید یکی از {valid_statuses} باشد")
+        return value

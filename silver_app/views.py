@@ -35,7 +35,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 
-from accounts.models import BankCard
+from accounts.models import BankCard, FeeSetting
 
 # =========================
 # SILVER MODELS
@@ -286,6 +286,9 @@ class BuySilverCalculateAPIView(APIView):
             },
         )
 
+
+
+
 class BuySilverAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -388,19 +391,26 @@ class BuySilverAPIView(APIView):
         )
 
 
+
+
+
+# =========================================================
+# SELL SILVER CALCULATE API VIEW - اصلاح شده ✅
+# =========================================================
+
 class SellSilverCalculateAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-
+        
         silver_price = get_live_silver_price()
-
+        
         if not silver_price:
             return error_response(
                 message="خطا در دریافت قیمت نقره",
                 status_code=500,
             )
-
+        
         serializer = SellSilverSerializer(
             data=request.data,
             context={
@@ -408,39 +418,94 @@ class SellSilverCalculateAPIView(APIView):
                 "silver_price": silver_price,
             },
         )
-
+        
         if not serializer.is_valid():
+            # ✅ گرفتن اولین خطا به جای ارسال data
+            first_error = None
+            for errors in serializer.errors.values():
+                if errors:
+                    first_error = errors[0] if isinstance(errors, list) else errors
+                    break
+            
+            error_message = first_error if first_error else "اطلاعات نامعتبر است."
+            
             return error_response(
-                message="اطلاعات نامعتبر است.",
-                data=serializer.errors,
+                message=error_message,
+                status_code=400,
             )
-
-        inventory, _ = SilverInventory.objects.get_or_create(user=request.user)
-
-        final_weight = serializer.validated_data["final_weight"]
-        remaining_silver = inventory.accessible_balance - final_weight
-
+        
+        # ✅ دریافت کیف پول تومانی
+        wallet, _ = SilverWallet.objects.get_or_create(user=request.user)
+        
+        # ✅ دریافت موجودی نقره
+        silver_inventory, _ = SilverInventory.objects.get_or_create(user=request.user)
+        
+        validated_data = serializer.validated_data
+        
+        # ✅ دریافت مقادیر
+        total_toman = validated_data.get("total_toman", Decimal("0"))
+        pure_value = validated_data.get("pure_value", Decimal("0"))
+        silver_weight = validated_data.get("final_weight", Decimal("0"))
+        fee = validated_data.get("fee", Decimal("0"))
+        fee_rate = validated_data.get("fee_rate", Decimal("0")) * Decimal("100")
+        silver_price_val = validated_data.get("silver_price", Decimal("0"))
+        
+        # ✅ دیباگ
+        print(f"✅ total_toman (دریافتی کاربر): {total_toman}")
+        print(f"✅ pure_value (ارزش خالص): {pure_value}")
+        print(f"✅ fee (کارمزد): {fee}")
+        print(f"✅ silver_weight: {silver_weight}")
+        
+        # ===========================
+        # ✅ موجودی نقره
+        # ===========================
+        user_silver = silver_inventory.accessible_balance
+        blocked_silver = silver_inventory.blocked_balance
+        
+        # ✅ بررسی موجودی کافی
+        enough_balance = user_silver >= silver_weight
+        
+        # ✅ محاسبه موجودی باقیمانده
+        remaining_silver = user_silver - silver_weight
+        
+        # ✅ محاسبه موجودی تومان پس از فروش (افزایش مییابد)
+        remaining_toman = wallet.accessible_toman + total_toman
+        
         return success_response(
             message="محاسبه با موفقیت انجام شد.",
             data={
-                "silver_price": float(serializer.validated_data["silver_price"]),
-                "silver_weight": float(final_weight),
-                "pure_silver_price": float(serializer.validated_data["pure_value"]),
-                "fee_rate": float(serializer.validated_data["fee_rate"] * Decimal("100")),
-                "fee": float(serializer.validated_data["fee"]),
-                "final_amount": float(serializer.validated_data["final_amount"]),
-                "enough_balance": inventory.accessible_balance >= final_weight,
-                "inventory": {
-                    "accessible_silver": float(inventory.accessible_balance),
-                    "blocked_silver": float(inventory.blocked_balance),
-                    "remaining_silver": float(
-                        max(Decimal("0"), remaining_silver)
-                    ),
+                # 💰 اطلاعات قیمت و وزن
+                "silver_price": float(silver_price_val),
+                "silver_weight": float(silver_weight),
+                "pure_silver_price": float(pure_value),
+                
+                # 💳 اطلاعات کارمزد
+                "fee_rate": float(fee_rate),
+                "fee": float(fee),
+                "total_toman": float(total_toman),
+                
+                # ✅ وضعیت موجودی
+                "enough_balance": enough_balance,
+                
+                # 👛 اطلاعات کیف پول تومانی
+                "wallet": {
+                    "accessible_toman": float(wallet.accessible_toman),
+                    "blocked_toman": float(wallet.blocked_toman),
+                    "remaining_toman": float(remaining_toman),
                 },
+                
+                # 📦 اطلاعات موجودی نقره
+                "inventory": {
+                    "accessible_silver": float(user_silver),
+                    "blocked_silver": float(blocked_silver),
+                    "remaining_silver": float(max(Decimal("0"), remaining_silver)),
+                }
             },
         )
+
+
 # =========================================================
-# SELL SILVER
+# SELL SILVER API VIEW - اصلاح شده بدون تغییر error_response ✅
 # =========================================================
 
 class SellSilverAPIView(APIView):
@@ -452,24 +517,52 @@ class SellSilverAPIView(APIView):
         silver_price = get_live_silver_price()
 
         if not silver_price:
-            return error_response(message="خطا در دریافت قیمت نقره", status_code=500)
+            return error_response(
+                message="خطا در دریافت قیمت نقره", 
+                status_code=500
+            )
 
         serializer = SellSilverSerializer(
-            data=request.data, context={"request": request, "silver_price": silver_price}
+            data=request.data, 
+            context={"request": request, "silver_price": silver_price}
         )
 
         if not serializer.is_valid():
-            return error_response(message="اطلاعات نامعتبر است", data=serializer.errors)
+            # ✅ گرفتن اولین خطا و ارسال به صورت message
+            first_error = None
+            for field, errors in serializer.errors.items():
+                if errors:
+                    if isinstance(errors, list):
+                        first_error = errors[0]
+                    elif isinstance(errors, dict):
+                        # برای خطاهای nested
+                        for sub_errors in errors.values():
+                            if sub_errors and isinstance(sub_errors, list):
+                                first_error = sub_errors[0]
+                                break
+                    else:
+                        first_error = str(errors)
+                    break
+            
+            error_message = first_error if first_error else "اطلاعات نامعتبر است."
+            
+            return error_response(
+                message=error_message,
+                status_code=400
+            )
 
         user = request.user
         final_weight = serializer.validated_data["final_weight"]
         final_amount = serializer.validated_data["final_amount"]
         fee = serializer.validated_data["fee"]
         fee_rate = serializer.validated_data["fee_rate"]
-        pure_value = serializer.validated_data["pure_value"]  # ✅ اضافه شد
+        pure_value = serializer.validated_data["pure_value"]
 
         if final_weight <= 0:
-            return error_response(message="وزن فروش نامعتبر است")
+            return error_response(
+                message="وزن فروش نامعتبر است",
+                status_code=400
+            )
 
         inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
         wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
@@ -479,7 +572,10 @@ class SellSilverAPIView(APIView):
         # ==========================
 
         if inventory.accessible_balance < final_weight:
-            return error_response(message="موجودی نقره قابل معامله شما کافی نیست")
+            return error_response(
+                message="موجودی نقره قابل معامله شما کافی نیست",
+                status_code=400
+            )
 
         inventory.accessible_balance -= final_weight
         inventory.blocked_balance += final_weight
@@ -531,7 +627,7 @@ class SellSilverAPIView(APIView):
                 "tracking_code": tx.tracking_code,
                 "status": tx.status,
                 "silver_weight": float(final_weight),
-                "pure_silver_price": float(pure_value),  # ✅ اضافه شد
+                "pure_silver_price": float(pure_value),
                 "fee": float(fee),
                 "fee_rate": float(fee_rate),
                 "final_amount": float(final_amount),
@@ -539,6 +635,7 @@ class SellSilverAPIView(APIView):
                 "blocked_silver": float(inventory.blocked_balance),
             },
         )
+
 
 # =========================================================
 # DEPOSIT WALLET (SILVER)
@@ -1325,6 +1422,10 @@ class SilverOrderNoAddressAPIView(APIView):
             },
         )
 
+
+
+
+
 from django.db.models import Sum
 
 from rest_framework.views import APIView
@@ -1333,41 +1434,43 @@ from rest_framework.permissions import IsAuthenticated
 from accounts.models import ReferralEarning, ReferralSetting
 from accounts.utils import success_response
 
-class SilverReferralInfoAPIView(APIView):
+# class SilverReferralInfoAPIView(APIView):
 
-    permission_classes = [IsAuthenticated]
+#     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+#     def get(self, request):
 
-        earnings = ReferralEarning.objects.filter(
-            referrer=request.user,
-            source_type="SILVER",
-        )
+#         earnings = ReferralEarning.objects.filter(
+#             referrer=request.user,
+#             source_type="SILVER",
+#         )
 
-        total_profit = earnings.aggregate(
-            total=Sum("profit")
-        )["total"] or 0
+#         total_profit = earnings.aggregate(
+#             total=Sum("profit")
+#         )["total"] or 0
 
-        total_transactions = earnings.aggregate(
-            total=Sum("transaction_amount")
-        )["total"] or 0
+#         total_transactions = earnings.aggregate(
+#             total=Sum("transaction_amount")
+#         )["total"] or 0
 
-        # ✅ دریافت یا ایجاد تنظیمات رفرال
-        setting, _ = ReferralSetting.objects.get_or_create(
-            defaults={'commission_percent': 20}
-        )
+#         # ✅ دریافت یا ایجاد تنظیمات رفرال
+#         setting, _ = ReferralSetting.objects.get_or_create(
+#             defaults={'commission_percent': 20}
+#         )
 
-        return success_response(
-            message="اطلاعات رفرال نقره",
-            data={
-                "referral_code": request.user.referral_code,
-                "referral_percent": float(setting.commission_percent),
-                "total_silver_sales": float(total_transactions),
-                "total_earnings": float(total_profit),
-                "referrals_count": earnings.count(),
-                "wallet_type": "SILVER",
-            }
-        )
+#         return success_response(
+#             message="اطلاعات رفرال نقره",
+#             data={
+#                 "referral_code": request.user.referral_code,
+#                 "referral_percent": float(setting.commission_percent),
+#                 "total_silver_sales": float(total_transactions),
+#                 "total_earnings": float(total_profit),
+#                 "referrals_count": earnings.count(),
+#                 "wallet_type": "SILVER",
+#             }
+#         )
+
+
 # =========================================================
 # SILVER PRODUCT CATEGORIES
 # =========================================================
@@ -1958,48 +2061,62 @@ class SilverDepositInfoAPIView(APIView):
         )
 
 
-# =========================================================
-# REFERRAL DASHBOARD (SILVER)
-# =========================================================
+        
 
 
-class SilverReferralDashboardAPIView(APIView):
+# =========================================================
+# SILVER REFERRAL INFO API VIEW - مثل طلا ✅
+# =========================================================
+
+class SilverReferralInfoAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
 
-        user = request.user
-
-        total_invited = user.subscribers.count()
-
-        total_earned = (
-            SilverReferralEarning.objects.filter(user=user).aggregate(
-                total=Sum("amount")
-            )["total"]
-            or 0
+        earnings = ReferralEarning.objects.filter(
+            referrer=request.user,
+            source_type="SILVER",
         )
 
-        recent_earnings = SilverReferralEarning.objects.filter(user=user).order_by(
-            "-created_at"
-        )[:10]
+        total_profit = earnings.aggregate(
+            total=Sum("profit")
+        )["total"] or 0
 
-        serializer = SilverReferralEarningSerializer(recent_earnings, many=True)
+        total_transactions = earnings.aggregate(
+            total=Sum("transaction_amount")
+        )["total"] or 0
+
+        # ✅ دریافت از FeeSetting (مثل طلا)
+        from accounts.models import FeeSetting
+        
+        setting = FeeSetting.objects.first()
+        if not setting:
+            setting = FeeSetting.objects.create(
+                gold_buy_fee=0.01,
+                gold_sell_fee=0.01,
+                silver_buy_fee=0.01,
+                silver_sell_fee=0.01,
+                gold_referral_percent=20,
+                silver_referral_percent=20,
+            )
 
         return success_response(
-            message="اطلاعات دعوت دوستان دریافت شد",
+            message="اطلاعات رفرال نقره",
             data={
-                "referral_code": getattr(user, "referral_code", None),
-                "referral_link": f"https://silver.darine.shop/register?ref={getattr(user, 'referral_code', '')}",
-                "total_invited": total_invited,
-                "total_earned": int(total_earned),
-                "recent_earnings": serializer.data,
-            },
+                "referral_code": request.user.referral_code,
+                "referral_percent": float(setting.silver_referral_percent),  # ✅ از FeeSetting
+                "total_silver_sales": float(total_transactions),
+                "total_earnings": float(total_profit),
+                "referrals_count": earnings.count(),
+                "wallet_type": "SILVER",
+            }
         )
-
+        
 
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
+
 
 # =========================================================
 # SILVER ASSET VALUE
@@ -2055,17 +2172,41 @@ class SilverAssetValueAPIView(APIView):
         silver_price = get_live_silver_price() or Decimal("0")
 
         # =====================================================
+        # دریافت نرخ کارمزد کاربر
+        # =====================================================
+
+        user_fee = getattr(user, "fee", None)
+
+        if user_fee:
+            silver_buy_fee = user_fee.silver_buy_fee
+            silver_sell_fee = user_fee.silver_sell_fee
+        else:
+            setting = FeeSetting.objects.last()
+            if setting:
+                silver_buy_fee = setting.silver_buy_fee
+                silver_sell_fee = setting.silver_sell_fee
+            else:
+                silver_buy_fee = Decimal("0.01")
+                silver_sell_fee = Decimal("0.01")
+
+        # =====================================================
         # Asset Values
         # =====================================================
 
         silver_asset_value = silver_balance * silver_price
 
-        # این Endpoint فقط برای نقره است
         gold_balance = Decimal("0")
         gold_price = Decimal("0")
         gold_asset_value = Decimal("0")
 
         total_asset_value = wallet_balance + silver_asset_value
+
+        # =====================================================
+        # قیمت نقره با احتساب کارمزد خرید و فروش
+        # =====================================================
+
+        silver_price_with_buy_fee = silver_price * (1 + silver_buy_fee)
+        silver_price_with_sell_fee = silver_price * (1 - silver_sell_fee)
 
         # =====================================================
         # Response
@@ -2074,18 +2215,28 @@ class SilverAssetValueAPIView(APIView):
         return Response(
             {
                 "total_asset_value": round(total_asset_value),
-                "gold_balance": float(gold_balance),
                 "silver_balance": float(silver_balance),
                 "wallet_balance": round(wallet_balance),
-                "gold_asset_value": float(gold_asset_value),
                 "silver_asset_value": round(silver_asset_value),
-                "gold_price": float(gold_price),
                 "silver_price": round(silver_price),
+                "fees": {
+                    "silver_buy_fee": float(silver_buy_fee * 100),
+                    "silver_sell_fee": float(silver_sell_fee * 100),
+                },
+                "silver_price_with_fees": {
+                    "buy": round(silver_price_with_buy_fee),
+                    "sell": round(silver_price_with_sell_fee),
+                },
             }
         )
 
 
 from .utils import get_silver_bubble
+
+from .utils import get_silver_bubble
+
+
+from .utils import get_silver_bubble, get_silver_chart_data, get_live_silver_price
 
 
 class SilverChartAPIView(APIView):
@@ -2093,7 +2244,7 @@ class SilverChartAPIView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-
+        # ✅ استفاده از filter به جای filter_type
         filter_type = request.GET.get("filter", "24H").upper()
 
         if filter_type not in ["24H", "WEEKLY", "MONTHLY"]:
@@ -2101,27 +2252,28 @@ class SilverChartAPIView(APIView):
 
         data = get_silver_chart_data(filter_type)
 
-        # قیمت لحظه‌ای
+        if data is None:
+            return error_response(
+                message="خطا در دریافت داده‌های نمودار نقره",
+                status_code=500
+            )
+
         live_price = get_live_silver_price()
         if live_price:
             data["stats"]["current_price"] = int(live_price)
 
-        # حباب
         bubble = get_silver_bubble()
-        data["bubble"] = (
-            bubble
-            if bubble
-            else {
-                "silver_price": 0,
-                "intrinsic_price": 0,
-                "bubble_percent": 0,
-                "is_positive": False,
-            }
-        )
+        data["bubble"] = bubble if bubble else {
+            "silver_price": 0,
+            "intrinsic_price": 0,
+            "bubble_percent": 0,
+            "is_positive": False,
+        }
 
         return success_response(message="داده‌های نمودار نقره", data=data)
-
-
+    
+    
+    
 # =========================================================
 # SILVER ANNOUNCEMENTS
 # =========================================================
@@ -2371,6 +2523,9 @@ from .serializers import (
 from .utils import get_live_silver_price, generate_tracking_code, success_response, error_response
 from accounts.utils import create_referral_profit
 
+# =========================================================
+# CREATE SILVER LIMIT ORDER - اصلاح شده ✅
+# =========================================================
 
 class SilverLimitOrderCreateAPIView(APIView):
     """ایجاد سفارش با قیمت برای نقره"""
@@ -2386,9 +2541,49 @@ class SilverLimitOrderCreateAPIView(APIView):
         )
 
         if not serializer.is_valid():
+            # ✅ ساخت پیام فارسی برای خطاها
+            error_messages = []
+            
+            for field, errors in serializer.errors.items():
+                # اسم فارسی فیلدها
+                field_names = {
+                    'order_type': 'نوع سفارش',
+                    'target_price': 'قیمت مد نظر',
+                    'amount_toman': 'مبلغ (تومان)',
+                    'silver_weight': 'وزن نقره (گرم)',
+                    'description': 'توضیحات',
+                }
+                
+                field_name = field_names.get(field, field)
+                
+                if isinstance(errors, list):
+                    for error in errors:
+                        error_str = str(error)
+                        if "required" in error_str.lower():
+                            error_messages.append(f"فیلد {field_name} الزامی است.")
+                        elif "invalid" in error_str.lower():
+                            error_messages.append(f"فیلد {field_name} نامعتبر است.")
+                        elif "null" in error_str.lower():
+                            error_messages.append(f"فیلد {field_name} نمی‌تواند خالی باشد.")
+                        else:
+                            error_messages.append(f"{field_name}: {error}")
+                elif isinstance(errors, dict):
+                    for sub_field, sub_errors in errors.items():
+                        sub_field_name = field_names.get(sub_field, sub_field)
+                        if isinstance(sub_errors, list):
+                            for error in sub_errors:
+                                error_messages.append(f"{sub_field_name}: {error}")
+            
+            # اگر پیامی وجود نداشت، پیام پیش‌فرض
+            if not error_messages:
+                error_messages.append("اطلاعات سفارش نامعتبر است.")
+            
+            # پیام نهایی
+            final_message = " | ".join(error_messages)
+            
             return error_response(
-                message="اطلاعات سفارش نامعتبر است",
-                data=serializer.errors
+                message=final_message,
+                status_code=400
             )
 
         validated_data = serializer.validated_data
@@ -2403,17 +2598,23 @@ class SilverLimitOrderCreateAPIView(APIView):
             wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
 
             if wallet.accessible_toman < amount_toman:
-                return error_response("موجودی کیف پول نقره کافی نیست")
+                return error_response(
+                    message="موجودی کیف پول نقره کافی نیست",
+                    status_code=400
+                )
 
             wallet.accessible_toman -= amount_toman
             wallet.blocked_toman += amount_toman
             wallet.save(update_fields=['accessible_toman', 'blocked_toman'])
 
-        else:
+        else:  # SELL
             inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
 
             if inventory.accessible_balance < silver_weight:
-                return error_response("موجودی نقره شما کافی نیست")
+                return error_response(
+                    message="موجودی نقره شما کافی نیست",
+                    status_code=400
+                )
 
             inventory.accessible_balance -= silver_weight
             inventory.blocked_balance += silver_weight
@@ -2435,20 +2636,24 @@ class SilverLimitOrderCreateAPIView(APIView):
             status_code=201,
             data=SilverOrderListSerializer(order).data
         )
+        
+        
 
-
+# =========================================================
+# SILVER LIMIT ORDER LIST API VIEW
+# =========================================================
 class SilverLimitOrderListAPIView(APIView):
     """لیست سفارشات با قیمت نقره"""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
-
+        
+        # فیلترها
         order_type = request.GET.get('order_type')
         status = request.GET.get('status')
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
-        search = request.GET.get('search')
 
         orders = SilverLimitOrder.objects.filter(user=user)
 
@@ -2459,21 +2664,10 @@ class SilverLimitOrderListAPIView(APIView):
             orders = orders.filter(status=status)
 
         if start_date:
-            try:
-                start = datetime.strptime(start_date, '%Y-%m-%d')
-                orders = orders.filter(created_at__date__gte=start)
-            except ValueError:
-                pass
+            orders = orders.filter(created_at__date__gte=start_date)
 
         if end_date:
-            try:
-                end = datetime.strptime(end_date, '%Y-%m-%d')
-                orders = orders.filter(created_at__date__lte=end)
-            except ValueError:
-                pass
-
-        if search:
-            orders = orders.filter(description__icontains=search)
+            orders = orders.filter(created_at__date__lte=end_date)
 
         orders = orders.order_by('-created_at')
 
@@ -2481,12 +2675,14 @@ class SilverLimitOrderListAPIView(APIView):
 
         return success_response(
             message="لیست سفارشات با قیمت نقره",
-            data={
-                "total_results": orders.count(),
-                "results": serializer.data
-            }
+            data=serializer.data  # ✅ آرایه مستقیم
         )
-
+        
+        
+        
+        
+        
+        
 
 class SilverLimitOrderDetailAPIView(APIView):
     """جزئیات سفارش با قیمت نقره"""

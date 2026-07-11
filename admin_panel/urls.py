@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from admin_panel.views import (
     AdminAnalyticsViewSet,
+    AdminGoldShortOrderViewSet,
     AdminLogViewSet,
     AnalyticsChartAPIView,
     AnalyticsPurchaseChartAPIView,
@@ -261,7 +262,7 @@ router.register(r"gold-transactions", GoldTransactionAdminViewSet, basename="adm
 # =========================================================
 # BALANCE WITHDRAWALS
 # =========================================================
-
+router.register(r'gold-short-orders/', AdminGoldShortOrderViewSet, basename='admin-gold-short-order')
 router.register(
     r"silver-balance-withdrawals",
     SilverBalanceWithdrawalViewSet,

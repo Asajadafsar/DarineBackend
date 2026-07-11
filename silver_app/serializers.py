@@ -584,45 +584,63 @@ from decimal import Decimal, ROUND_DOWN
 from rest_framework import serializers
 from accounts.models import FeeSetting
 
+# =========================================================
+# silver_app/serializers.py - سریالایزر جدید ✅
+# =========================================================
+
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
+from rest_framework import serializers
+
+# =========================================================
+# SELL SILVER SERIALIZER - اصلاح شده (کسر کارمزد) ✅
+# =========================================================
+
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
+from rest_framework import serializers
+from accounts.models import FeeSetting
+
+
 class SellSilverSerializer(serializers.Serializer):
     """
-    فروش نقره
+    فروش نقره (کارمزد از مبلغ کاربر کسر میشود)
     
-    اگر weight ارسال شود:
-        قیمت خالص = قیمت نقره × وزن
-        کارمزد = قیمت خالص × نرخ کارمزد
-        مبلغ نهایی = قیمت خالص - کارمزد
-    
-    اگر toman ارسال شود:
-        کارمزد = مبلغ × نرخ کارمزد
-        مبلغ نهایی = مبلغ - کارمزد
-        وزن = مبلغ / قیمت نقره
+    اگر toman ارسال شود (مبلغی که کاربر دریافت میکند):
+        کاربر ۱۰,۰۰۰,۰۰۰ وارد میکند
+        کارمزد = ۱۰,۰۰۰,۰۰۰ × ۱٪ = ۱۰۰,۰۰۰
+        ارزش خالص = ۱۰,۰۰۰,۰۰۰ + ۱۰۰,۰۰۰ = ۱۰,۱۰۰,۰۰۰
+        وزن = ۱۰,۱۰۰,۰۰۰ ÷ قیمت نقره
+        total_toman = ۱۰,۰۰۰,۰۰۰ (همون مبلغ دریافتی کاربر)
     """
     
+    payment_method = serializers.ChoiceField(
+        choices=[("WALLET", "کیف پول")],
+        required=True
+    )
     toman = serializers.DecimalField(
-        max_digits=25,
-        decimal_places=2,
-        required=False,
-        allow_null=True,
+        max_digits=25, 
+        decimal_places=2, 
+        required=False, 
+        allow_null=True
     )
     weight = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=3,
-        required=False,
-        allow_null=True,
+        max_digits=20, 
+        decimal_places=3, 
+        required=False, 
+        allow_null=True
     )
 
     def validate(self, attrs):
         toman = attrs.get("toman")
         weight = attrs.get("weight")
 
-        # اعتبارسنجی: حداقل یکی باید وارد شده باشد
+        # ===========================
+        # اعتبارسنجی
+        # ===========================
         if toman is None and weight is None:
             raise serializers.ValidationError(
                 {"non_field_errors": ["وارد کردن مبلغ یا وزن برای فروش الزامی است."]}
             )
 
-        # اگر هر دو ارسال شدند، وزن ملاک است
         if toman is not None and weight is not None:
             weight = Decimal(str(weight)).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
             if weight <= 0:
@@ -632,14 +650,18 @@ class SellSilverSerializer(serializers.Serializer):
             toman = None
             attrs["toman"] = None
 
-        # دریافت قیمت نقره از context
+        # ===========================
+        # دریافت قیمت نقره
+        # ===========================
         silver_price = Decimal(str(self.context["silver_price"]))
         if silver_price <= 0:
             raise serializers.ValidationError(
                 {"non_field_errors": ["قیمت نقره نامعتبر است."]}
             )
 
+        # ===========================
         # دریافت نرخ کارمزد
+        # ===========================
         user = self.context["request"].user
         user_fee = getattr(user, "fee", None)
 
@@ -655,58 +677,64 @@ class SellSilverSerializer(serializers.Serializer):
                 {"non_field_errors": ["کارمزد نامعتبر است."]}
             )
 
-        # =====================================
+        # ===========================
         # فروش بر اساس وزن
-        # =====================================
+        # ===========================
         if weight is not None:
             final_weight = weight
+            # ارزش خالص نقره
             pure_value = (silver_price * final_weight).quantize(Decimal("1"))
+            # کارمزد = ارزش خالص × نرخ کارمزد
             fee = (pure_value * fee_rate).quantize(Decimal("1"))
-            final_amount = (pure_value - fee).quantize(Decimal("1"))
+            # مبلغ نهایی که کاربر دریافت میکنه = ارزش خالص - کارمزد
+            total_toman = (pure_value - fee).quantize(Decimal("1"))
+            
+            if total_toman < 0:
+                raise serializers.ValidationError(
+                    {"non_field_errors": ["کارمزد بیشتر از ارزش نقره است."]}
+                )
 
-        # =====================================
-        # فروش بر اساس مبلغ
-        # =====================================
+        # ===========================
+        # فروش بر اساس مبلغ (کاربر مبلغ دریافتی رو وارد میکنه) ✅
+        # ===========================
         else:
-            toman = Decimal(str(toman)).quantize(Decimal("1"))
-            if toman <= 0:
+            # ✅ مبلغی که کاربر دریافت میکنه (مثلاً ۱۰,۰۰۰,۰۰۰)
+            total_toman = Decimal(str(toman)).quantize(Decimal("1"))
+            if total_toman <= 0:
                 raise serializers.ValidationError(
                     {"toman": ["مبلغ وارد شده باید بزرگتر از صفر باشد."]}
                 )
 
-            # ✅ کارمزد از کل مبلغ کم میشه
-            fee = (toman * fee_rate).quantize(Decimal("1"))
+            # ✅ کارمزد = مبلغ دریافتی × نرخ کارمزد
+            fee = (total_toman * fee_rate).quantize(Decimal("1"))
             
-            # ✅ مبلغ نهایی = مبلغ ورودی - کارمزد
-            final_amount = (toman - fee).quantize(Decimal("1"))
+            # ✅ ارزش خالص = مبلغ دریافتی + کارمزد
+            pure_value = (total_toman + fee).quantize(Decimal("1"))
             
-            # ✅ وزن برای نمایش (فقط اطلاع‌رسانی)
-            final_weight = (toman / silver_price).quantize(
+            # ✅ وزن = ارزش خالص ÷ قیمت هر گرم
+            final_weight = (pure_value / silver_price).quantize(
                 Decimal("0.001"),
                 rounding=ROUND_DOWN,
             )
 
             if final_weight <= 0:
                 raise serializers.ValidationError(
-                    {
-                        "toman": [
-                            "مبلغ وارد شده برای فروش، کمتر از ارزش یک هزارم گرم نقره است."
-                        ]
-                    }
+                    {"non_field_errors": ["مبلغ وارد شده برای فروش حتی یک هزارم گرم نقره کافی نیست."]}
                 )
 
-            # ✅ ارزش خالص برای محاسبات بعدی
-            pure_value = (silver_price * final_weight).quantize(Decimal("1"))
-
-        # ذخیره در attrs
+        # ===========================
+        # ✅ ذخیره در attrs
+        # ===========================
         attrs["fee_rate"] = fee_rate
-        attrs["fee"] = fee
+        attrs["fee"] = fee  # کارمزد کسر شده
         attrs["silver_price"] = silver_price
-        attrs["pure_value"] = pure_value
-        attrs["final_amount"] = final_amount
+        attrs["pure_value"] = pure_value  # ارزش خالص نقره (قبل از کسر کارمزد)
+        attrs["pure_silver_price"] = pure_value  # کلید کمکی
+        attrs["total_toman"] = total_toman  # ✅ مبلغ دریافتی کاربر (۱۰,۰۰۰,۰۰۰)
         attrs["final_weight"] = final_weight
 
         return attrs
+
 
 
 
@@ -747,128 +775,6 @@ class SilverWithdrawSerializer(serializers.Serializer):
 # =========================================================
 # USER BALANCE (DASHBOARD)
 # =========================================================
-
-class SellSilverSerializer(serializers.Serializer):
-    """
-    فروش نقره
-    
-    اگر weight ارسال شود:
-        قیمت خالص = قیمت نقره × وزن
-        کارمزد = قیمت خالص × نرخ کارمزد
-        مبلغ نهایی = قیمت خالص - کارمزد
-    
-    اگر toman ارسال شود (مبلغ دریافتی کاربر):
-        وزن = مبلغ / قیمت نقره
-        ارزش خالص = قیمت نقره × وزن
-        کارمزد = ارزش خالص × نرخ کارمزد
-        مبلغ نهایی = ارزش خالص - کارمزد
-    """
-    
-    toman = serializers.DecimalField(
-        max_digits=25,
-        decimal_places=2,
-        required=False,
-        allow_null=True,
-    )
-    weight = serializers.DecimalField(
-        max_digits=20,
-        decimal_places=3,
-        required=False,
-        allow_null=True,
-    )
-
-    def validate(self, attrs):
-        toman = attrs.get("toman")
-        weight = attrs.get("weight")
-
-        # اعتبارسنجی: حداقل یکی باید وارد شده باشد
-        if toman is None and weight is None:
-            raise serializers.ValidationError(
-                {"non_field_errors": ["وارد کردن مبلغ یا وزن برای فروش الزامی است."]}
-            )
-
-        # اگر هر دو ارسال شدند، وزن ملاک است
-        if toman is not None and weight is not None:
-            weight = Decimal(str(weight)).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
-            if weight <= 0:
-                raise serializers.ValidationError(
-                    {"weight": ["وزن وارد شده باید بزرگتر از صفر باشد."]}
-                )
-            toman = None
-            attrs["toman"] = None
-
-        # دریافت قیمت نقره از context
-        silver_price = Decimal(str(self.context["silver_price"]))
-        if silver_price <= 0:
-            raise serializers.ValidationError(
-                {"non_field_errors": ["قیمت نقره نامعتبر است."]}
-            )
-
-        # دریافت نرخ کارمزد
-        user = self.context["request"].user
-        user_fee = getattr(user, "fee", None)
-
-        if user_fee:
-            fee_rate = user_fee.silver_sell_fee
-        else:
-            setting = FeeSetting.objects.last()
-            fee_rate = setting.silver_sell_fee if setting else Decimal("0.01")
-
-        fee_rate = Decimal(str(fee_rate))
-        if fee_rate < 0:
-            raise serializers.ValidationError(
-                {"non_field_errors": ["کارمزد نامعتبر است."]}
-            )
-
-        # =====================================
-        # فروش بر اساس وزن
-        # =====================================
-        if weight is not None:
-            final_weight = weight
-            pure_value = (silver_price * final_weight).quantize(Decimal("1"))
-            fee = (pure_value * fee_rate).quantize(Decimal("1"))
-            final_amount = (pure_value - fee).quantize(Decimal("1"))  # ✅ کارمزد کم میشه
-
-        # =====================================
-        # فروش بر اساس مبلغ (دریافتی کاربر)
-        # =====================================
-        else:
-            toman = Decimal(str(toman)).quantize(Decimal("1"))
-            if toman <= 0:
-                raise serializers.ValidationError(
-                    {"toman": ["مبلغ وارد شده باید بزرگتر از صفر باشد."]}
-                )
-
-            # ✅ وزن = مبلغ دریافتی / قیمت
-            final_weight = (toman / silver_price).quantize(
-                Decimal("0.001"),
-                rounding=ROUND_DOWN,
-            )
-
-            if final_weight <= 0:
-                raise serializers.ValidationError({
-                    "toman": ["مبلغ وارد شده برای فروش، کمتر از ارزش یک هزارم گرم نقره است."]
-                })
-
-            # ✅ ارزش خالص = وزن × قیمت
-            pure_value = (silver_price * final_weight).quantize(Decimal("1"))
-
-            # ✅ کارمزد = ارزش خالص × نرخ کارمزد
-            fee = (pure_value * fee_rate).quantize(Decimal("1"))
-
-            # ✅ مبلغ نهایی = ارزش خالص - کارمزد
-            final_amount = (pure_value - fee).quantize(Decimal("1"))
-
-        # ذخیره در attrs
-        attrs["fee_rate"] = fee_rate
-        attrs["fee"] = fee
-        attrs["silver_price"] = silver_price
-        attrs["pure_value"] = pure_value
-        attrs["final_amount"] = final_amount
-        attrs["final_weight"] = final_weight
-
-        return attrs
-
 
 
 class SilverBubbleSerializer(serializers.Serializer):
@@ -1132,15 +1038,51 @@ class SilverLimitOrderCreateSerializer(serializers.Serializer):
 
         return attrs
 
-
+# =========================================================
+# SILVER ORDER LIST SERIALIZER
+# =========================================================
 class SilverOrderListSerializer(serializers.ModelSerializer):
     """
     سریالایزر لیست سفارشات با قیمت نقره
     """
-    order_type_display = serializers.CharField(source='get_order_type_display', read_only=True)
+    type = serializers.CharField(source='order_type', read_only=True)
+    type_display = serializers.CharField(source='get_order_type_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    
+    amount_gr = serializers.CharField(source='silver_weight', read_only=True)
+    price_per_gram = serializers.CharField(source='target_price', read_only=True)
+    final_price = serializers.CharField(source='executed_price', read_only=True)
+    total_amount = serializers.CharField(source='amount_toman', read_only=True)
+    
+    # محاسبه کارمزد (اگر در مدل نیست)
+    fee = serializers.SerializerMethodField()
+    tracking_code = serializers.SerializerMethodField()
 
     class Meta:
         model = SilverLimitOrder
-        fields = '__all__'
+        fields = [
+            'id',
+            'type',
+            'type_display',
+            'status',
+            'status_display',
+            'amount_gr',
+            'price_per_gram',
+            'fee',
+            'total_amount',
+            'final_price',
+            'tracking_code',
+            'description',
+            'created_at',
+            'updated_at'
+        ]
+
+    def get_fee(self, obj):
+        """محاسبه کارمزد بر اساس مبلغ و نرخ کارمزد"""
+        if obj.amount_toman and obj.fee_rate:
+            return (obj.amount_toman * obj.fee_rate).quantize(Decimal("1"))
+        return Decimal("0")
+
+    def get_tracking_code(self, obj):
+        """ساخت کد رهگیری برای سفارشات نقره"""
+        return f"SILVER-{obj.id:06d}"

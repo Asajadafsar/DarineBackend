@@ -22,7 +22,22 @@ from django.db.models import Q
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.decorators import action
 import jdatetime
+from decimal import Decimal
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import action
 
+from gold_app.models import GoldShortOrder, GoldShortOrderHistory, GoldInventory
+from .serializers import (
+    AdminGoldShortOrderListSerializer,
+    AdminGoldShortOrderDetailSerializer,
+    AdminGoldShortOrderUpdateSerializer,
+    AdminGoldShortOrderHistorySerializer
+)
+from gold_app.utils import get_live_gold_price, success_response, error_response
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
@@ -196,6 +211,9 @@ class UserAdminViewSet(AdminBaseViewSet):
 
         return success_response("وضعیت تغییر کرد", {"is_active": user.is_active})
         # =========================================================
+    
+    
+    
     @action(
         detail=False,
         methods=["post"],
@@ -266,6 +284,70 @@ class UserAdminViewSet(AdminBaseViewSet):
             },
         )
    
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="bulk-update-referral",
+    )
+    def bulk_update_referral(self, request):
+        user_ids = request.data.get("user_ids", [])
+
+        if not user_ids:
+            return error_response(
+                message="حداقل یک کاربر انتخاب کنید."
+            )
+
+        referral_percent = request.data.get("referral_percent")
+
+        if referral_percent is None:
+            return error_response(
+                message="درصد سود رفرال ارسال نشده است."
+            )
+
+        try:
+            referral_percent = Decimal(str(referral_percent))
+        except Exception:
+            return error_response(
+                message="درصد سود رفرال نامعتبر است."
+            )
+
+        if referral_percent < 0 or referral_percent > 100:
+            return error_response(
+                message="درصد سود رفرال باید بین 0 تا 100 باشد."
+            )
+
+        users = User.objects.filter(id__in=user_ids)
+
+        if not users.exists():
+            return error_response(
+                message="کاربری یافت نشد."
+            )
+
+        from accounts.models import FeeSetting
+
+        setting = FeeSetting.objects.first()
+
+        if not setting:
+            setting = FeeSetting.objects.create(
+                gold_buy_fee=0.01,
+                gold_sell_fee=0.01,
+                silver_buy_fee=0.01,
+                silver_sell_fee=0.01,
+                gold_referral_percent=20,
+                silver_referral_percent=20,
+            )
+
+        setting.gold_referral_percent = referral_percent
+        setting.silver_referral_percent = referral_percent
+        setting.save()
+
+        return success_response(
+            message="درصد سود رفرال کاربران با موفقیت بروزرسانی شد.",
+            data={
+                "updated_users": users.count(),
+                "referral_percent": float(referral_percent),
+            }
+        )
 
 
 
@@ -611,10 +693,392 @@ class UserAdminViewSet(AdminBaseViewSet):
                 "results": serializer.data,
             },
         )
+    def update(self, request, pk=None, *args, **kwargs):
+        user = get_object_or_404(User, pk=pk)
+
+        # ✅ دریافت referral_percent از درخواست
+        referral_percent = request.data.get('referral_percent')
+
+        if referral_percent is not None:
+            from decimal import Decimal
+            setting = FeeSetting.objects.first()
+            if not setting:
+                setting = FeeSetting.objects.create(
+                    gold_buy_fee=0.01,
+                    gold_sell_fee=0.01,
+                    silver_buy_fee=0.01,
+                    silver_sell_fee=0.01,
+                    gold_referral_percent=20,
+                    silver_referral_percent=20,
+                )
+            setting.gold_referral_percent = Decimal(str(referral_percent))
+            setting.silver_referral_percent = Decimal(str(referral_percent))
+            setting.save()
+
+        serializer = AdminUserUpdateSerializer(user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        fee, _ = UserFee.objects.get_or_create(user=user)
+        fee_data = request.data.get("fees")
+
+        if fee_data is None:
+            fee_data = {
+                key: request.data.get(key)
+                for key in [
+                    "gold_buy_fee",
+                    "gold_sell_fee",
+                    "silver_buy_fee",
+                    "silver_sell_fee",
+                ]
+                if request.data.get(key) is not None
+            }
+
+        if fee_data:
+            fee_serializer = UserFeeUpdateSerializer(fee, data=fee_data, partial=True)
+            fee_serializer.is_valid(raise_exception=True)
+            fee_serializer.save()
+
+        user.refresh_from_db()
+
+        return success_response(
+            "آپدیت انجام شد",
+            {"results": AdminUserDetailSerializer(user).data}
+        )
 
 
 
 
+# gold_app/admin_views.py
+
+
+
+
+class AdminGoldShortOrderViewSet(AdminBaseViewSet):
+    """
+    پنل ادمین - مدیریت سفارشات فروش تعهدی طلا
+    """
+    queryset = GoldShortOrder.objects.all().order_by("-created_at")
+    
+    def get_queryset(self):
+        qs = super().get_queryset()
+
+        # فیلترها
+        status = self.request.GET.get("status")
+        order_type = self.request.GET.get("order_type")
+        user_mobile = self.request.GET.get("user_mobile")
+        search = self.request.GET.get("search")
+        start_date = self.request.GET.get("start_date")
+        end_date = self.request.GET.get("end_date")
+        ordering = self.request.GET.get("ordering")
+
+        if status:
+            qs = qs.filter(status=status)
+
+        if order_type:
+            qs = qs.filter(order_type=order_type)
+
+        if user_mobile:
+            qs = qs.filter(user__mobile__icontains=user_mobile)
+
+        if search:
+            qs = qs.filter(
+                Q(user__mobile__icontains=search) |
+                Q(user__first_name__icontains=search) |
+                Q(user__last_name__icontains=search) |
+                Q(description__icontains=search)
+            )
+
+        if start_date:
+            qs = qs.filter(created_at__date__gte=start_date)
+
+        if end_date:
+            qs = qs.filter(created_at__date__lte=end_date)
+
+        # مرتب‌سازی
+        ordering_map = {
+            "id": "id",
+            "-id": "-id",
+            "created_at": "created_at",
+            "-created_at": "-created_at",
+            "weight": "weight",
+            "-weight": "-weight",
+            "entry_price": "entry_price",
+            "-entry_price": "-entry_price",
+            "profit_loss": "profit_loss",
+            "-profit_loss": "-profit_loss",
+            "status": "status",
+            "-status": "-status",
+        }
+
+        if ordering in ordering_map:
+            qs = qs.order_by(ordering_map[ordering])
+
+        return qs
+
+    # ======================
+    # LIST
+    # ======================
+    def list(self, request):
+        orders = self.get_queryset()
+        
+        # صفحه‌بندی
+        page = self.paginate_queryset(orders)
+        if page is not None:
+            serializer = AdminGoldShortOrderListSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = AdminGoldShortOrderListSerializer(orders, many=True)
+        return success_response(
+            "لیست سفارشات فروش تعهدی",
+            {
+                "total_results": orders.count(),
+                "results": serializer.data
+            }
+        )
+
+    # ======================
+    # RETRIEVE
+    # ======================
+    def retrieve(self, request, pk=None):
+        order = get_object_or_404(GoldShortOrder, pk=pk)
+        serializer = AdminGoldShortOrderDetailSerializer(order)
+        return success_response("جزئیات سفارش فروش تعهدی", serializer.data)
+
+    # ======================
+    # UPDATE
+    # ======================
+    def update(self, request, pk=None):
+        order = get_object_or_404(GoldShortOrder, pk=pk)
+        
+        serializer = AdminGoldShortOrderUpdateSerializer(
+            order,
+            data=request.data,
+            partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        # اگر وضعیت تغییر کرده، تاریخچه ثبت شود
+        if 'status' in serializer.validated_data:
+            GoldShortOrderHistory.objects.create(
+                order=order,
+                status=order.status,
+                price=order.close_price or order.entry_price,
+                profit_loss=order.profit_loss,
+                description=f"تغییر وضعیت توسط ادمین: {order.get_status_display()}"
+            )
+
+        return success_response(
+            "سفارش با موفقیت بروزرسانی شد",
+            AdminGoldShortOrderDetailSerializer(order).data
+        )
+
+    # ======================
+    # CLOSE ORDER
+    # ======================
+    @action(detail=True, methods=["post"])
+    def close(self, request, pk=None):
+        """
+        بستن دستی سفارش توسط ادمین
+        """
+        order = get_object_or_404(GoldShortOrder, pk=pk)
+
+        if order.status != 'ACTIVE':
+            return error_response(
+                message=f"سفارش در وضعیت {order.get_status_display()} قابل بستن نیست"
+            )
+
+        # قیمت بسته شدن (از درخواست یا قیمت فعلی)
+        close_price = request.data.get("close_price")
+        if close_price:
+            close_price = Decimal(str(close_price))
+        else:
+            close_price = get_live_gold_price()
+            if not close_price:
+                return error_response("خطا در دریافت قیمت طلا", status_code=500)
+
+        with transaction.atomic():
+            # محاسبه سود/ضرر
+            profit_loss = (order.entry_price - close_price) * order.weight * order.leverage
+            profit_loss = profit_loss.quantize(Decimal("1"))
+
+            # محاسبه کارمزد روزانه
+            hours_active = (timezone.now() - order.created_at).total_seconds() / 3600
+            daily_fee_rate = Decimal("0.0065")  # 0.65%
+            daily_fee = (order.weight * order.entry_price * daily_fee_rate * Decimal(str(hours_active / 24))).quantize(Decimal("1"))
+            total_fee = order.initial_fee + daily_fee
+
+            # برگشت موجودی طلا
+            inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=order.user)
+            inventory.blocked_balance -= order.weight
+            inventory.accessible_balance += order.weight
+            inventory.save(update_fields=['accessible_balance', 'blocked_balance', 'updated_at'])
+
+            # به‌روزرسانی سفارش
+            order.status = 'CLOSED'
+            order.close_price = close_price
+            order.profit_loss = profit_loss
+            order.daily_fee = daily_fee
+            order.total_fee = total_fee
+            order.closed_at = timezone.now()
+            order.save(update_fields=['status', 'close_price', 'profit_loss', 'daily_fee', 'total_fee', 'closed_at', 'updated_at'])
+
+            # ثبت تاریخچه
+            GoldShortOrderHistory.objects.create(
+                order=order,
+                status='CLOSED',
+                price=close_price,
+                profit_loss=profit_loss,
+                description=f'بسته شدن توسط ادمین - سود/ضرر: {profit_loss}'
+            )
+
+        return success_response(
+            "سفارش با موفقیت بسته شد",
+            {
+                "order_id": order.id,
+                "status": order.get_status_display(),
+                "close_price": float(close_price),
+                "profit_loss": float(profit_loss),
+                "total_fee": float(total_fee),
+            }
+        )
+
+    # ======================
+    # LIQUIDATE ORDER
+    # ======================
+    @action(detail=True, methods=["post"])
+    def liquidate(self, request, pk=None):
+        """
+        لیکوئید کردن سفارش توسط ادمین (سیستمی)
+        """
+        order = get_object_or_404(GoldShortOrder, pk=pk)
+
+        if order.status != 'ACTIVE':
+            return error_response(
+                message=f"سفارش در وضعیت {order.get_status_display()} قابل لیکوئید نیست"
+            )
+
+        close_price = get_live_gold_price()
+        if not close_price:
+            return error_response("خطا در دریافت قیمت طلا", status_code=500)
+
+        with transaction.atomic():
+            # محاسبه ضرر
+            profit_loss = (order.entry_price - close_price) * order.weight * order.leverage
+            profit_loss = profit_loss.quantize(Decimal("1"))
+
+            # برگشت موجودی طلا
+            inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=order.user)
+            inventory.blocked_balance -= order.weight
+            inventory.accessible_balance += order.weight
+            inventory.save(update_fields=['accessible_balance', 'blocked_balance', 'updated_at'])
+
+            # به‌روزرسانی سفارش
+            order.status = 'LIQUIDATED'
+            order.close_price = close_price
+            order.profit_loss = profit_loss
+            order.closed_at = timezone.now()
+            order.save(update_fields=['status', 'close_price', 'profit_loss', 'closed_at', 'updated_at'])
+
+            # ثبت تاریخچه
+            GoldShortOrderHistory.objects.create(
+                order=order,
+                status='LIQUIDATED',
+                price=close_price,
+                profit_loss=profit_loss,
+                description=f'لیکوئید شد - ضرر: {profit_loss}'
+            )
+
+        return success_response(
+            "سفارش لیکوئید شد",
+            {
+                "order_id": order.id,
+                "status": order.get_status_display(),
+                "close_price": float(close_price),
+                "profit_loss": float(profit_loss),
+            }
+        )
+
+    # ======================
+    # CANCEL ORDER
+    # ======================
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        """
+        لغو سفارش توسط ادمین
+        """
+        order = get_object_or_404(GoldShortOrder, pk=pk)
+
+        if order.status != 'ACTIVE':
+            return error_response(
+                message=f"سفارش در وضعیت {order.get_status_display()} قابل لغو نیست"
+            )
+
+        with transaction.atomic():
+            # برگشت موجودی طلا
+            inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=order.user)
+            inventory.blocked_balance -= order.weight
+            inventory.accessible_balance += order.weight
+            inventory.save(update_fields=['accessible_balance', 'blocked_balance', 'updated_at'])
+
+            # به‌روزرسانی سفارش
+            order.status = 'CANCELLED'
+            order.closed_at = timezone.now()
+            order.save(update_fields=['status', 'closed_at', 'updated_at'])
+
+            # ثبت تاریخچه
+            GoldShortOrderHistory.objects.create(
+                order=order,
+                status='CANCELLED',
+                price=order.entry_price,
+                description='لغو سفارش توسط ادمین'
+            )
+
+        return success_response(
+            "سفارش با موفقیت لغو شد",
+            {
+                "order_id": order.id,
+                "status": order.get_status_display(),
+            }
+        )
+
+    # ======================
+    # STATISTICS
+    # ======================
+    @action(detail=False, methods=["get"])
+    def statistics(self, request):
+        """
+        آمار کلی سفارشات فروش تعهدی
+        """
+        total_orders = GoldShortOrder.objects.count()
+        active_orders = GoldShortOrder.objects.filter(status='ACTIVE').count()
+        closed_orders = GoldShortOrder.objects.filter(status='CLOSED').count()
+        liquidated_orders = GoldShortOrder.objects.filter(status='LIQUIDATED').count()
+        cancelled_orders = GoldShortOrder.objects.filter(status='CANCELLED').count()
+
+        # مجموع سود/ضرر
+        total_profit_loss = GoldShortOrder.objects.aggregate(
+            total=Sum('profit_loss')
+        )['total'] or Decimal("0")
+
+        # کل وزن درگیر
+        total_weight_active = GoldShortOrder.objects.filter(status='ACTIVE').aggregate(
+            total=Sum('weight')
+        )['total'] or Decimal("0")
+
+        return success_response(
+            "آمار سفارشات فروش تعهدی",
+            {
+                "total_orders": total_orders,
+                "active_orders": active_orders,
+                "closed_orders": closed_orders,
+                "liquidated_orders": liquidated_orders,
+                "cancelled_orders": cancelled_orders,
+                "total_profit_loss": float(total_profit_loss),
+                "total_weight_active": float(total_weight_active),
+            }
+        )
 
 
 
