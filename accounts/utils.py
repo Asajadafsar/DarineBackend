@@ -51,84 +51,93 @@ from silver_app.models import SilverWallet
 
 
 
+# accounts/utils.py
+
+def get_user_referral_percent(user):
+    """
+    دریافت درصد رفرال کاربر
+    اگر کاربر تنظیمات اختصاصی دارد، از آن استفاده کن
+    در غیر این صورت از تنظیمات عمومی استفاده کن
+    """
+    from accounts.models import UserFee, FeeSetting, ReferralSetting
+    
+    # چک کردن اینکه آیا کاربر تنظیمات اختصاصی در UserFee دارد؟
+    # از آنجایی که UserFee فیلد referral_percent ندارد، 
+    # از یک روش جایگزین استفاده میکنیم: 
+    # اگر کاربر در ReferralEarning به عنوان referrer ثبت شده باشد،
+    # آخرین درصدی که برای او ثبت شده را میگیریم
+    
+    latest_earning = ReferralEarning.objects.filter(
+        referrer=user
+    ).order_by('-created_at').first()
+    
+    if latest_earning:
+        # اگر سودی برای این کاربر ثبت شده، از همان درصد استفاده کن
+        return latest_earning.commission_percent
+    
+    # در غیر این صورت از تنظیمات عمومی استفاده کن
+    setting = ReferralSetting.objects.first()
+    if setting:
+        return setting.commission_percent
+    
+    return Decimal("20")  # مقدار پیش‌فرض
+
+
+
+# accounts/utils.py
+
 @transaction.atomic
 def create_referral_profit(
     user,
     source_type,
     transaction_amount,
+    commission_amount,
 ):
-
+    """
+    ایجاد سود رفرال بر اساس کارمزد معامله
+    سود رفرال = درصد رفرال × کارمزد معامله
+    """
+    
+    # فقط برای طلا
+    if source_type != "GOLD":
+        return None
+    
     # اگر معرف ندارد
     if not user.referred_by:
         return None
-
-
-    # درصد فعلی رفرال
-    setting = ReferralSetting.objects.first()
-
-    if not setting:
-        return None
-
-
-    percent = setting.commission_percent
-
-
-    # محاسبه سود
+    
+    referrer = user.referred_by
+    
+    # ✅ دریافت درصد رفرال از آخرین سود ثبت شده برای این کاربر
+    # یا از تنظیمات عمومی
+    percent = get_user_referral_percent(referrer)
+    
+    # محاسبه سود از کارمزد
     profit = (
-        Decimal(transaction_amount)
-        *
-        percent
-        /
-        Decimal("100")
-    )
-
-
+        Decimal(commission_amount) * percent / Decimal("100")
+    ).quantize(Decimal("1"))
+    
+    # اگر سود صفر بود، ثبت نشود
+    if profit <= 0:
+        return None
+    
     # ثبت تاریخچه سود رفرال
     earning = ReferralEarning.objects.create(
-
-        referrer=user.referred_by,
-
+        referrer=referrer,
         user=user,
-
         source_type=source_type,
-
         transaction_amount=transaction_amount,
-
-        commission_percent=percent,
-
-        commission_amount=profit,
-
+        commission_amount=commission_amount,
+        commission_percent=percent,  # ✅ درصد فعلی ذخیره میشه
         marketer_percent=percent,
-
         profit=profit,
     )
-
-
-    # =====================================
-    # واریز به کیف پول معرف
-    # =====================================
-
-
-    if source_type == "GOLD":
-
-        wallet, _ = Wallet.objects.get_or_create(
-            user=user.referred_by
-        )
-
-        wallet.accessible_toman += profit
-
-        wallet.save()
-
-
-    elif source_type == "SILVER":
-
-        wallet, _ = SilverWallet.objects.get_or_create(
-            user=user.referred_by
-        )
-
-        wallet.accessible_toman += profit
-
-        wallet.save()
-
-
+    
+    # واریز به کیف پول طلای معرف
+    wallet, _ = Wallet.objects.get_or_create(
+        user=referrer
+    )
+    wallet.accessible_toman += profit
+    wallet.save()
+    
     return earning

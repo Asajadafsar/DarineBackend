@@ -395,7 +395,6 @@ class RegisterStepTwo(APIView):
 # REGISTER STEP 3
 # ==========================================
 
-
 class RegisterStepThree(APIView):
 
     permission_classes = [AllowAny]
@@ -423,6 +422,7 @@ class RegisterStepThree(APIView):
         data = serializer.validated_data
 
         mobile = data["mobile"]
+        referral_code = data.get("referral_code")  # ✅ دریافت کد معرف
 
         user = User.objects.create(
             mobile=mobile,
@@ -437,6 +437,31 @@ class RegisterStepThree(APIView):
 
         user.set_password(data["password"])
 
+        # ✅ تنظیم کاربر معرف (referred_by) اگر کد معرف وجود داشته باشد
+        if referral_code:
+            try:
+                referrer = User.objects.get(referral_code=referral_code)
+                user.referred_by = referrer
+                user.save()
+            except User.DoesNotExist:
+                # کد معرف نامعتبر - فقط لاگ می‌کنیم و ادامه می‌دیم
+                create_admin_log(
+                    request=request,
+                    user=user,
+                    action_type="INVALID_REFERRAL",
+                    action="کد معرف نامعتبر",
+                    model_name="User",
+                    object_id=user.id,
+                    success=False,
+                    description=f"""
+کد معرف نامعتبر در ثبت نام
+
+موبایل کاربر: {mobile}
+کد معرف وارد شده: {referral_code}
+""",
+                )
+
+        # ✅ ذخیره نهایی کاربر
         user.save()
 
         create_admin_log(
@@ -455,6 +480,9 @@ class RegisterStepThree(APIView):
 
 نام:
 {user.first_name} {user.last_name}
+
+معرف:
+{user.referred_by.mobile if user.referred_by else 'ندارد'}
 """,
         )
 
@@ -465,14 +493,18 @@ class RegisterStepThree(APIView):
         response = success_response(
             message="ثبت نام موفق",
             status_code=201,
-            data={"user": {"id": user.id, "mobile": user.mobile}},
+            data={
+                "user": {
+                    "id": user.id,
+                    "mobile": user.mobile,
+                    "referred_by": user.referred_by.mobile if user.referred_by else None,
+                }
+            },
         )
 
         set_auth_cookies(response, str(access), str(refresh))
 
         return response
-
-
 
 # ==========================================
 # LOGIN PASSWORD

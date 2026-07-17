@@ -106,39 +106,167 @@ def get_world_prices():
 # =========================================================
 
 
+# def get_live_gold_price():
+#     url = "https://api.wallgold.ir/api/v1/" "price?side=buy&symbol=GLD_18C_750TMN"
+
+#     try:
+#         response = requests.get(url, timeout=10)
+
+#         if response.status_code != 200:
+#             logger.error(f"Gold API Error: {response.status_code}")
+#             return None
+
+#         data = response.json()
+
+#         if not data.get("success"):
+#             logger.error("Gold API success=False")
+#             return None
+
+#         price = Decimal(str(data["result"]["price"]))
+
+#     except Exception as e:
+#         logger.error(f"Gold Price Error: {str(e)}")
+#         return None
+
+#     # offset
+#     try:
+#         from admin_panel.models import GoldPriceOffset
+
+#         offset = GoldPriceOffset.objects.filter(is_active=True).first()
+#         if offset:
+#             price = price + offset.offset_amount
+#     except Exception:
+#         pass
+
+#     return price
+
+
+# gold_app/utils.py
+
+from django.core.cache import cache
+
+# gold_app/utils.py
+
+# gold_app/utils.py
+
+import time
+import logging
+import requests
+import json
+import os
+from decimal import Decimal
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+
+# =========================================================
+# CACHE FILE PATH
+# =========================================================
+
+CACHE_DIR = os.path.join(settings.BASE_DIR, 'cache')
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+GOLD_CACHE_FILE = os.path.join(CACHE_DIR, 'gold_price.json')
+GOLD_CACHE_TIME_FILE = os.path.join(CACHE_DIR, 'gold_price_time.json')
+
+
+# =========================================================
+# READ/WRITE CACHE FUNCTIONS
+# =========================================================
+
+def read_cache(file_path):
+    """خواندن از کش فایل"""
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Cache read error: {e}")
+    return None
+
+
+def write_cache(file_path, data):
+    """نوشتن در کش فایل"""
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.error(f"Cache write error: {e}")
+
+
+# =========================================================
+# GOLD PRICE WITH FILE CACHE (30 SECONDS)
+# =========================================================
+
 def get_live_gold_price():
-    url = "https://api.wallgold.ir/api/v1/" "price?side=buy&symbol=GLD_18C_750TMN"
+    """
+    دریافت قیمت لحظه‌ای طلا با کش ۳۰ ثانیه‌ای (ذخیره در فایل)
+    هر ۳۰ ثانیه یک بار از API دریافت می‌شود
+    """
+    # ✅ خواندن از کش فایل
+    cached_price = read_cache(GOLD_CACHE_FILE)
+    cached_time = read_cache(GOLD_CACHE_TIME_FILE)
+    
+    now = time.time()
+    
+    # ✅ اگر کمتر از ۳۰ ثانیه گذشته، از کش برگردان
+    if cached_time and cached_price:
+        elapsed = now - cached_time
+        if elapsed < 30:
+            return Decimal(str(cached_price))
+    
+    # ✅ دریافت از API
+    url = "https://api.wallgold.ir/api/v1/price?side=buy&symbol=GLD_18C_750TMN"
 
     try:
         response = requests.get(url, timeout=10)
 
         if response.status_code != 200:
             logger.error(f"Gold API Error: {response.status_code}")
+            if cached_price is not None:
+                return Decimal(str(cached_price))
             return None
 
         data = response.json()
 
         if not data.get("success"):
             logger.error("Gold API success=False")
+            if cached_price is not None:
+                return Decimal(str(cached_price))
             return None
 
         price = Decimal(str(data["result"]["price"]))
 
     except Exception as e:
         logger.error(f"Gold Price Error: {str(e)}")
+        if cached_price is not None:
+            return Decimal(str(cached_price))
         return None
 
-    # offset
+    # ✅ اعمال آفست
     try:
         from admin_panel.models import GoldPriceOffset
-
         offset = GoldPriceOffset.objects.filter(is_active=True).first()
         if offset:
             price = price + offset.offset_amount
     except Exception:
         pass
 
+    # ✅ ذخیره در کش فایل
+    write_cache(GOLD_CACHE_FILE, float(price))
+    write_cache(GOLD_CACHE_TIME_FILE, now)
+
     return price
+
+
+def force_refresh_gold_price():
+    """دریافت قیمت طلا بدون استفاده از کش"""
+    # حذف فایل‌های کش
+    for file_path in [GOLD_CACHE_FILE, GOLD_CACHE_TIME_FILE]:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    return get_live_gold_price()
 
 
 # =========================================================
@@ -563,48 +691,61 @@ from .models import GoldOrder, GoldTransaction, Wallet, GoldInventory
 from accounts.utils import create_referral_profit
 
 
+# gold_app/utils.py
+
 def check_and_execute_limit_orders():
     """
     تابعی که هر دقیقه اجرا میشه و سفارشات در انتظار رو چک میکنه
-    این تابع رو توی cron job یا celery بذارید
+    ✅ سفارشات با قیمت رفرال ندارند
     """
-    # دریافت همه سفارشات در انتظار
+    from .models import GoldOrder, GoldTransaction, Wallet, GoldInventory
+    from decimal import Decimal, ROUND_DOWN
+    
     pending_orders = GoldOrder.objects.filter(status='PENDING')
+    
+    if not pending_orders.exists():
+        return 0
     
     executed_count = 0
     
     for order in pending_orders:
-        # دریافت قیمت لحظه‌ای
         current_price = get_live_gold_price()
         if not current_price:
             continue
         
-        # بررسی شرط قیمت
+        current_price = Decimal(str(current_price))
+        
         should_execute = False
         
         if order.order_type == 'BUY':
+            # ✅ خرید: قیمت فعلی <= قیمت هدف
             if current_price <= order.target_price:
                 should_execute = True
         else:  # SELL
+            # ✅ فروش: قیمت فعلی >= قیمت هدف
             if current_price >= order.target_price:
                 should_execute = True
         
         if should_execute:
             try:
                 with transaction.atomic():
-                    # اجرای سفارش
                     _execute_order(order, current_price)
                     executed_count += 1
+                    logger.info(f"✅ سفارش {order.id} خودکار اجرا شد - قیمت: {current_price}")
             except Exception as e:
-                print(f"❌ خطا در اجرای سفارش {order.id}: {e}")
+                logger.error(f"❌ خطا در اجرای سفارش {order.id}: {e}")
     
     return executed_count
 
 
 def _execute_order(order, current_price):
     """
-    اجرای یک سفارش
+    اجرای یک سفارش با قیمت
+    ❌ بدون رفرال
     """
+    from .models import GoldTransaction, Wallet, GoldInventory
+    from decimal import Decimal, ROUND_DOWN
+    
     if order.order_type == 'BUY':
         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=order.user)
@@ -613,6 +754,171 @@ def _execute_order(order, current_price):
         pure_price = (order.amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
         fee = (order.amount_toman - pure_price).quantize(Decimal("1"))
         weight = (pure_price / current_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+
+        if wallet.blocked_toman < order.amount_toman:
+            logger.error(f"❌ موجودی بلوکه شده برای سفارش {order.id} کافی نیست")
+            return
+
+        wallet.blocked_toman -= order.amount_toman
+        wallet.save(update_fields=['blocked_toman'])
+
+        inventory.accessible_balance += weight
+        inventory.save(update_fields=['accessible_balance'])
+
+        GoldTransaction.objects.create(
+            user=order.user,
+            type='BUY',
+            status='COMPLETED',
+            amount_gr=weight,
+            price_per_gram=current_price,
+            fee=fee,
+            commission_percent=fee_rate * 100,
+            commission_amount=fee,
+            total_amount=order.amount_toman,
+            tracking_code=generate_tracking_code('BUY'),
+            description=f"✅ اجرای خودکار سفارش با قیمت {order.target_price} - {order.description or ''}"
+        )
+
+        # ❌ بدون رفرال برای سفارش با قیمت
+
+        order.status = 'EXECUTED'
+        order.executed_price = current_price
+        order.estimated_weight = weight
+        order.save(update_fields=['status', 'executed_price', 'estimated_weight', 'updated_at'])
+
+    else:  # SELL
+        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=order.user)
+
+        if inventory.blocked_balance < order.gold_weight:
+            logger.error(f"❌ موجودی بلوکه شده طلا برای سفارش {order.id} کافی نیست")
+            return
+
+        inventory.blocked_balance -= order.gold_weight
+        inventory.save(update_fields=['blocked_balance'])
+
+        fee_rate = Decimal(str(order.fee_rate))
+        pure_price = (current_price * order.gold_weight).quantize(Decimal("1"))
+        fee = (pure_price * fee_rate).quantize(Decimal("1"))
+        total_price = (pure_price - fee).quantize(Decimal("1"))
+
+        wallet.accessible_toman += total_price
+        wallet.save(update_fields=['accessible_toman'])
+
+        GoldTransaction.objects.create(
+            user=order.user,
+            type='SELL',
+            status='COMPLETED',
+            amount_gr=order.gold_weight,
+            price_per_gram=current_price,
+            fee=fee,
+            commission_percent=fee_rate * 100,
+            commission_amount=fee,
+            total_amount=total_price,
+            tracking_code=generate_tracking_code('SELL'),
+            description=f"✅ اجرای خودکار سفارش با قیمت {order.target_price} - {order.description or ''}"
+        )
+
+        # ❌ بدون رفرال برای سفارش با قیمت
+
+        order.status = 'EXECUTED'
+        order.executed_price = current_price
+        order.save(update_fields=['status', 'executed_price', 'updated_at'])
+        
+        
+
+# def _execute_order(order, current_price):
+#     """
+#     اجرای یک سفارش
+#     """
+#     if order.order_type == 'BUY':
+#         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
+#         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=order.user)
+
+#         fee_rate = Decimal(str(order.fee_rate))
+#         pure_price = (order.amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
+#         fee = (order.amount_toman - pure_price).quantize(Decimal("1"))
+#         weight = (pure_price / current_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+
+#         wallet.blocked_toman -= order.amount_toman
+#         wallet.save(update_fields=['blocked_toman'])
+
+#         inventory.accessible_balance += weight
+#         inventory.save(update_fields=['accessible_balance'])
+
+#         GoldTransaction.objects.create(
+#             user=order.user,
+#             type='BUY',
+#             status='COMPLETED',
+#             amount_gr=weight,
+#             price_per_gram=current_price,
+#             fee=fee,
+#             commission_percent=fee_rate * 100,
+#             commission_amount=fee,
+#             total_amount=order.amount_toman,
+#             tracking_code=generate_tracking_code('BUY'),
+#             description=f"اجرای خودکار سفارش با قیمت {order.target_price} - {order.description or ''}"
+#         )
+
+#         create_referral_profit(
+#             user=order.user,
+#             source_type='GOLD',
+#             transaction_amount=order.amount_toman
+#         )
+
+#         order.status = 'EXECUTED'
+#         order.executed_price = current_price
+#         order.estimated_weight = weight
+#         order.save(update_fields=['status', 'executed_price', 'estimated_weight', 'updated_at'])
+
+#     else:  # SELL
+#         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
+#         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=order.user)
+
+#         inventory.blocked_balance -= order.gold_weight
+#         inventory.save(update_fields=['blocked_balance'])
+
+#         fee_rate = Decimal(str(order.fee_rate))
+#         pure_price = (current_price * order.gold_weight).quantize(Decimal("1"))
+#         fee = (pure_price * fee_rate).quantize(Decimal("1"))
+#         total_price = (pure_price - fee).quantize(Decimal("1"))
+
+#         wallet.accessible_toman += total_price
+#         wallet.save(update_fields=['accessible_toman'])
+
+#         GoldTransaction.objects.create(
+#             user=order.user,
+#             type='SELL',
+#             status='COMPLETED',
+#             amount_gr=order.gold_weight,
+#             price_per_gram=current_price,
+#             fee=fee,
+#             commission_percent=fee_rate * 100,
+#             commission_amount=fee,
+#             total_amount=total_price,
+#             tracking_code=generate_tracking_code('SELL'),
+#             description=f"اجرای خودکار سفارش با قیمت {order.target_price} - {order.description or ''}"
+#         )
+
+#         order.status = 'EXECUTED'
+#         order.executed_price = current_price
+#         order.save(update_fields=['status', 'executed_price', 'updated_at'])
+
+# gold_app/utils.py
+
+def _execute_order(order, current_price):
+    """اجرای یک سفارش با قیمت"""
+    if order.order_type == 'BUY':
+        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=order.user)
+
+        fee_rate = Decimal(str(order.fee_rate))
+        pure_price = (order.amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
+        fee = (order.amount_toman - pure_price).quantize(Decimal("1"))
+        weight = (pure_price / current_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+
+        if wallet.blocked_toman < order.amount_toman:
+            return
 
         wallet.blocked_toman -= order.amount_toman
         wallet.save(update_fields=['blocked_toman'])
@@ -634,11 +940,16 @@ def _execute_order(order, current_price):
             description=f"اجرای خودکار سفارش با قیمت {order.target_price} - {order.description or ''}"
         )
 
-        create_referral_profit(
-            user=order.user,
-            source_type='GOLD',
-            transaction_amount=order.amount_toman
-        )
+        # ✅ فقط این بخش اضافه شده (commission_amount)
+        try:
+            create_referral_profit(
+                user=order.user,
+                source_type='GOLD',
+                transaction_amount=order.amount_toman,
+                commission_amount=fee,  # ✅ اضافه شده
+            )
+        except Exception as e:
+            logger.error(f"❌ خطا در ایجاد پاداش معرفی: {e}")
 
         order.status = 'EXECUTED'
         order.executed_price = current_price
@@ -648,6 +959,193 @@ def _execute_order(order, current_price):
     else:  # SELL
         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=order.user)
+
+        if inventory.blocked_balance < order.gold_weight:
+            return
+
+        inventory.blocked_balance -= order.gold_weight
+        inventory.save(update_fields=['blocked_balance'])
+
+        fee_rate = Decimal(str(order.fee_rate))
+        pure_price = (current_price * order.gold_weight).quantize(Decimal("1"))
+        fee = (pure_price * fee_rate).quantize(Decimal("1"))
+        total_price = (pure_price - fee).quantize(Decimal("1"))
+
+        wallet.accessible_toman += total_price
+        wallet.save(update_fields=['accessible_toman'])
+
+        GoldTransaction.objects.create(
+            user=order.user,
+            type='SELL',
+            status='COMPLETED',
+            amount_gr=order.gold_weight,
+            price_per_gram=current_price,
+            fee=fee,
+            commission_percent=fee_rate * 100,
+            commission_amount=fee,
+            total_amount=total_price,
+            tracking_code=generate_tracking_code('SELL'),
+            description=f"اجرای خودکار سفارش با قیمت {order.target_price} - {order.description or ''}"
+        )
+
+        # ✅ فقط این بخش اضافه شده (commission_amount)
+        try:
+            create_referral_profit(
+                user=order.user,
+                source_type='GOLD',
+                transaction_amount=pure_price,
+                commission_amount=fee,  # ✅ اضافه شده
+            )
+        except Exception as e:
+            logger.error(f"❌ خطا در ایجاد پاداش معرفی: {e}")
+
+        order.status = 'EXECUTED'
+        order.executed_price = current_price
+        order.save(update_fields=['status', 'executed_price', 'updated_at'])
+
+
+# gold_app/utils.py
+
+from decimal import Decimal, ROUND_DOWN
+from django.db import transaction
+from .models import GoldOrder, GoldTransaction, Wallet, GoldInventory
+from accounts.utils import create_referral_profit
+
+
+# def check_and_execute_limit_orders():
+#     """
+#     تابعی که هر دقیقه اجرا میشه و سفارشات در انتظار رو چک میکنه
+#     """
+#     pending_orders = GoldOrder.objects.filter(status='PENDING')
+    
+#     if not pending_orders.exists():
+#         return 0
+    
+#     executed_count = 0
+    
+#     for order in pending_orders:
+#         current_price = get_live_gold_price()
+#         if not current_price:
+#             continue
+        
+#         should_execute = False
+        
+#         if order.order_type == 'BUY':
+#             # ✅ خرید: قیمت فعلی <= قیمت هدف
+#             if current_price <= order.target_price:
+#                 should_execute = True
+#         else:  # SELL
+#             # ✅ فروش: قیمت فعلی >= قیمت هدف
+#             if current_price >= order.target_price:
+#                 should_execute = True
+        
+#         if should_execute:
+#             try:
+#                 with transaction.atomic():
+#                     _execute_order(order, current_price)
+#                     executed_count += 1
+#                     logger.info(f"✅ سفارش {order.id} خودکار اجرا شد - قیمت: {current_price}")
+#             except Exception as e:
+#                 logger.error(f"❌ خطا در اجرای سفارش {order.id}: {e}")
+    
+#     return executed_count
+
+# gold_app/utils.py
+
+# def check_and_execute_limit_orders():
+#     """
+#     تابعی که هر دقیقه اجرا میشه و سفارشات در انتظار رو چک میکنه
+#     """
+#     pending_orders = GoldOrder.objects.filter(status='PENDING')
+    
+#     if not pending_orders.exists():
+#         return 0
+    
+#     executed_count = 0
+    
+#     for order in pending_orders:
+#         current_price = get_live_gold_price()
+#         if not current_price:
+#             continue
+        
+#         should_execute = False
+        
+#         if order.order_type == 'BUY':
+#             if current_price <= order.target_price:
+#                 should_execute = True
+#         else:  # SELL
+#             if current_price >= order.target_price:
+#                 should_execute = True
+        
+#         if should_execute:
+#             try:
+#                 with transaction.atomic():
+#                     _execute_order(order, current_price)
+#                     executed_count += 1
+#                     logger.info(f"✅ سفارش {order.id} خودکار اجرا شد - قیمت: {current_price}")  # ✅ اضافه شده
+#             except Exception as e:
+#                 logger.error(f"❌ خطا در اجرای سفارش {order.id}: {e}")  # ✅ اضافه شده
+    
+#     return executed_count
+
+
+
+
+def _execute_order(order, current_price):
+    """اجرای یک سفارش با قیمت"""
+    if order.order_type == 'BUY':
+        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=order.user)
+
+        fee_rate = Decimal(str(order.fee_rate))
+        pure_price = (order.amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
+        fee = (order.amount_toman - pure_price).quantize(Decimal("1"))
+        weight = (pure_price / current_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+
+        if wallet.blocked_toman < order.amount_toman:
+            return
+
+        wallet.blocked_toman -= order.amount_toman
+        wallet.save(update_fields=['blocked_toman'])
+
+        inventory.accessible_balance += weight
+        inventory.save(update_fields=['accessible_balance'])
+
+        GoldTransaction.objects.create(
+            user=order.user,
+            type='BUY',
+            status='COMPLETED',
+            amount_gr=weight,
+            price_per_gram=current_price,
+            fee=fee,
+            commission_percent=fee_rate * 100,
+            commission_amount=fee,
+            total_amount=order.amount_toman,
+            tracking_code=generate_tracking_code('BUY'),
+            description=f"اجرای خودکار سفارش با قیمت {order.target_price} - {order.description or ''}"
+        )
+
+        # ✅ ایجاد سود رفرال
+        try:
+            create_referral_profit(
+                user=order.user,
+                source_type='GOLD',
+                transaction_amount=order.amount_toman
+            )
+        except Exception as e:
+            print(f"❌ خطا در ایجاد پاداش معرفی: {e}")
+
+        order.status = 'EXECUTED'
+        order.executed_price = current_price
+        order.estimated_weight = weight
+        order.save(update_fields=['status', 'executed_price', 'estimated_weight', 'updated_at'])
+
+    else:  # SELL
+        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=order.user)
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=order.user)
+
+        if inventory.blocked_balance < order.gold_weight:
+            return
 
         inventory.blocked_balance -= order.gold_weight
         inventory.save(update_fields=['blocked_balance'])
@@ -677,11 +1175,6 @@ def _execute_order(order, current_price):
         order.status = 'EXECUTED'
         order.executed_price = current_price
         order.save(update_fields=['status', 'executed_price', 'updated_at'])
-
-
-
-
-
 
 
 

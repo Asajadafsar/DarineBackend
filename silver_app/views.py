@@ -17,6 +17,7 @@ from admin_panel.models import SilverAnnouncement, SilverAnnouncementRead, Silve
 from admin_panel.serializers import SilverAnnouncementSerializer, SilverBannerSerializer
 from admin_panel.utils import create_admin_log
 from gold_app.models import GoldInventory, Wallet
+from gold_app.utils import get_live_gold_price
 
 from .models import (
     SilverOrderStatusHistory,
@@ -395,7 +396,7 @@ class BuySilverAPIView(APIView):
 
 
 # =========================================================
-# SELL SILVER CALCULATE API VIEW - اصلاح شده ✅
+# SELL SILVER CALCULATE API VIEW -
 # =========================================================
 
 class SellSilverCalculateAPIView(APIView):
@@ -507,6 +508,9 @@ class SellSilverCalculateAPIView(APIView):
 # =========================================================
 # SELL SILVER API VIEW - اصلاح شده بدون تغییر error_response ✅
 # =========================================================
+# =========================================================
+# SELL SILVER API VIEW - اصلاح شده ✅
+# =========================================================
 
 class SellSilverAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -528,14 +532,13 @@ class SellSilverAPIView(APIView):
         )
 
         if not serializer.is_valid():
-            # ✅ گرفتن اولین خطا و ارسال به صورت message
+            # گرفتن اولین خطا
             first_error = None
             for field, errors in serializer.errors.items():
                 if errors:
                     if isinstance(errors, list):
                         first_error = errors[0]
                     elif isinstance(errors, dict):
-                        # برای خطاهای nested
                         for sub_errors in errors.values():
                             if sub_errors and isinstance(sub_errors, list):
                                 first_error = sub_errors[0]
@@ -553,7 +556,9 @@ class SellSilverAPIView(APIView):
 
         user = request.user
         final_weight = serializer.validated_data["final_weight"]
-        final_amount = serializer.validated_data["final_amount"]
+        
+        # ✅ اصلاح: استفاده از total_toman به جای final_amount
+        total_toman = serializer.validated_data["total_toman"]  # مبلغ دریافتی کاربر
         fee = serializer.validated_data["fee"]
         fee_rate = serializer.validated_data["fee_rate"]
         pure_value = serializer.validated_data["pure_value"]
@@ -594,7 +599,7 @@ class SellSilverAPIView(APIView):
             fee=fee,
             commission_percent=(fee_rate * Decimal("100")),
             commission_amount=fee,
-            total_amount=final_amount,
+            total_amount=total_toman,  # ✅ مبلغ دریافتی کاربر
             tracking_code=generate_tracking_code("SSELL"),
         )
 
@@ -613,7 +618,7 @@ class SellSilverAPIView(APIView):
 کاربر: {user.mobile}
 وزن فروخته شده: {final_weight} گرم
 ارزش خالص: {pure_value}
-مبلغ خالص واریزی پس از کسر کارمزد: {final_amount} تومان
+مبلغ خالص واریزی پس از کسر کارمزد: {total_toman} تومان
 کارمزد کسر شده: {fee} تومان
 موجودی نقره بلوکه شده فعلی: {inventory.blocked_balance} گرم
 """,
@@ -630,11 +635,13 @@ class SellSilverAPIView(APIView):
                 "pure_silver_price": float(pure_value),
                 "fee": float(fee),
                 "fee_rate": float(fee_rate),
-                "final_amount": float(final_amount),
+                "final_amount": float(total_toman),  # ✅ برای سازگاری با فرانت
                 "accessible_silver": float(inventory.accessible_balance),
                 "blocked_silver": float(inventory.blocked_balance),
             },
         )
+
+
 
 
 # =========================================================
@@ -1434,42 +1441,6 @@ from rest_framework.permissions import IsAuthenticated
 from accounts.models import ReferralEarning, ReferralSetting
 from accounts.utils import success_response
 
-# class SilverReferralInfoAPIView(APIView):
-
-#     permission_classes = [IsAuthenticated]
-
-#     def get(self, request):
-
-#         earnings = ReferralEarning.objects.filter(
-#             referrer=request.user,
-#             source_type="SILVER",
-#         )
-
-#         total_profit = earnings.aggregate(
-#             total=Sum("profit")
-#         )["total"] or 0
-
-#         total_transactions = earnings.aggregate(
-#             total=Sum("transaction_amount")
-#         )["total"] or 0
-
-#         # ✅ دریافت یا ایجاد تنظیمات رفرال
-#         setting, _ = ReferralSetting.objects.get_or_create(
-#             defaults={'commission_percent': 20}
-#         )
-
-#         return success_response(
-#             message="اطلاعات رفرال نقره",
-#             data={
-#                 "referral_code": request.user.referral_code,
-#                 "referral_percent": float(setting.commission_percent),
-#                 "total_silver_sales": float(total_transactions),
-#                 "total_earnings": float(total_profit),
-#                 "referrals_count": earnings.count(),
-#                 "wallet_type": "SILVER",
-#             }
-#         )
-
 
 # =========================================================
 # SILVER PRODUCT CATEGORIES
@@ -2122,7 +2093,6 @@ from rest_framework.permissions import IsAuthenticated
 # SILVER ASSET VALUE
 # =========================================================
 
-
 class SilverAssetValueAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -2131,6 +2101,7 @@ class SilverAssetValueAPIView(APIView):
 
         user = request.user
 
+        # ✅ کیف پول نقره
         wallet = (
             SilverWallet.objects.only(
                 "accessible_toman",
@@ -2150,26 +2121,61 @@ class SilverAssetValueAPIView(APIView):
         )
 
         # =====================================================
-        # Wallet
+        # دریافت اطلاعات طلا برای نمایش
+        # =====================================================
+        
+        gold_inventory = (
+            GoldInventory.objects.only(
+                "accessible_balance",
+                "blocked_balance",
+            )
+            .filter(user=user)
+            .first()
+        )
+
+        gold_wallet = (
+            Wallet.objects.only(
+                "accessible_toman",
+                "blocked_toman",
+            )
+            .filter(user=user)
+            .first()
+        )
+
+        # =====================================================
+        # ✅ Wallet (همون فرمول Statistics)
         # =====================================================
 
-        wallet_balance = wallet.accessible_toman if wallet else Decimal("0")
+        accessible_toman = wallet.accessible_toman if wallet else Decimal("0")
+        blocked_toman = wallet.blocked_toman if wallet else Decimal("0")
+        wallet_balance = accessible_toman + blocked_toman  # ✅ 21,319,990
 
         # =====================================================
         # Silver
         # =====================================================
 
-        silver_balance = (
-            (inventory.accessible_balance + inventory.blocked_balance)
-            if inventory
-            else Decimal("0")
-        )
+        silver_accessible = inventory.accessible_balance if inventory else Decimal("0")
+        silver_blocked = inventory.blocked_balance if inventory else Decimal("0")
+        silver_balance = silver_accessible + silver_blocked
+
+        # =====================================================
+        # Gold (برای نمایش)
+        # =====================================================
+
+        gold_accessible = gold_inventory.accessible_balance if gold_inventory else Decimal("0")
+        gold_blocked = gold_inventory.blocked_balance if gold_inventory else Decimal("0")
+        gold_balance = gold_accessible + gold_blocked
+
+        gold_accessible_toman = gold_wallet.accessible_toman if gold_wallet else Decimal("0")
+        gold_blocked_toman = gold_wallet.blocked_toman if gold_wallet else Decimal("0")
+        gold_wallet_total = gold_accessible_toman + gold_blocked_toman
 
         # =====================================================
         # Prices
         # =====================================================
 
         silver_price = get_live_silver_price() or Decimal("0")
+        gold_price = get_live_gold_price() or Decimal("0")
 
         # =====================================================
         # دریافت نرخ کارمزد کاربر
@@ -2180,25 +2186,29 @@ class SilverAssetValueAPIView(APIView):
         if user_fee:
             silver_buy_fee = user_fee.silver_buy_fee
             silver_sell_fee = user_fee.silver_sell_fee
+            gold_buy_fee = user_fee.gold_buy_fee
+            gold_sell_fee = user_fee.gold_sell_fee
         else:
             setting = FeeSetting.objects.last()
             if setting:
                 silver_buy_fee = setting.silver_buy_fee
                 silver_sell_fee = setting.silver_sell_fee
+                gold_buy_fee = setting.gold_buy_fee
+                gold_sell_fee = setting.gold_sell_fee
             else:
                 silver_buy_fee = Decimal("0.01")
                 silver_sell_fee = Decimal("0.01")
+                gold_buy_fee = Decimal("0.01")
+                gold_sell_fee = Decimal("0.01")
 
         # =====================================================
-        # Asset Values
+        # ✅ Asset Values (همون Statistics نقره)
         # =====================================================
 
         silver_asset_value = silver_balance * silver_price
+        gold_asset_value = gold_balance * gold_price
 
-        gold_balance = Decimal("0")
-        gold_price = Decimal("0")
-        gold_asset_value = Decimal("0")
-
+        # ✅ کل دارایی = موجودی کیف پول نقره (accessible + blocked) + ارزش نقره
         total_asset_value = wallet_balance + silver_asset_value
 
         # =====================================================
@@ -2209,26 +2219,59 @@ class SilverAssetValueAPIView(APIView):
         silver_price_with_sell_fee = silver_price * (1 - silver_sell_fee)
 
         # =====================================================
+        # قیمت طلا با احتساب کارمزد خرید و فروش
+        # =====================================================
+
+        gold_price_with_buy_fee = gold_price * (1 + gold_buy_fee)
+        gold_price_with_sell_fee = gold_price * (1 - gold_sell_fee)
+
+        # =====================================================
         # Response
         # =====================================================
 
         return Response(
             {
+                # ✅ اینجا باید برابر با total_assets از Statistics باشه
                 "total_asset_value": round(total_asset_value),
+                
+                "wallet_balance": round(accessible_toman),
+                "wallet_blocked": round(blocked_toman),
+                "wallet_accessible": round(accessible_toman),
+                
+                # نقره
+                "silver_accessible": float(silver_accessible),
+                "silver_blocked": float(silver_blocked),
                 "silver_balance": float(silver_balance),
-                "wallet_balance": round(wallet_balance),
                 "silver_asset_value": round(silver_asset_value),
                 "silver_price": round(silver_price),
-                "fees": {
-                    "silver_buy_fee": float(silver_buy_fee * 100),
-                    "silver_sell_fee": float(silver_sell_fee * 100),
-                },
                 "silver_price_with_fees": {
                     "buy": round(silver_price_with_buy_fee),
                     "sell": round(silver_price_with_sell_fee),
                 },
+                
+                # طلا (فقط برای نمایش)
+                "gold_accessible": float(gold_accessible),
+                "gold_blocked": float(gold_blocked),
+                "gold_balance": float(gold_balance),
+                "gold_asset_value": round(gold_asset_value),
+                "gold_wallet_balance": round(gold_accessible_toman),
+                "gold_wallet_blocked": round(gold_blocked_toman),
+                "gold_wallet_total": round(gold_wallet_total),
+                "gold_price": round(gold_price),
+                "gold_price_with_fees": {
+                    "buy": round(gold_price_with_buy_fee),
+                    "sell": round(gold_price_with_sell_fee),
+                },
+                
+                "fees": {
+                    "silver_buy_fee": float(silver_buy_fee * 100),
+                    "silver_sell_fee": float(silver_sell_fee * 100),
+                    "gold_buy_fee": float(gold_buy_fee * 100),
+                    "gold_sell_fee": float(gold_sell_fee * 100),
+                },
             }
         )
+
 
 
 from .utils import get_silver_bubble
@@ -2737,6 +2780,8 @@ class SilverLimitOrderCancelAPIView(APIView):
         )
 
 
+# silver_app/views.py
+
 class SilverLimitOrderExecuteAPIView(APIView):
     """اجرای خودکار سفارش با قیمت نقره"""
     permission_classes = [IsAuthenticated]
@@ -2799,11 +2844,7 @@ class SilverLimitOrderExecuteAPIView(APIView):
                 description=f"اجرای خودکار سفارش با قیمت نقره {order.target_price} - {order.description or ''}"
             )
 
-            create_referral_profit(
-                user=user,
-                source_type='SILVER',
-                transaction_amount=order.amount_toman
-            )
+            # ❌ بدون رفرال برای نقره
 
             order.status = 'EXECUTED'
             order.executed_price = current_price
@@ -2842,6 +2883,8 @@ class SilverLimitOrderExecuteAPIView(APIView):
                 description=f"اجرای خودکار سفارش با قیمت نقره {order.target_price} - {order.description or ''}"
             )
 
+            # ❌ بدون رفرال برای نقره
+
             order.status = 'EXECUTED'
             order.executed_price = current_price
             order.save(update_fields=['status', 'executed_price', 'updated_at'])
@@ -2858,100 +2901,349 @@ class SilverLimitOrderExecuteAPIView(APIView):
             }
         )
 
+# silver_app/views.py
 
 class SilverLimitOrderUpdateAPIView(APIView):
-    """ویرایش سفارش با قیمت نقره"""
+    """
+    ویرایش سفارش با قیمت نقره (فقط در حالت PENDING)
+    """
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
-    def put(self, request, pk):
+    def put(self, request, pk):  # ✅ تغییر از patch به put
         user = request.user
         order = get_object_or_404(SilverLimitOrder, pk=pk, user=user)
 
+        # ✅ فقط سفارشات در انتظار قابل ویرایش هستند
         if order.status != 'PENDING':
             return error_response(
-                message=f"سفارش در وضعیت {order.get_status_display()} قابل ویرایش نیست"
+                message=f"سفارش در وضعیت {order.get_status_display()} قابل ویرایش نیست. فقط سفارشات در انتظار (PENDING) قابل ویرایش هستند."
             )
 
+        # ✅ دریافت تمام فیلدهای مورد نیاز برای PUT
         new_amount_toman = request.data.get('amount_toman')
         new_silver_weight = request.data.get('silver_weight')
         new_target_price = request.data.get('target_price')
 
-        if not new_amount_toman and not new_silver_weight and not new_target_price:
-            return error_response(
-                message="حداقل یکی از فیلدهای amount_toman، silver_weight یا target_price را وارد کنید"
-            )
+        # ✅ اعتبارسنجی وجود تمام فیلدها (برای PUT همه فیلدها الزامی است)
+        if order.order_type == 'BUY':
+            if not new_amount_toman or not new_target_price:
+                return error_response(
+                    message="برای سفارش خرید، فیلدهای amount_toman و target_price الزامی هستند"
+                )
+        else:  # SELL
+            if not new_silver_weight or not new_target_price:
+                return error_response(
+                    message="برای سفارش فروش، فیلدهای silver_weight و target_price الزامی هستند"
+                )
+
+        current_price = get_live_silver_price()
+        if not current_price:
+            return error_response("خطا در دریافت قیمت لحظه‌ای نقره")
+        current_price = Decimal(str(current_price))
+
+        # =============================================
+        # اعتبارسنجی قیمت مد نظر
+        # =============================================
+        new_target_price = Decimal(str(new_target_price)).quantize(Decimal("1"))
+        if new_target_price <= 0:
+            return error_response("قیمت مد نظر باید بزرگتر از صفر باشد")
 
         if order.order_type == 'BUY':
-            if new_amount_toman:
-                new_amount_toman = Decimal(str(new_amount_toman)).quantize(Decimal("1"))
-                wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
-                
-                diff = new_amount_toman - order.amount_toman
-                
-                if diff > 0:
-                    if wallet.accessible_toman < diff:
-                        return error_response("موجودی کیف پول نقره برای افزایش مبلغ کافی نیست")
-                    wallet.accessible_toman -= diff
-                    wallet.blocked_toman += diff
-                    wallet.save(update_fields=['accessible_toman', 'blocked_toman'])
-                elif diff < 0:
-                    diff_abs = abs(diff)
-                    if wallet.blocked_toman < diff_abs:
-                        return error_response("مغایرت در موجودی بلوکه شده")
-                    wallet.blocked_toman -= diff_abs
-                    wallet.accessible_toman += diff_abs
-                    wallet.save(update_fields=['accessible_toman', 'blocked_toman'])
-                
-                order.amount_toman = new_amount_toman
-                
-            if new_target_price:
-                new_target_price = Decimal(str(new_target_price)).quantize(Decimal("1"))
-                if new_target_price <= 0:
-                    return error_response("قیمت مد نظر باید بزرگتر از صفر باشد")
-                order.target_price = new_target_price
-            
+            if new_target_price > current_price:
+                return error_response(
+                    message=f"قیمت هدف خرید ({new_target_price:,}) باید کمتر یا مساوی قیمت لحظه‌ای ({current_price:,}) باشد"
+                )
+        else:  # SELL
+            if new_target_price < current_price:
+                return error_response(
+                    message=f"قیمت هدف فروش ({new_target_price:,}) باید بیشتر یا مساوی قیمت لحظه‌ای ({current_price:,}) باشد"
+                )
+
+        # =============================================
+        # ویرایش مبلغ خرید (BUY)
+        # =============================================
+        if order.order_type == 'BUY':
+            new_amount_toman = Decimal(str(new_amount_toman)).quantize(Decimal("1"))
+
+            if new_amount_toman <= 0:
+                return error_response("مبلغ باید بزرگتر از صفر باشد")
+
+            wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
+
+            # ✅ محاسبه تفاوت بین مبلغ جدید و قدیمی
+            diff = new_amount_toman - order.amount_toman
+
+            if diff > 0:
+                # افزایش مبلغ - نیاز به موجودی بیشتر
+                if wallet.accessible_toman < diff:
+                    return error_response(
+                        message=f"موجودی کیف پول شما ({wallet.accessible_toman:,}) برای افزایش مبلغ کافی نیست. مبلغ مورد نیاز: {diff:,}"
+                    )
+
+                wallet.accessible_toman -= diff
+                wallet.blocked_toman += diff
+
+            elif diff < 0:
+                # کاهش مبلغ - آزادسازی موجودی بلوکه شده
+                diff_abs = abs(diff)
+                if wallet.blocked_toman < diff_abs:
+                    return error_response("مغایرت در موجودی بلوکه شده")
+
+                wallet.blocked_toman -= diff_abs
+                wallet.accessible_toman += diff_abs
+
+            wallet.save(update_fields=['accessible_toman', 'blocked_toman', 'updated_at'])
+
+            # ✅ به‌روزرسانی مقادیر سفارش
+            order.amount_toman = new_amount_toman
+            order.target_price = new_target_price
+
+            # ✅ محاسبه مجدد وزن تخمینی
             fee_rate = Decimal(str(order.fee_rate))
             pure_price = (order.amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
             estimated_weight = (pure_price / order.target_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
             order.estimated_weight = max(estimated_weight, Decimal("0.001"))
 
+        # =============================================
+        # ویرایش وزن فروش (SELL)
+        # =============================================
         else:  # SELL
-            if new_silver_weight:
-                new_silver_weight = Decimal(str(new_silver_weight)).quantize(Decimal("0.001"))
-                inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
-                
-                diff = new_silver_weight - order.silver_weight
-                
-                if diff > 0:
-                    if inventory.accessible_balance < diff:
-                        return error_response("موجودی نقره برای افزایش وزن کافی نیست")
-                    inventory.accessible_balance -= diff
-                    inventory.blocked_balance += diff
-                    inventory.save(update_fields=['accessible_balance', 'blocked_balance'])
-                elif diff < 0:
-                    diff_abs = abs(diff)
-                    if inventory.blocked_balance < diff_abs:
-                        return error_response("مغایرت در موجودی بلوکه شده نقره")
-                    inventory.blocked_balance -= diff_abs
-                    inventory.accessible_balance += diff_abs
-                    inventory.save(update_fields=['accessible_balance', 'blocked_balance'])
-                
-                order.silver_weight = new_silver_weight
-                order.estimated_weight = new_silver_weight
-                
-            if new_target_price:
-                new_target_price = Decimal(str(new_target_price)).quantize(Decimal("1"))
-                if new_target_price <= 0:
-                    return error_response("قیمت مد نظر باید بزرگتر از صفر باشد")
-                order.target_price = new_target_price
+            new_silver_weight = Decimal(str(new_silver_weight)).quantize(Decimal("0.001"))
 
+            if new_silver_weight <= 0:
+                return error_response("وزن باید بزرگتر از صفر باشد")
+
+            inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
+
+            # ✅ محاسبه تفاوت بین وزن جدید و قدیمی
+            diff = new_silver_weight - order.silver_weight
+
+            if diff > 0:
+                # افزایش وزن - نیاز به موجودی بیشتر
+                if inventory.accessible_balance < diff:
+                    return error_response(
+                        message=f"موجودی نقره شما ({inventory.accessible_balance:,}) گرم برای افزایش وزن کافی نیست. وزن مورد نیاز: {diff:,} گرم"
+                    )
+
+                inventory.accessible_balance -= diff
+                inventory.blocked_balance += diff
+
+            elif diff < 0:
+                # کاهش وزن - آزادسازی موجودی بلوکه شده
+                diff_abs = abs(diff)
+                if inventory.blocked_balance < diff_abs:
+                    return error_response("مغایرت در موجودی بلوکه شده نقره")
+
+                inventory.blocked_balance -= diff_abs
+                inventory.accessible_balance += diff_abs
+
+            inventory.save(update_fields=['accessible_balance', 'blocked_balance', 'updated_at'])
+
+            # ✅ به‌روزرسانی مقادیر سفارش
+            order.silver_weight = new_silver_weight
+            order.target_price = new_target_price
+            order.estimated_weight = new_silver_weight
+
+            # ✅ محاسبه مجدد amount_toman بر اساس target_price و silver_weight
+            fee_rate = Decimal(str(order.fee_rate))
+            pure_price = (order.target_price * order.silver_weight).quantize(Decimal("1"))
+            order.amount_toman = pure_price
+
+        order.updated_at = timezone.now()
         order.save(update_fields=[
-            'amount_toman', 'silver_weight', 'target_price',
-            'estimated_weight', 'description', 'updated_at'
+            'amount_toman',
+            'silver_weight',
+            'target_price',
+            'estimated_weight',
+            'updated_at'
         ])
 
         return success_response(
             message="سفارش با موفقیت ویرایش شد",
             data=SilverOrderListSerializer(order).data
+        ) 
+        
+        
+# silver_app/views.py
+
+from decimal import Decimal, ROUND_DOWN
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
+
+from .models import SilverWallet, SilverInventory
+from .utils import get_live_silver_price, success_response, error_response
+# =========================================================
+# 1️⃣ باکس تایید خرید سفارش با قیمت نقره
+# =========================================================
+
+class SilverLimitOrderBuyConfirmAPIView(APIView):
+    """
+    باکس تایید خرید سفارش با قیمت نقره
+    دریافت: قیمت مد نظر و مبلغ از کاربر
+    محاسبه: وزن، کارمزد، بررسی موجودی
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+
+        # ✅ دریافت قیمت لحظه‌ای نقره
+        current_price = get_live_silver_price()
+        if not current_price:
+            return error_response(
+                message="خطا در دریافت قیمت نقره",
+                status_code=500,
+            )
+
+        # ✅ دریافت پارامترها از کاربر
+        target_price = request.data.get('target_price')
+        amount_toman = request.data.get('amount_toman')
+        fee_rate = request.data.get('fee_rate', Decimal("0.01"))
+
+        # ✅ اعتبارسنجی
+        if not target_price:
+            return error_response(message="قیمت مد نظر الزامی است.")
+        if not amount_toman:
+            return error_response(message="مبلغ خرید الزامی است.")
+
+        try:
+            target_price = Decimal(str(target_price)).quantize(Decimal("1"))
+            amount_toman = Decimal(str(amount_toman)).quantize(Decimal("1"))
+            fee_rate = Decimal(str(fee_rate))
+        except Exception:
+            return error_response(message="مقادیر وارد شده نامعتبر است.")
+
+        if target_price <= 0:
+            return error_response(message="قیمت مد نظر باید بزرگتر از صفر باشد.")
+        if amount_toman <= 0:
+            return error_response(message="مبلغ باید بزرگتر از صفر باشد.")
+        if fee_rate < 0 or fee_rate > 1:
+            return error_response(message="نرخ کارمزد باید بین 0 تا 1 باشد.")
+
+        # ✅ بررسی شرط قیمت مد نظر (باید کمتر یا مساوی قیمت لحظه‌ای باشد)
+        if target_price > current_price:
+            return error_response(
+                message=f"قیمت مد نظر ({target_price:,}) باید کمتر یا مساوی قیمت لحظه‌ای ({current_price:,}) باشد."
+            )
+
+        # ✅ محاسبات
+        pure_price = (amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
+        fee = (amount_toman - pure_price).quantize(Decimal("1"))
+        silver_weight = (pure_price / target_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+        silver_weight = max(silver_weight, Decimal("0.001"))
+
+        # ✅ بررسی موجودی کیف پول نقره
+        wallet, _ = SilverWallet.objects.get_or_create(user=user)
+        enough_balance = wallet.accessible_toman >= amount_toman
+
+        # ✅ محاسبه موجودی پس از خرید
+        remaining_toman = wallet.accessible_toman - amount_toman
+
+        return success_response(
+            message="محاسبه خرید سفارش با قیمت نقره",
+            data={
+                "order_type": "BUY",
+                "current_price": float(current_price),
+                "target_price": float(target_price),
+                "silver_weight": float(silver_weight),
+                "fee_rate": float(fee_rate * 100),
+                "fee": float(fee),
+                "pure_price": float(pure_price),
+                "total_price": float(amount_toman),
+                "enough_balance": enough_balance,
+                "wallet": {
+                    "accessible_toman": float(wallet.accessible_toman),
+                    "blocked_toman": float(wallet.blocked_toman),
+                    "remaining_toman": float(max(Decimal("0"), remaining_toman)),
+                },
+            }
+        )
+
+
+# =========================================================
+# 2️⃣ باکس تایید فروش سفارش با قیمت نقره
+# =========================================================
+
+class SilverLimitOrderSellConfirmAPIView(APIView):
+    """
+    باکس تایید فروش سفارش با قیمت نقره
+    دریافت: قیمت مد نظر و وزن از کاربر
+    محاسبه: مبلغ، کارمزد، بررسی موجودی
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+
+        # ✅ دریافت قیمت لحظه‌ای نقره
+        current_price = get_live_silver_price()
+        if not current_price:
+            return error_response(
+                message="خطا در دریافت قیمت نقره",
+                status_code=500,
+            )
+
+        # ✅ دریافت پارامترها از کاربر
+        target_price = request.data.get('target_price')
+        silver_weight = request.data.get('silver_weight')
+        fee_rate = request.data.get('fee_rate', Decimal("0.01"))
+
+        # ✅ اعتبارسنجی
+        if not target_price:
+            return error_response(message="قیمت مد نظر الزامی است.")
+        if not silver_weight:
+            return error_response(message="وزن نقره الزامی است.")
+
+        try:
+            target_price = Decimal(str(target_price)).quantize(Decimal("1"))
+            silver_weight = Decimal(str(silver_weight)).quantize(Decimal("0.001"))
+            fee_rate = Decimal(str(fee_rate))
+        except Exception:
+            return error_response(message="مقادیر وارد شده نامعتبر است.")
+
+        if target_price <= 0:
+            return error_response(message="قیمت مد نظر باید بزرگتر از صفر باشد.")
+        if silver_weight <= 0:
+            return error_response(message="وزن باید بزرگتر از صفر باشد.")
+        if fee_rate < 0 or fee_rate > 1:
+            return error_response(message="نرخ کارمزد باید بین 0 تا 1 باشد.")
+
+        # ✅ بررسی شرط قیمت مد نظر (باید بیشتر یا مساوی قیمت لحظه‌ای باشد)
+        if target_price < current_price:
+            return error_response(
+                message=f"قیمت مد نظر ({target_price:,}) باید بیشتر یا مساوی قیمت لحظه‌ای ({current_price:,}) باشد."
+            )
+
+        # ✅ محاسبات
+        pure_price = (target_price * silver_weight).quantize(Decimal("1"))
+        fee = (pure_price * fee_rate).quantize(Decimal("1"))
+        total_price = (pure_price - fee).quantize(Decimal("1"))
+
+        # ✅ بررسی موجودی نقره
+        inventory, _ = SilverInventory.objects.get_or_create(user=user)
+        enough_balance = inventory.accessible_balance >= silver_weight
+
+        # ✅ محاسبه موجودی پس از فروش
+        remaining_weight = inventory.accessible_balance - silver_weight
+
+        return success_response(
+            message="محاسبه فروش سفارش با قیمت نقره",
+            data={
+                "order_type": "SELL",
+                "current_price": float(current_price),
+                "target_price": float(target_price),
+                "silver_weight": float(silver_weight),
+                "fee_rate": float(fee_rate * 100),
+                "fee": float(fee),
+                "pure_price": float(pure_price),
+                "total_price": float(total_price),
+                "enough_balance": enough_balance,
+                "inventory": {
+                    "accessible_balance": float(inventory.accessible_balance),
+                    "blocked_balance": float(inventory.blocked_balance),
+                    "remaining_balance": float(max(Decimal("0"), remaining_weight)),
+                },
+            }
         )

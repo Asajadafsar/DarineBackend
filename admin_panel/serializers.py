@@ -81,23 +81,40 @@ import jdatetime
 from rest_framework import serializers
 
 
+# admin_panel/serializers.py
+
 class AdminUserListSerializer(serializers.ModelSerializer):
-
+    """
+    سریالایزر لیست کاربران برای ادمین
+    """
     created_at = serializers.DateTimeField(source="date_joined", read_only=True)
-
     birth_date = serializers.SerializerMethodField()
+    referral_profit = serializers.SerializerMethodField()
+    referral_count = serializers.SerializerMethodField()  # ✅ تعداد کاربران دعوت شده
+    
 
     class Meta:
         model = User
         exclude = ["password"]
 
     def get_birth_date(self, obj):
-
         if not obj.birth_date:
             return None
-
         return jdatetime.date.fromgregorian(date=obj.birth_date).strftime("%Y/%m/%d")
 
+    def get_referral_profit(self, obj):
+        """مجموع سود رفرال"""
+        total = ReferralEarning.objects.filter(
+            referrer=obj
+        ).aggregate(total=Sum('profit'))
+        return float(total.get('total', 0) or 0)
+
+    def get_referral_count(self, obj):
+        """✅ تعداد کاربرانی که این کاربر دعوت کرده (منحصر به فرد)"""
+        return User.objects.filter(referred_by=obj).count()
+    
+    
+    
 
 from rest_framework import serializers
 import jdatetime
@@ -177,6 +194,8 @@ class AdminUserListSerializer(serializers.ModelSerializer):
         return ReferralEarning.objects.filter(referrer=obj).count()
 
 
+# admin_panel/serializers.py
+
 class AdminUserDetailSerializer(serializers.ModelSerializer):
     """
     سریالایزر جزئیات کاربر برای ادمین
@@ -184,13 +203,14 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(source="date_joined", read_only=True)
     birth_date = serializers.SerializerMethodField()
     balances = serializers.SerializerMethodField()
-
-    # ✅ رفرال کلی (طلا و نقره با هم)
+    
+    # ✅ رفرال
     referral_profit = serializers.SerializerMethodField()
-    referral_count = serializers.SerializerMethodField()
+    referral_count = serializers.SerializerMethodField()  # ✅ تعداد کاربران دعوت شده
     referral_earnings = serializers.SerializerMethodField()
-
-    # ✅ تنظیمات کارمزد و رفرال کلی
+    referral_percent = serializers.SerializerMethodField()
+    
+    # ✅ تنظیمات کارمزد
     fee_settings = serializers.SerializerMethodField()
 
     class Meta:
@@ -200,9 +220,7 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
     def get_birth_date(self, obj):
         if not obj.birth_date:
             return None
-        return jdatetime.date.fromgregorian(
-            date=obj.birth_date
-        ).strftime("%Y/%m/%d")
+        return jdatetime.date.fromgregorian(date=obj.birth_date).strftime("%Y/%m/%d")
 
     def get_balances(self, obj):
         gold_wallet = Wallet.objects.filter(user=obj).first()
@@ -230,7 +248,7 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
         }
 
     # =========================================================
-    # ✅ رفرال کلی (طلا و نقره یکجا)
+    # ✅ رفرال
     # =========================================================
 
     def get_referral_profit(self, obj):
@@ -241,8 +259,8 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
         return float(total.get('total', 0) or 0)
 
     def get_referral_count(self, obj):
-        """تعداد کل سودهای رفرال (طلا + نقره)"""
-        return ReferralEarning.objects.filter(referrer=obj).count()
+        """✅ تعداد کاربرانی که این کاربر دعوت کرده (منحصر به فرد)"""
+        return User.objects.filter(referred_by=obj).count()
 
     def get_referral_earnings(self, obj):
         """لیست آخرین سودهای رفرال (طلا و نقره با هم)"""
@@ -258,6 +276,7 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
                 "source_type": e.get_source_type_display(),
                 "source_type_raw": e.source_type,
                 "transaction_amount": float(e.transaction_amount),
+                "commission_amount": float(e.commission_amount),
                 "commission_percent": float(e.commission_percent),
                 "profit": float(e.profit),
                 "created_at": e.created_at.strftime("%Y-%m-%d %H:%M:%S"),
@@ -265,8 +284,31 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
             for e in earnings
         ]
 
+    def get_referral_percent(self, obj):
+        """دریافت درصد رفرال اختصاصی کاربر"""
+        from django.core.cache import cache
+        from accounts.models import ReferralSetting
+        
+        cache_key = f"user_referral_percent_{obj.id}"
+        cached_percent = cache.get(cache_key)
+        
+        if cached_percent is not None:
+            return float(cached_percent)
+        
+        # اگر در Cache نبود، از آخرین سود ثبت شده استفاده کن
+        latest_earning = ReferralEarning.objects.filter(
+            referrer=obj
+        ).order_by('-created_at').first()
+        
+        if latest_earning:
+            return float(latest_earning.commission_percent)
+        
+        # در غیر این صورت از تنظیمات عمومی
+        setting = ReferralSetting.objects.first()
+        return float(setting.commission_percent) if setting else 20.0
+
     # =========================================================
-    # ✅ تنظیمات کارمزد و رفرال کلی
+    # ✅ تنظیمات کارمزد و رفرال
     # =========================================================
 
     def get_fee_settings(self, obj):
@@ -279,7 +321,7 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
                 "gold_sell_fee": 0.01,
                 "silver_buy_fee": 0.01,
                 "silver_sell_fee": 0.01,
-                "referral_percent": 20.0,  # ✅ کلی
+                "referral_percent": 20.0,
             }
 
         return {
@@ -287,10 +329,11 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
             "gold_sell_fee": float(setting.gold_sell_fee),
             "silver_buy_fee": float(setting.silver_buy_fee),
             "silver_sell_fee": float(setting.silver_sell_fee),
-            "referral_percent": float(setting.gold_referral_percent or 20.0),  # ✅ کلی
+            "referral_percent": float(setting.gold_referral_percent or 20.0),
             "updated_at": setting.updated_at.strftime("%Y-%m-%d %H:%M:%S"),
         }
-
+        
+        
 
 class AdminUserUpdateSerializer(serializers.ModelSerializer):
     """
@@ -328,16 +371,29 @@ class UserFeeUpdateSerializer(serializers.ModelSerializer):
             'silver_buy_fee',
             'silver_sell_fee',
         ]
+
+
+
+
+
+
+
+# admin_panel/serializers.py
+
 from rest_framework import serializers
+
+
 class UserTransactionSerializer(serializers.Serializer):
 
     SOURCE_CHOICES = (
         ("GOLD_WALLET", "کیف پول طلا"),
         ("GOLD", "خرید و فروش طلا"),
         ("GOLD_ORDER", "سفارش فیزیکی طلا"),
+        ("GOLD_LIMIT_ORDER", "سفارش با قیمت طلا"),  # ✅ اضافه شد
         ("SILVER_WALLET", "کیف پول نقره"),
         ("SILVER", "خرید و فروش نقره"),
         ("SILVER_ORDER", "سفارش فیزیکی نقره"),
+        ("SILVER_LIMIT_ORDER", "سفارش با قیمت نقره"),  # ✅ اضافه شد
         ("ADMIN_GOLD", "افزودن موجودی طلا توسط ادمین"),
         ("ADMIN_SILVER", "افزودن موجودی نقره توسط ادمین"),
     )
@@ -383,8 +439,8 @@ class UserTransactionSerializer(serializers.Serializer):
     )
 
     created_at = serializers.DateTimeField()
-    
-    
+
+
 
 # =========================================================
 # GOLD BALANCE ADJUSTMENT
@@ -1914,6 +1970,179 @@ class GoldTransactionAdminSerializer(serializers.ModelSerializer):
  
  
  
+ 
+ # admin_panel/serializers.py (اضافه کنید)
+
+from gold_app.models import GoldOrder
+
+
+# admin_panel/serializers.py
+
+from gold_app.models import GoldOrder
+
+# admin_panel/serializers.py
+
+class GoldOrderAdminSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر سفارشات با قیمت طلا برای ادمین (همخوان با تراکنش‌ها)
+    """
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    
+    # ✅ همنام با فیلدهای تراکنش برای نمایش یکپارچه
+    type = serializers.CharField(source='order_type', read_only=True)
+    type_display = serializers.CharField(source='get_order_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
+    amount_gr = serializers.DecimalField(source='estimated_weight', max_digits=20, decimal_places=3, read_only=True)
+    price_per_gram = serializers.DecimalField(source='target_price', max_digits=20, decimal_places=0, read_only=True)
+    
+    # ✅ محاسبه مبلغ کل
+    total_amount = serializers.SerializerMethodField()
+    fee = serializers.SerializerMethodField()
+    final_price = serializers.SerializerMethodField()
+    
+    # ✅ کد پیگیری (برای سفارش با قیمت از id ساخته میشه)
+    tracking_code = serializers.SerializerMethodField()
+    
+    # موجودی فعلی کاربر
+    wallet_accessible_toman = serializers.SerializerMethodField()
+    wallet_blocked_toman = serializers.SerializerMethodField()
+    gold_accessible_balance = serializers.SerializerMethodField()
+    gold_blocked_balance = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GoldOrder
+        fields = [
+            'id',
+            'user_mobile',
+            'user_full_name',
+            'type',
+            'type_display',
+            'status',
+            'status_display',
+            'amount_gr',
+            'price_per_gram',
+            'total_amount',
+            'fee',
+            'final_price',
+            'tracking_code',  # ✅ اضافه شد
+            'target_price',
+            'estimated_weight',
+            'executed_price',
+            'description',
+            'created_at',
+            'updated_at',
+            'wallet_accessible_toman',
+            'wallet_blocked_toman',
+            'gold_accessible_balance',
+            'gold_blocked_balance',
+        ]
+
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+
+    def get_total_amount(self, obj):
+        from decimal import Decimal
+        if obj.order_type == 'BUY':
+            return float(obj.amount_toman or 0)
+        else:  # SELL
+            weight = obj.gold_weight or Decimal("0")
+            price = obj.target_price or Decimal("0")
+            total = weight * price
+            return int(total)
+
+    def get_fee(self, obj):
+        from decimal import Decimal
+        total = Decimal(str(self.get_total_amount(obj)))
+        fee_rate = obj.fee_rate or Decimal("0.01")
+        fee = (total * fee_rate).quantize(Decimal("1"))
+        return int(fee)
+
+    def get_final_price(self, obj):
+        from decimal import Decimal
+        total = Decimal(str(self.get_total_amount(obj)))
+        fee_rate = obj.fee_rate or Decimal("0.01")
+        fee = (total * fee_rate).quantize(Decimal("1"))
+        final = total - fee
+        return int(final)
+
+    def get_tracking_code(self, obj):
+        """ساخت کد پیگیری برای سفارش با قیمت"""
+        return f"LMT-{obj.id:06d}"  # مثال: LMT-000039
+
+    def get_wallet_accessible_toman(self, obj):
+        wallet = getattr(obj.user, "wallet", None)
+        return float(wallet.accessible_toman) if wallet else None
+
+    def get_wallet_blocked_toman(self, obj):
+        wallet = getattr(obj.user, "wallet", None)
+        return float(wallet.blocked_toman) if wallet else None
+
+    def get_gold_accessible_balance(self, obj):
+        inv = getattr(obj.user, "gold_inventory", None)
+        return float(inv.accessible_balance) if inv else None
+
+    def get_gold_blocked_balance(self, obj):
+        inv = getattr(obj.user, "gold_inventory", None)
+        return float(inv.blocked_balance) if inv else None
+
+
+# admin_panel/serializers.py
+
+from silver_app.models import SilverLimitOrder
+
+# class SilverLimitOrderAdminSerializer(serializers.ModelSerializer):
+#     """
+#     سریالایزر سفارشات با قیمت نقره برای ادمین
+#     """
+#     user_mobile = serializers.SerializerMethodField()
+#     user_name = serializers.SerializerMethodField()
+#     order_type_display = serializers.SerializerMethodField()
+#     status_display = serializers.SerializerMethodField()
+    
+#     class Meta:
+#         model = SilverLimitOrder
+#         fields = [
+#             'id',
+#             'user',
+#             'user_mobile',
+#             'user_name',
+#             'order_type',
+#             'order_type_display',
+#             'status',
+#             'status_display',
+#             'estimated_weight',
+#             'silver_weight',
+#             'amount_toman',
+#             'target_price',
+#             'fee_rate',
+#             'executed_price',
+#             'description',
+#             'created_at',
+#             'updated_at',
+#         ]
+    
+#     def get_user_mobile(self, obj):
+#         return obj.user.mobile
+    
+#     def get_user_name(self, obj):
+#         return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+    
+#     def get_order_type_display(self, obj):
+#         return "خرید" if obj.order_type == "BUY" else "فروش"
+    
+#     def get_status_display(self, obj):
+#         status_map = {
+#             "PENDING": "در انتظار",
+#             "EXECUTED": "اجرا شده",
+#             "CANCELLED": "لغو شده",
+#         }
+#         return status_map.get(obj.status, obj.status)
+
+
+
+
 class GoldTransactionStatusUpdateSerializer(serializers.Serializer):
  
     status = serializers.ChoiceField(
@@ -2083,7 +2312,7 @@ class AdminGoldShortOrderListSerializer(serializers.ModelSerializer):
         return str(obj.profit_loss)
 
     def get_current_price(self, obj):
-        from .utils import get_live_gold_price
+        from gold_app.utils import get_live_gold_price
         return get_live_gold_price()
 
     def get_current_profit_loss(self, obj):
@@ -2141,3 +2370,199 @@ class AdminGoldShortOrderUpdateSerializer(serializers.ModelSerializer):
         if value not in valid_statuses:
             raise serializers.ValidationError(f"وضعیت باید یکی از {valid_statuses} باشد")
         return value
+    
+    
+    
+# admin_panel/serializers.py
+
+from gold_app.models import GoldOrder
+from silver_app.models import SilverLimitOrder
+
+# admin_panel/serializers.py
+
+from gold_app.models import GoldOrder
+from silver_app.models import SilverLimitOrder
+
+
+class GoldLimitOrderAdminSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر سفارشات با قیمت طلا برای ادمین - هماهنگ با تراکنش‌ها
+    """
+    # اطلاعات کاربر
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    
+    # فیلدهای نمایشی یکسان با تراکنش‌ها
+    type = serializers.CharField(source='order_type', read_only=True)
+    type_display = serializers.CharField(source='get_order_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
+    # فیلدهای اصلی
+    amount_gr = serializers.SerializerMethodField()
+    price_per_gram = serializers.DecimalField(source='target_price', max_digits=20, decimal_places=0, read_only=True)  # ✅ source لازمه چون اسم فیلد متفاوته
+    total_amount = serializers.SerializerMethodField()
+    fee = serializers.SerializerMethodField()
+    final_price = serializers.SerializerMethodField()
+    tracking_code = serializers.SerializerMethodField()
+    
+    # فیلدهای اضافی برای نمایش
+    gold_weight = serializers.DecimalField(max_digits=20, decimal_places=3, read_only=True)  # ✅ source حذف شد
+    estimated_weight = serializers.DecimalField(max_digits=20, decimal_places=3, read_only=True)  # ✅ source حذف شد
+    target_price = serializers.DecimalField(max_digits=20, decimal_places=0, read_only=True)  # ✅ source حذف شد
+    fee_rate = serializers.DecimalField(max_digits=5, decimal_places=4, read_only=True)  # ✅ source حذف شد
+    executed_price = serializers.DecimalField(max_digits=20, decimal_places=0, read_only=True)  # ✅ source حذف شد
+
+    class Meta:
+        model = GoldOrder
+        fields = [
+            'id',
+            'user',
+            'user_mobile',
+            'user_full_name',
+            'type',
+            'type_display',
+            'status',
+            'status_display',
+            'amount_gr',
+            'price_per_gram',
+            'fee',
+            'total_amount',
+            'final_price',
+            'tracking_code',
+            'target_price',
+            'gold_weight',
+            'estimated_weight',
+            'fee_rate',
+            'executed_price',
+            'description',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+
+    def get_amount_gr(self, obj):
+        """وزن تخمینی یا وزن طلا"""
+        return float(obj.estimated_weight or obj.gold_weight or 0)
+
+    def get_total_amount(self, obj):
+        """مبلغ کل - برای خرید: amount_toman، برای فروش: gold_weight × target_price"""
+        from decimal import Decimal
+        if obj.order_type == 'BUY':
+            return float(obj.amount_toman or 0)
+        else:
+            weight = obj.gold_weight or Decimal("0")
+            price = obj.target_price or Decimal("0")
+            return float(weight * price)
+
+    def get_fee(self, obj):
+        """محاسبه کارمزد = مبلغ کل × نرخ کارمزد"""
+        from decimal import Decimal
+        total = Decimal(str(self.get_total_amount(obj)))
+        fee_rate = obj.fee_rate or Decimal("0.01")
+        fee = (total * fee_rate).quantize(Decimal("1"))
+        return int(fee)
+
+    def get_final_price(self, obj):
+        """قیمت نهایی = مبلغ کل - کارمزد"""
+        from decimal import Decimal
+        total = Decimal(str(self.get_total_amount(obj)))
+        fee_rate = obj.fee_rate or Decimal("0.01")
+        fee = (total * fee_rate).quantize(Decimal("1"))
+        return int(total - fee)
+
+    def get_tracking_code(self, obj):
+        return f"LMT-{obj.id:06d}"
+
+
+class SilverLimitOrderAdminSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر سفارشات با قیمت نقره برای ادمین - هماهنگ با تراکنش‌ها
+    """
+    # اطلاعات کاربر
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    
+    # فیلدهای نمایشی یکسان با تراکنش‌ها
+    type = serializers.CharField(source='order_type', read_only=True)
+    type_display = serializers.CharField(source='get_order_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
+    # فیلدهای اصلی
+    amount_gr = serializers.SerializerMethodField()
+    price_per_gram = serializers.DecimalField(source='target_price', max_digits=20, decimal_places=0, read_only=True)
+    total_amount = serializers.SerializerMethodField()
+    fee = serializers.SerializerMethodField()
+    final_price = serializers.SerializerMethodField()
+    tracking_code = serializers.SerializerMethodField()
+    
+    # فیلدهای اضافی برای نمایش
+    silver_weight = serializers.DecimalField(max_digits=20, decimal_places=3, read_only=True)  # ✅ source حذف شد
+    estimated_weight = serializers.DecimalField(max_digits=20, decimal_places=3, read_only=True)  # ✅ source حذف شد
+    target_price = serializers.DecimalField(max_digits=20, decimal_places=0, read_only=True)  # ✅ source حذف شد
+    fee_rate = serializers.DecimalField(max_digits=5, decimal_places=4, read_only=True)  # ✅ source حذف شد
+    executed_price = serializers.DecimalField(max_digits=20, decimal_places=0, read_only=True)  # ✅ source حذف شد
+
+    class Meta:
+        model = SilverLimitOrder
+        fields = [
+            'id',
+            'user',
+            'user_mobile',
+            'user_full_name',
+            'type',
+            'type_display',
+            'status',
+            'status_display',
+            'amount_gr',
+            'price_per_gram',
+            'fee',
+            'total_amount',
+            'final_price',
+            'tracking_code',
+            'target_price',
+            'silver_weight',
+            'estimated_weight',
+            'fee_rate',
+            'executed_price',
+            'description',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+
+    def get_amount_gr(self, obj):
+        """وزن تخمینی یا وزن نقره"""
+        return float(obj.silver_weight or obj.estimated_weight or 0)
+
+    def get_total_amount(self, obj):
+        """مبلغ کل - برای خرید: amount_toman، برای فروش: silver_weight × target_price"""
+        from decimal import Decimal
+        if obj.order_type == 'BUY':
+            return float(obj.amount_toman or 0)
+        else:
+            weight = obj.silver_weight or Decimal("0")
+            price = obj.target_price or Decimal("0")
+            return float(weight * price)
+
+    def get_fee(self, obj):
+        """محاسبه کارمزد = مبلغ کل × نرخ کارمزد"""
+        from decimal import Decimal
+        total = Decimal(str(self.get_total_amount(obj)))
+        fee_rate = obj.fee_rate or Decimal("0.01")
+        fee = (total * fee_rate).quantize(Decimal("1"))
+        return int(fee)
+
+    def get_final_price(self, obj):
+        """قیمت نهایی = مبلغ کل - کارمزد"""
+        from decimal import Decimal
+        total = Decimal(str(self.get_total_amount(obj)))
+        fee_rate = obj.fee_rate or Decimal("0.01")
+        fee = (total * fee_rate).quantize(Decimal("1"))
+        return int(total - fee)
+
+    def get_tracking_code(self, obj):
+        return f"SLV-{obj.id:06d}"

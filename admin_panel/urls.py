@@ -1,3 +1,5 @@
+# admin_panel/urls.py
+
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
@@ -18,6 +20,7 @@ from admin_panel.views import (
     GoldBalanceAdjustmentViewSet,
     GoldBankAdminViewSet,
     GoldBannerAdminViewSet,
+    GoldLimitOrderAdminViewSet,
     GoldPriceOffsetAdminViewSet,
     GoldTransactionAdminViewSet,
     OrderAdminViewSet,
@@ -28,6 +31,7 @@ from admin_panel.views import (
     SilverBankAdminViewSet,
     SilverBannerAdminViewSet,
     SilverDepositAdminViewSet,
+    SilverLimitOrderAdminViewSet,
     SilverOrderAdminViewSet,
     SilverPriceOffsetAdminViewSet,
     SilverProductAdminViewSet,
@@ -44,7 +48,6 @@ router = DefaultRouter()
 # =========================================================
 # USERS
 # =========================================================
-
 router.register(
     r"users",
     UserAdminViewSet,
@@ -54,7 +57,6 @@ router.register(
 # =========================================================
 # PRODUCTS
 # =========================================================
-
 router.register(
     r"products",
     ProductAdminViewSet,
@@ -76,7 +78,6 @@ router.register(
 # =========================================================
 # ORDERS
 # =========================================================
-
 router.register(
     r"orders",
     OrderAdminViewSet,
@@ -92,7 +93,6 @@ router.register(
 # =========================================================
 # GIFT CARD
 # =========================================================
-
 router.register(
     r"gift-cards",
     GiftCardAdminViewSet,
@@ -102,7 +102,6 @@ router.register(
 # =========================================================
 # DASHBOARD
 # =========================================================
-
 router.register(
     r"dashboard",
     DashboardAdminViewSet,
@@ -112,7 +111,6 @@ router.register(
 # =========================================================
 # BANK
 # =========================================================
-
 router.register(
     r"gold-bank",
     GoldBankAdminViewSet,
@@ -128,7 +126,6 @@ router.register(
 # =========================================================
 # COOPERATION
 # =========================================================
-
 router.register(
     r"CooperationRequest",
     CooperationRequestAdminViewSet,
@@ -138,7 +135,6 @@ router.register(
 # =========================================================
 # DEPOSIT / WITHDRAW
 # =========================================================
-
 router.register(
     r"OrderDeposit",
     DepositAdminViewSet,
@@ -166,7 +162,6 @@ router.register(
 # =========================================================
 # ANALYTICS
 # =========================================================
-
 router.register(
     r"analytics",
     AdminAnalyticsViewSet,
@@ -176,7 +171,6 @@ router.register(
 # =========================================================
 # LOGS
 # =========================================================
-
 router.register(
     r"logs",
     AdminLogViewSet,
@@ -186,7 +180,6 @@ router.register(
 # =========================================================
 # BANNERS
 # =========================================================
-
 router.register(
     r"gold-banners",
     GoldBannerAdminViewSet,
@@ -202,13 +195,6 @@ router.register(
 # =========================================================
 # MARKET
 # =========================================================
-# نکته: GoldPriceOffsetAdminViewSet و SilverPriceOffsetAdminViewSet
-# دیگر اینجا register نمی‌شوند چون با /offset/ زیرمجموعه‌ی
-# market/gold و market/silver تداخل داشتند (router pk pattern
-# مثل market/gold/<pk>/ زودتر از market/gold/offset/ match می‌شد).
-# این دو مسیر الان به‌صورت صریح در urlpatterns پایین تعریف شده‌اند.
-# =========================================================
-
 router.register(
     r"market/gold",
     GoldAdminViewSet,
@@ -224,7 +210,6 @@ router.register(
 # =========================================================
 # ANNOUNCEMENTS
 # =========================================================
-
 router.register(
     r"gold-announcements",
     GoldAnnouncementAdminViewSet,
@@ -240,7 +225,6 @@ router.register(
 # =========================================================
 # BALANCE ADJUSTMENTS
 # =========================================================
-
 router.register(
     r"gold-balance-adjustments",
     GoldBalanceAdjustmentViewSet,
@@ -252,23 +236,67 @@ router.register(
     SilverBalanceAdjustmentViewSet,
     basename="silver-balance-adjustment",
 )
+
 router.register(
     r"gold-balance-withdrawals",
     GoldBalanceWithdrawalViewSet,
     basename="gold-balance-withdrawal",
 )
 
-router.register(r"gold-transactions", GoldTransactionAdminViewSet, basename="admin-gold-transactions")
 # =========================================================
-# BALANCE WITHDRAWALS
+# GOLD TRANSACTIONS
 # =========================================================
-router.register(r'gold-short-orders/', AdminGoldShortOrderViewSet, basename='admin-gold-short-order')
+router.register(
+    r"gold-transactions",
+    GoldTransactionAdminViewSet,
+    basename="admin-gold-transactions",
+)
+
+# =========================================================
+# GOLD SHORT ORDERS
+# =========================================================
+router.register(
+    r"gold-short-orders",
+    AdminGoldShortOrderViewSet,
+    basename="admin-gold-short-order",
+)
+
+# =========================================================
+# SILVER BALANCE WITHDRAWALS
+# =========================================================
 router.register(
     r"silver-balance-withdrawals",
     SilverBalanceWithdrawalViewSet,
     basename="silver-balance-withdrawal",
 )
-router.register(r'silver-transactions', SilverTransactionAdminViewSet, basename='silver-transaction')
+
+# =========================================================
+# SILVER TRANSACTIONS
+# =========================================================
+router.register(
+    r"silver-transactions",
+    SilverTransactionAdminViewSet,
+    basename="silver-transaction",
+)
+
+# =========================================================
+# ✅ GOLD LIMIT ORDERS (سفارشات با قیمت طلا)
+# =========================================================
+router.register(
+    r"gold-limit-orders",
+    GoldLimitOrderAdminViewSet,
+    basename="gold-limit-orders",
+)
+
+# =========================================================
+# ✅ SILVER LIMIT ORDERS (سفارشات با قیمت نقره)
+# =========================================================
+router.register(
+    r"silver-limit-orders",
+    SilverLimitOrderAdminViewSet,
+    basename="silver-limit-orders",
+)
+
 
 # =========================================================
 # URL PATTERNS
@@ -278,10 +306,7 @@ urlpatterns = [
 
     # -------------------------
     # Market — Gold / Silver Price Offset
-    # (صریح و قبل از router.urls تعریف شده تا با
-    # market/gold/<pk>/ و market/silver/<pk>/ تداخل نکند)
     # -------------------------
-
     path(
         "market/gold/offset/",
         GoldPriceOffsetAdminViewSet.as_view(
@@ -331,7 +356,6 @@ urlpatterns = [
     # -------------------------
     # Analytics
     # -------------------------
-
     path(
         "analytics/chart/",
         AnalyticsChartAPIView.as_view(),
@@ -353,7 +377,6 @@ urlpatterns = [
     # -------------------------
     # Gold Balance Adjustment
     # -------------------------
-
     path(
         "gold-balance-adjustments/<int:user_id>/",
         GoldBalanceAdjustmentViewSet.as_view(
@@ -380,7 +403,6 @@ urlpatterns = [
     # -------------------------
     # Silver Balance Adjustment
     # -------------------------
-
     path(
         "silver-balance-adjustments/<int:user_id>/<int:pk>/",
         SilverBalanceAdjustmentViewSet.as_view(
@@ -407,7 +429,6 @@ urlpatterns = [
     # -------------------------
     # Gold Balance Withdrawal
     # -------------------------
-
     path(
         "gold-balance-withdrawals/<int:user_id>/",
         GoldBalanceWithdrawalViewSet.as_view(
@@ -434,7 +455,6 @@ urlpatterns = [
     # -------------------------
     # Silver Balance Withdrawal
     # -------------------------
-
     path(
         "silver-balance-withdrawals/<int:user_id>/",
         SilverBalanceWithdrawalViewSet.as_view(

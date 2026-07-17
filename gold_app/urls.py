@@ -11,12 +11,14 @@ from .views import (
     GoldBannerListAPIView,
     GoldDashboardAPIView,
     GoldDepositInfoAPIView,
+    GoldLimitOrderBuyConfirmAPIView,
     GoldLimitOrderCancelAPIView,
     GoldLimitOrderCreateAPIView,
     GoldLimitOrderDetailAPIView,
     GoldLimitOrderExecuteAPIView,
     GoldLimitOrderListAPIView,
     GoldLimitOrderPartialUpdateAPIView,
+    GoldLimitOrderSellConfirmAPIView,
     GoldLimitOrderUpdateAPIView,
     GoldPriceAPIView,
     GoldReferralInfoAPIView,
@@ -133,6 +135,10 @@ urlpatterns = [
     BuyGoldCalculateAPIView.as_view(),
     name="buy-gold-calculate",
 ),
+    path('limit-order/buy/confirm/', GoldLimitOrderBuyConfirmAPIView.as_view(), name='gold-limit-order-buy-confirm'),
+    
+    # ✅ باکس تایید فروش سفارش با قیمت طلا
+    path('limit-order/sell/confirm/', GoldLimitOrderSellConfirmAPIView.as_view(), name='gold-limit-order-sell-confirm'),
     path("chart/", GoldChartAPIView.as_view(), name="gold-chart"),
     path("price-alert/", PriceAlertAPIView.as_view()),
     path("price-alert/<int:pk>/", DeletePriceAlertAPIView.as_view()),
@@ -142,7 +148,6 @@ urlpatterns = [
     # gold_app/urls.py
     path('limit-orders/<int:pk>/update/', GoldLimitOrderUpdateAPIView.as_view(), name='gold-limit-order-update'),
     
-    # ویرایش جزئی سفارش (PATCH)
     path('limit-orders/<int:pk>/partial-update/', GoldLimitOrderPartialUpdateAPIView.as_view(), name='gold-limit-order-partial-update'),
 
     path('short/create/', GoldShortOrderCreateAPIView.as_view(), name='gold-short-create'),

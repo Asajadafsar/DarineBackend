@@ -17,11 +17,13 @@ from .views import (
     SilverBannerListAPIView,
     SilverDashboardAPIView,
     SilverDepositInfoAPIView,
+    SilverLimitOrderBuyConfirmAPIView,
     SilverLimitOrderCancelAPIView,
     SilverLimitOrderCreateAPIView,
     SilverLimitOrderDetailAPIView,
     SilverLimitOrderExecuteAPIView,
     SilverLimitOrderListAPIView,
+    SilverLimitOrderSellConfirmAPIView,
     SilverLimitOrderUpdateAPIView,
     SilverOrderDetailAPIView,
     SilverOrderNoAddressAPIView,
@@ -151,6 +153,10 @@ path(
     SellSilverCalculateAPIView.as_view(),
     name="sell-silver-calculate",
 ),
+    path('limit-order/buy/confirm/', SilverLimitOrderBuyConfirmAPIView.as_view(), name='silver-limit-order-buy-confirm'),
+    
+    # ✅ باکس تایید فروش سفارش با قیمت نقره
+    path('limit-order/sell/confirm/', SilverLimitOrderSellConfirmAPIView.as_view(), name='silver-limit-order-sell-confirm'),
     # =====================================================
     # REFERRAL
     # =====================================================
