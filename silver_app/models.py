@@ -444,8 +444,8 @@ class SilverLimitOrder(models.Model):
     )
     STATUS = (
         ("PENDING", "در انتظار"),
-        ("EXECUTED", "انجام شده"),
-        ("CANCELLED", "لغو شده"),
+        ("COMPLETED", "انجام شده"),
+        ("FAILED", "لغو شده"),
     )
 
     user = models.ForeignKey(

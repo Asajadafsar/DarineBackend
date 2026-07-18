@@ -6618,255 +6618,6 @@ from gold_app.models import Wallet, GoldTransaction, GoldInventory
 User = get_user_model()
 
 
-# class GoldTransactionAdminViewSet(AdminBaseViewSet):
-#     """
-#     ویوست مدیریت تراکنش‌های طلا برای ادمین
-#     """
-
-#     queryset = GoldTransaction.objects.all().order_by("-id")
-#     serializer_class = GoldTransactionAdminSerializer
-
-#     # =====================================================
-#     # QUERYSET FILTER
-#     # =====================================================
-#     def get_queryset(self):
-
-#         qs = super().get_queryset()
-
-#         search = self.request.GET.get("search")
-#         status = self.request.GET.get("status")
-#         type_ = self.request.GET.get("type")  # BUY / SELL
-#         tracking_code = self.request.GET.get("tracking_code")
-#         start_date = self.request.GET.get("start_date")
-#         end_date = self.request.GET.get("end_date")
-#         ordering = self.request.GET.get("ordering")
-
-#         if search:
-#             qs = qs.filter(user__mobile__icontains=search)
-
-#         if status:
-#             qs = qs.filter(status=status)
-
-#         if type_:
-#             qs = qs.filter(type=type_)
-
-#         if tracking_code:
-#             qs = qs.filter(tracking_code__icontains=tracking_code)
-
-#         if start_date:
-#             qs = qs.filter(created_at__date__gte=start_date)
-
-#         if end_date:
-#             qs = qs.filter(created_at__date__lte=end_date)
-
-#         allowed_ordering = [
-#             "id", "-id",
-#             "created_at", "-created_at",
-#             "status", "-status",
-#             "total_amount", "-total_amount",
-#             "amount_gr", "-amount_gr",
-#         ]
-
-#         if ordering in allowed_ordering:
-#             qs = qs.order_by(ordering)
-
-#         return qs
-
-#     # =====================================================
-#     # LIST
-#     # =====================================================
-#     def list(self, request):
-
-#         qs = self.get_queryset()
-
-#         return success_response(
-#             "لیست تراکنش‌های طلا",
-#             {
-#                 "total_results": qs.count(),
-#                 "results": self.serializer_class(
-#                     qs,
-#                     many=True,
-#                     context={"request": request}
-#                 ).data
-#             }
-#         )
-
-#     # =====================================================
-#     # RETRIEVE
-#     # =====================================================
-#     def retrieve(self, request, pk=None):
-
-#         obj = self.get_object()
-
-#         data = self.serializer_class(
-#             obj,
-#             context={"request": request}
-#         ).data
-
-#         data["created_at"] = obj.created_at.strftime("%Y-%m-%d %H:%M:%S")
-
-#         return success_response(
-#             "جزئیات تراکنش طلا",
-#             data
-#         )
-
-#     # =====================================================
-#     # PATCH /gold-transactions/{id}/  (ویرایش توضیحات یا تغییر وضعیت)
-#     # =====================================================
-#     @transaction.atomic
-#     def partial_update(self, request, *args, **kwargs):
-
-#         if "status" in request.data:
-#             return self._change_status(request, kwargs["pk"])
-
-#         return super().partial_update(request, *args, **kwargs)
-
-#     # =====================================================
-#     # PUT /gold-transactions/{id}/
-#     # =====================================================
-#     @transaction.atomic
-#     def update(self, request, *args, **kwargs):
-
-#         if "status" in request.data:
-#             return self._change_status(request, kwargs["pk"])
-
-#         return super().update(request, *args, **kwargs)
-
-#     # =====================================================
-#     # POST /gold-transactions/{id}/change_status/
-#     # =====================================================
-#     @action(detail=True, methods=["post"])
-#     @transaction.atomic
-#     def change_status(self, request, pk=None):
-#         return self._change_status(request, pk)
-
-#     # =====================================================
-#     # CORE BUSINESS LOGIC (SINGLE SOURCE OF TRUTH)
-#     # =====================================================
-#     def _change_status(self, request, pk):
-
-#         tx = (
-#             GoldTransaction.objects
-#             .select_for_update()
-#             .select_related("user")
-#             .get(pk=pk)
-#         )
-
-#         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=tx.user)
-#         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=tx.user)
-
-#         serializer = GoldTransactionStatusUpdateSerializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-
-#         new_status = serializer.validated_data["status"]
-#         description = serializer.validated_data.get("description", "")
-
-#         old_status = tx.status
-
-#         if old_status == new_status:
-#             return error_response("وضعیت تغییری نکرده است.")
-
-#         # فقط از حالت PENDING می‌توان به COMPLETED یا FAILED رفت
-#         if old_status != "PENDING":
-#             return error_response(
-#                 f"تراکنشی که در وضعیت «{tx.get_status_display()}» است، قابل تغییر نیست."
-#             )
-
-#         if new_status not in ("COMPLETED", "FAILED"):
-#             return error_response("وضعیت مقصد نامعتبر است.")
-
-#         # =================================================
-#         # BUY - COMPLETED (تایید خرید)
-#         # =================================================
-#         if tx.type == "BUY" and new_status == "COMPLETED":
-
-#             if wallet.blocked_toman < tx.total_amount:
-#                 return error_response("مغایرت در موجودی بلوکه‌شده تومانی کاربر.")
-
-#             wallet.blocked_toman = max(0, wallet.blocked_toman - tx.total_amount)
-#             wallet.save(update_fields=["blocked_toman"])
-
-#             inventory.accessible_balance += tx.amount_gr
-#             inventory.save(update_fields=["accessible_balance"])
-
-#             # ✅ ایجاد پاداش معرفی
-#             try:
-#                 create_referral_profit(
-#                     user=tx.user,
-#                     source_type="GOLD",
-#                     transaction_amount=tx.total_amount,
-#                 )
-#             except Exception as e:
-#                 print(f"❌ خطا در ایجاد پاداش معرفی: {e}")
-
-#         # =================================================
-#         # BUY - FAILED (لغو خرید)
-#         # =================================================
-#         elif tx.type == "BUY" and new_status == "FAILED":
-
-#             wallet.accessible_toman += tx.total_amount
-#             wallet.blocked_toman = max(0, wallet.blocked_toman - tx.total_amount)
-#             wallet.save(update_fields=["accessible_toman", "blocked_toman"])
-
-#         # =================================================
-#         # SELL - COMPLETED (تایید فروش)
-#         # =================================================
-#         elif tx.type == "SELL" and new_status == "COMPLETED":
-
-#             if inventory.blocked_balance < tx.amount_gr:
-#                 return error_response("مغایرت در موجودی بلوکه‌شده طلای کاربر.")
-
-#             inventory.blocked_balance = max(0, inventory.blocked_balance - tx.amount_gr)
-#             inventory.save(update_fields=["blocked_balance"])
-
-#             wallet.accessible_toman += tx.total_amount
-#             wallet.save(update_fields=["accessible_toman"])
-
-#         # =================================================
-#         # SELL - FAILED (لغو فروش)
-#         # =================================================
-#         elif tx.type == "SELL" and new_status == "FAILED":
-
-#             inventory.accessible_balance += tx.amount_gr
-#             inventory.blocked_balance = max(0, inventory.blocked_balance - tx.amount_gr)
-#             inventory.save(update_fields=["accessible_balance", "blocked_balance"])
-
-#         # =================================================
-#         # UPDATE TRANSACTION
-#         # =================================================
-#         tx.status = new_status
-#         if description:
-#             tx.description = (
-#                 f"{tx.description}\n{description}" if tx.description else description
-#             )
-#         tx.save(update_fields=["status", "description", "updated_at"])
-
-#         # =================================================
-#         # CREATE ADMIN LOG
-#         # =================================================
-#         create_admin_log(
-#             request=request,
-#             user=tx.user,
-#             action_type=f"{tx.type}_GOLD_{new_status}",
-#             action=f"تغییر وضعیت تراکنش طلا به {tx.get_status_display()}",
-#             model_name="GoldTransaction",
-#             object_id=tx.id,
-#             tracking_code=tx.tracking_code,
-#             success=True,
-#             description=description or f"{tx.type} -> {new_status}",
-#         )
-
-#         tx.refresh_from_db()
-
-#         return success_response(
-#             "وضعیت تراکنش با موفقیت تغییر کرد.",
-#             self.serializer_class(
-#                 tx,
-#                 context={"request": request}
-#             ).data
-#         )
-        
-        
 # admin_panel/views.py
 
 from decimal import Decimal
@@ -7833,252 +7584,6 @@ class SilverTransactionAdminViewSet(AdminBaseViewSet):
 from silver_app.models import SilverLimitOrder
 from admin_panel.serializers import SilverLimitOrderAdminSerializer
 from silver_app.utils import get_live_silver_price, generate_tracking_code
-
-
-class SilverLimitOrderAdminViewSet(AdminBaseViewSet):
-    """
-    ویوست مدیریت سفارشات با قیمت نقره برای ادمین
-    """
-
-    queryset = SilverLimitOrder.objects.all().order_by("-id")
-    serializer_class = SilverLimitOrderAdminSerializer
-
-    # =====================================================
-    # QUERYSET FILTER
-    # =====================================================
-    def get_queryset(self):
-        qs = super().get_queryset()
-
-        search = self.request.GET.get("search")
-        status = self.request.GET.get("status")
-        type_ = self.request.GET.get("type")
-        start_date = self.request.GET.get("start_date")
-        end_date = self.request.GET.get("end_date")
-        ordering = self.request.GET.get("ordering")
-
-        if search:
-            qs = qs.filter(user__mobile__icontains=search)
-
-        if status:
-            qs = qs.filter(status=status)
-
-        if type_:
-            qs = qs.filter(order_type=type_)
-
-        if start_date:
-            qs = qs.filter(created_at__date__gte=start_date)
-
-        if end_date:
-            qs = qs.filter(created_at__date__lte=end_date)
-
-        allowed_ordering = [
-            "id", "-id",
-            "created_at", "-created_at",
-            "status", "-status",
-            "target_price", "-target_price",
-            "estimated_weight", "-estimated_weight",
-        ]
-
-        if ordering in allowed_ordering:
-            qs = qs.order_by(ordering)
-
-        return qs
-
-    # =====================================================
-    # LIST
-    # =====================================================
-    def list(self, request):
-        qs = self.get_queryset()
-
-        return success_response(
-            "لیست سفارشات با قیمت نقره",
-            {
-                "total_results": qs.count(),
-                "results": self.serializer_class(
-                    qs,
-                    many=True,
-                    context={"request": request}
-                ).data
-            }
-        )
-
-    # =====================================================
-    # RETRIEVE
-    # =====================================================
-    def retrieve(self, request, pk=None):
-        obj = self.get_object()
-
-        data = self.serializer_class(
-            obj,
-            context={"request": request}
-        ).data
-
-        data["created_at"] = obj.created_at.strftime("%Y-%m-%d %H:%M:%S")
-
-        return success_response(
-            "جزئیات سفارش با قیمت نقره",
-            data
-        )
-
-    # =====================================================
-    # UPDATE (ویرایش توضیحات)
-    # =====================================================
-    @transaction.atomic
-    def partial_update(self, request, *args, **kwargs):
-        if "status" in request.data:
-            return error_response("وضعیت سفارش از این طریق قابل تغییر نیست.")
-
-        return super().partial_update(request, *args, **kwargs)
-
-    # =====================================================
-    # CANCEL (لغو سفارش توسط ادمین)
-    # =====================================================
-    @action(detail=True, methods=["post"])
-    @transaction.atomic
-    def cancel(self, request, pk=None):
-        order = self.get_object()
-
-        if order.status != "PENDING":
-            return error_response("فقط سفارشات در وضعیت «در انتظار» قابل لغو هستند.")
-
-        if order.order_type == "BUY":
-            wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=order.user)
-            wallet.accessible_toman += order.amount_toman
-            wallet.blocked_toman -= order.amount_toman
-            wallet.save(update_fields=["accessible_toman", "blocked_toman"])
-        else:
-            inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=order.user)
-            inventory.accessible_balance += order.silver_weight
-            inventory.blocked_balance -= order.silver_weight
-            inventory.save(update_fields=["accessible_balance", "blocked_balance"])
-
-        order.status = "CANCELLED"
-        order.description = f"{order.description or ''}\nلغو شده توسط ادمین"
-        order.save(update_fields=["status", "description", "updated_at"])
-
-        return success_response(
-            "سفارش با موفقیت لغو شد.",
-            self.serializer_class(order, context={"request": request}).data
-        )
-
-    # =====================================================
-    # EXECUTE (اجرای دستی سفارش توسط ادمین)
-    # =====================================================
-    @action(detail=True, methods=["post"])
-    @transaction.atomic
-    def execute(self, request, pk=None):
-        order = self.get_object()
-
-        if order.status != "PENDING":
-            return error_response("فقط سفارشات در وضعیت «در انتظار» قابل اجرا هستند.")
-
-        current_price = get_live_silver_price()
-        if not current_price:
-            return error_response("خطا در دریافت قیمت لحظه‌ای نقره")
-
-        current_price = Decimal(str(current_price))
-
-        if order.order_type == "BUY" and current_price > order.target_price:
-            return error_response(
-                f"قیمت فعلی ({current_price:,}) بیشتر از قیمت هدف ({order.target_price:,}) است. قابل اجرا نیست."
-            )
-        if order.order_type == "SELL" and current_price < order.target_price:
-            return error_response(
-                f"قیمت فعلی ({current_price:,}) کمتر از قیمت هدف ({order.target_price:,}) است. قابل اجرا نیست."
-            )
-
-        if order.order_type == "BUY":
-            wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=order.user)
-            inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=order.user)
-
-            fee_rate = Decimal(str(order.fee_rate))
-            pure_price = (order.amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
-            fee = (order.amount_toman - pure_price).quantize(Decimal("1"))
-            weight = (pure_price / current_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
-
-            if wallet.blocked_toman < order.amount_toman:
-                return error_response("مغایرت در موجودی بلوکه شده")
-
-            wallet.blocked_toman -= order.amount_toman
-            wallet.save(update_fields=["blocked_toman"])
-
-            inventory.accessible_balance += weight
-            inventory.save(update_fields=["accessible_balance"])
-
-            SilverTransaction.objects.create(
-                user=order.user,
-                type="BUY",
-                status="COMPLETED",
-                amount_gr=weight,
-                price_per_gram=current_price,
-                fee=fee,
-                commission_percent=fee_rate * 100,
-                commission_amount=fee,
-                total_amount=order.amount_toman,
-                tracking_code=generate_tracking_code("BUY"),
-                description=f"اجرای دستی توسط ادمین - قیمت هدف {order.target_price}"
-            )
-
-        else:
-            wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=order.user)
-            inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=order.user)
-
-            fee_rate = Decimal(str(order.fee_rate))
-            pure_price = (current_price * order.silver_weight).quantize(Decimal("1"))
-            fee = (pure_price * fee_rate).quantize(Decimal("1"))
-            total_price = (pure_price - fee).quantize(Decimal("1"))
-
-            if inventory.blocked_balance < order.silver_weight:
-                return error_response("مغایرت در موجودی بلوکه شده نقره")
-
-            inventory.blocked_balance -= order.silver_weight
-            inventory.save(update_fields=["blocked_balance"])
-
-            wallet.accessible_toman += total_price
-            wallet.save(update_fields=["accessible_toman"])
-
-            SilverTransaction.objects.create(
-                user=order.user,
-                type="SELL",
-                status="COMPLETED",
-                amount_gr=order.silver_weight,
-                price_per_gram=current_price,
-                fee=fee,
-                commission_percent=fee_rate * 100,
-                commission_amount=fee,
-                total_amount=total_price,
-                tracking_code=generate_tracking_code("SELL"),
-                description=f"اجرای دستی توسط ادمین - قیمت هدف {order.target_price}"
-            )
-
-        order.status = "EXECUTED"
-        order.executed_price = current_price
-        order.save(update_fields=["status", "executed_price", "updated_at"])
-
-        create_admin_log(
-            request=request,
-            user=order.user,
-            action_type="SILVER_LIMIT_EXECUTE",
-            action="اجرای دستی سفارش با قیمت نقره توسط ادمین",
-            model_name="SilverLimitOrder",
-            object_id=order.id,
-            success=True,
-            description=f"""
-اجرای دستی سفارش با قیمت نقره توسط ادمین
-کاربر: {order.user.mobile}
-نوع سفارش: {order.get_order_type_display()}
-قیمت هدف: {order.target_price:,}
-قیمت اجرا: {current_price:,}
-وزن: {order.estimated_weight} گرم
-""",
-        )
-
-        return success_response(
-            "سفارش با موفقیت اجرا شد.",
-            self.serializer_class(order, context={"request": request}).data
-        )
-        
-        
 # admin_panel/views.py
 
 from gold_app.models import GoldOrder
@@ -8094,12 +7599,8 @@ class GoldLimitOrderAdminViewSet(AdminBaseViewSet):
     queryset = GoldOrder.objects.all().order_by("-id")
     serializer_class = GoldLimitOrderAdminSerializer
 
-    # =====================================================
-    # QUERYSET FILTER
-    # =====================================================
     def get_queryset(self):
         qs = super().get_queryset()
-
         search = self.request.GET.get("search")
         status = self.request.GET.get("status")
         type_ = self.request.GET.get("type")
@@ -8109,16 +7610,12 @@ class GoldLimitOrderAdminViewSet(AdminBaseViewSet):
 
         if search:
             qs = qs.filter(user__mobile__icontains=search)
-
         if status:
             qs = qs.filter(status=status)
-
         if type_:
             qs = qs.filter(order_type=type_)
-
         if start_date:
             qs = qs.filter(created_at__date__gte=start_date)
-
         if end_date:
             qs = qs.filter(created_at__date__lte=end_date)
 
@@ -8129,66 +7626,36 @@ class GoldLimitOrderAdminViewSet(AdminBaseViewSet):
             "target_price", "-target_price",
             "estimated_weight", "-estimated_weight",
         ]
-
         if ordering in allowed_ordering:
             qs = qs.order_by(ordering)
-
         return qs
 
-    # =====================================================
-    # LIST
-    # =====================================================
     def list(self, request):
         qs = self.get_queryset()
-
         return success_response(
             "لیست سفارشات با قیمت طلا",
             {
                 "total_results": qs.count(),
-                "results": self.serializer_class(
-                    qs,
-                    many=True,
-                    context={"request": request}
-                ).data
+                "results": self.serializer_class(qs, many=True, context={"request": request}).data
             }
         )
 
-    # =====================================================
-    # RETRIEVE
-    # =====================================================
     def retrieve(self, request, pk=None):
         obj = self.get_object()
-
-        data = self.serializer_class(
-            obj,
-            context={"request": request}
-        ).data
-
+        data = self.serializer_class(obj, context={"request": request}).data
         data["created_at"] = obj.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        return success_response("جزئیات سفارش با قیمت طلا", data)
 
-        return success_response(
-            "جزئیات سفارش با قیمت طلا",
-            data
-        )
-
-    # =====================================================
-    # UPDATE (ویرایش توضیحات)
-    # =====================================================
     @transaction.atomic
     def partial_update(self, request, *args, **kwargs):
         if "status" in request.data:
             return error_response("وضعیت سفارش از این طریق قابل تغییر نیست.")
-
         return super().partial_update(request, *args, **kwargs)
 
-    # =====================================================
-    # CANCEL (لغو سفارش توسط ادمین)
-    # =====================================================
     @action(detail=True, methods=["post"])
     @transaction.atomic
     def cancel(self, request, pk=None):
         order = self.get_object()
-
         if order.status != "PENDING":
             return error_response("فقط سفارشات در وضعیت «در انتظار» قابل لغو هستند.")
 
@@ -8203,7 +7670,7 @@ class GoldLimitOrderAdminViewSet(AdminBaseViewSet):
             inventory.blocked_balance -= order.gold_weight
             inventory.save(update_fields=["accessible_balance", "blocked_balance"])
 
-        order.status = "CANCELLED"
+        order.status = "FAILED"
         order.description = f"{order.description or ''}\nلغو شده توسط ادمین"
         order.save(update_fields=["status", "description", "updated_at"])
 
@@ -8212,14 +7679,10 @@ class GoldLimitOrderAdminViewSet(AdminBaseViewSet):
             self.serializer_class(order, context={"request": request}).data
         )
 
-    # =====================================================
-    # EXECUTE (اجرای دستی سفارش توسط ادمین)
-    # =====================================================
     @action(detail=True, methods=["post"])
     @transaction.atomic
     def execute(self, request, pk=None):
         order = self.get_object()
-
         if order.status != "PENDING":
             return error_response("فقط سفارشات در وضعیت «در انتظار» قابل اجرا هستند.")
 
@@ -8312,7 +7775,7 @@ class GoldLimitOrderAdminViewSet(AdminBaseViewSet):
                 description=f"اجرای دستی توسط ادمین - قیمت هدف {order.target_price}"
             )
 
-        order.status = "EXECUTED"
+        order.status = "COMPLETED"
         order.executed_price = current_price
         order.save(update_fields=["status", "executed_price", "updated_at"])
 
@@ -8326,6 +7789,208 @@ class GoldLimitOrderAdminViewSet(AdminBaseViewSet):
             success=True,
             description=f"""
 اجرای دستی سفارش با قیمت طلا توسط ادمین
+کاربر: {order.user.mobile}
+نوع سفارش: {order.get_order_type_display()}
+قیمت هدف: {order.target_price:,}
+قیمت اجرا: {current_price:,}
+وزن: {order.estimated_weight} گرم
+""",
+        )
+
+        return success_response(
+            "سفارش با موفقیت اجرا شد.",
+            self.serializer_class(order, context={"request": request}).data
+        )
+
+
+class SilverLimitOrderAdminViewSet(AdminBaseViewSet):
+    """
+    ویوست مدیریت سفارشات با قیمت نقره برای ادمین
+    """
+
+    queryset = SilverLimitOrder.objects.all().order_by("-id")
+    serializer_class = SilverLimitOrderAdminSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        search = self.request.GET.get("search")
+        status = self.request.GET.get("status")
+        type_ = self.request.GET.get("type")
+        start_date = self.request.GET.get("start_date")
+        end_date = self.request.GET.get("end_date")
+        ordering = self.request.GET.get("ordering")
+
+        if search:
+            qs = qs.filter(user__mobile__icontains=search)
+        if status:
+            qs = qs.filter(status=status)
+        if type_:
+            qs = qs.filter(order_type=type_)
+        if start_date:
+            qs = qs.filter(created_at__date__gte=start_date)
+        if end_date:
+            qs = qs.filter(created_at__date__lte=end_date)
+
+        allowed_ordering = [
+            "id", "-id",
+            "created_at", "-created_at",
+            "status", "-status",
+            "target_price", "-target_price",
+            "estimated_weight", "-estimated_weight",
+        ]
+        if ordering in allowed_ordering:
+            qs = qs.order_by(ordering)
+        return qs
+
+    def list(self, request):
+        qs = self.get_queryset()
+        return success_response(
+            "لیست سفارشات با قیمت نقره",
+            {
+                "total_results": qs.count(),
+                "results": self.serializer_class(qs, many=True, context={"request": request}).data
+            }
+        )
+
+    def retrieve(self, request, pk=None):
+        obj = self.get_object()
+        data = self.serializer_class(obj, context={"request": request}).data
+        data["created_at"] = obj.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        return success_response("جزئیات سفارش با قیمت نقره", data)
+
+    @transaction.atomic
+    def partial_update(self, request, *args, **kwargs):
+        if "status" in request.data:
+            return error_response("وضعیت سفارش از این طریق قابل تغییر نیست.")
+        return super().partial_update(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def cancel(self, request, pk=None):
+        order = self.get_object()
+        if order.status != "PENDING":
+            return error_response("فقط سفارشات در وضعیت «در انتظار» قابل لغو هستند.")
+
+        if order.order_type == "BUY":
+            wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=order.user)
+            wallet.accessible_toman += order.amount_toman
+            wallet.blocked_toman -= order.amount_toman
+            wallet.save(update_fields=["accessible_toman", "blocked_toman"])
+        else:
+            inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=order.user)
+            inventory.accessible_balance += order.silver_weight
+            inventory.blocked_balance -= order.silver_weight
+            inventory.save(update_fields=["accessible_balance", "blocked_balance"])
+
+        order.status = "FAILED"
+        order.description = f"{order.description or ''}\nلغو شده توسط ادمین"
+        order.save(update_fields=["status", "description", "updated_at"])
+
+        return success_response(
+            "سفارش با موفقیت لغو شد.",
+            self.serializer_class(order, context={"request": request}).data
+        )
+
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def execute(self, request, pk=None):
+        order = self.get_object()
+        if order.status != "PENDING":
+            return error_response("فقط سفارشات در وضعیت «در انتظار» قابل اجرا هستند.")
+
+        current_price = get_live_silver_price()
+        if not current_price:
+            return error_response("خطا در دریافت قیمت لحظه‌ای نقره")
+
+        current_price = Decimal(str(current_price))
+
+        if order.order_type == "BUY" and current_price > order.target_price:
+            return error_response(
+                f"قیمت فعلی ({current_price:,}) بیشتر از قیمت هدف ({order.target_price:,}) است. قابل اجرا نیست."
+            )
+        if order.order_type == "SELL" and current_price < order.target_price:
+            return error_response(
+                f"قیمت فعلی ({current_price:,}) کمتر از قیمت هدف ({order.target_price:,}) است. قابل اجرا نیست."
+            )
+
+        if order.order_type == "BUY":
+            wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=order.user)
+            inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=order.user)
+
+            fee_rate = Decimal(str(order.fee_rate))
+            pure_price = (order.amount_toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
+            fee = (order.amount_toman - pure_price).quantize(Decimal("1"))
+            weight = (pure_price / current_price).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+
+            if wallet.blocked_toman < order.amount_toman:
+                return error_response("مغایرت در موجودی بلوکه شده")
+
+            wallet.blocked_toman -= order.amount_toman
+            wallet.save(update_fields=["blocked_toman"])
+
+            inventory.accessible_balance += weight
+            inventory.save(update_fields=["accessible_balance"])
+
+            SilverTransaction.objects.create(
+                user=order.user,
+                type="BUY",
+                status="COMPLETED",
+                amount_gr=weight,
+                price_per_gram=current_price,
+                fee=fee,
+                commission_percent=fee_rate * 100,
+                commission_amount=fee,
+                total_amount=order.amount_toman,
+                tracking_code=generate_tracking_code("BUY"),
+                description=f"اجرای دستی توسط ادمین - قیمت هدف {order.target_price}"
+            )
+
+        else:
+            wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=order.user)
+            inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=order.user)
+
+            fee_rate = Decimal(str(order.fee_rate))
+            pure_price = (current_price * order.silver_weight).quantize(Decimal("1"))
+            fee = (pure_price * fee_rate).quantize(Decimal("1"))
+            total_price = (pure_price - fee).quantize(Decimal("1"))
+
+            if inventory.blocked_balance < order.silver_weight:
+                return error_response("مغایرت در موجودی بلوکه شده نقره")
+
+            inventory.blocked_balance -= order.silver_weight
+            inventory.save(update_fields=["blocked_balance"])
+
+            wallet.accessible_toman += total_price
+            wallet.save(update_fields=["accessible_toman"])
+
+            SilverTransaction.objects.create(
+                user=order.user,
+                type="SELL",
+                status="COMPLETED",
+                amount_gr=order.silver_weight,
+                price_per_gram=current_price,
+                fee=fee,
+                commission_percent=fee_rate * 100,
+                commission_amount=fee,
+                total_amount=total_price,
+                tracking_code=generate_tracking_code("SELL"),
+                description=f"اجرای دستی توسط ادمین - قیمت هدف {order.target_price}"
+            )
+
+        order.status = "COMPLETED"
+        order.executed_price = current_price
+        order.save(update_fields=["status", "executed_price", "updated_at"])
+
+        create_admin_log(
+            request=request,
+            user=order.user,
+            action_type="SILVER_LIMIT_EXECUTE",
+            action="اجرای دستی سفارش با قیمت نقره توسط ادمین",
+            model_name="SilverLimitOrder",
+            object_id=order.id,
+            success=True,
+            description=f"""
+اجرای دستی سفارش با قیمت نقره توسط ادمین
 کاربر: {order.user.mobile}
 نوع سفارش: {order.get_order_type_display()}
 قیمت هدف: {order.target_price:,}
