@@ -72,38 +72,284 @@ class SilverInventorySerializer(serializers.ModelSerializer):
         return round(obj.balance - obj.blocked_balance, 5)
 
 
-# =========================================================
-# TRANSACTION (BUY / SELL SILVER)
-# =========================================================
+# silver_app/serializers.py - اصلاح SilverTransactionSerializer
+
+from rest_framework import serializers
+from decimal import Decimal
+from datetime import datetime
+import jdatetime
+from .models import SilverTransaction
 
 
 class SilverTransactionSerializer(serializers.ModelSerializer):
-
-    type_display = serializers.CharField(source="get_type_display", read_only=True)
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
-
-    final_price = serializers.SerializerMethodField()
-
+    """
+    سریالایزر تراکنش‌های نقره برای گزارشات
+    """
+    type_display = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
+    created_at_fa = serializers.SerializerMethodField()
+    created_at_time = serializers.SerializerMethodField()
+    
+    shop_name = serializers.SerializerMethodField()
+    customer_name = serializers.SerializerMethodField()
+    customer_mobile = serializers.SerializerMethodField()
+    customer_national_code = serializers.SerializerMethodField()
+    fee_toman = serializers.SerializerMethodField()
+    price_per_gram = serializers.SerializerMethodField()
+    weight_gr = serializers.SerializerMethodField()
+    total_amount_display = serializers.SerializerMethodField()
+    total_amount_toman = serializers.SerializerMethodField()
+    fee_amount = serializers.SerializerMethodField()
+    pure_silver_price = serializers.SerializerMethodField()
+    
+    # ✅ اضافه کردن invoice_id و invoice_number
+    invoice_id = serializers.SerializerMethodField()
+    invoice_number = serializers.SerializerMethodField()
+    
     class Meta:
         model = SilverTransaction
         fields = [
-            "id",
-            "type",
-            "type_display",
-            "status",
-            "status_display",
-            "amount_gr",
-            "price_per_gram",
-            "fee",
-            "total_amount",
-            "final_price",
-            "tracking_code",
-            "created_at",
+            'id', 'tracking_code', 'type', 'type_display',
+            'status', 'status_display',
+            'amount_gr', 'weight_gr',
+            'price_per_gram',
+            'fee', 'fee_toman', 'fee_amount',
+            'commission_percent', 'commission_amount',
+            'total_amount', 'total_amount_display', 'total_amount_toman',
+            'pure_silver_price',
+            'shop_name',
+            'customer_name',
+            'customer_mobile',
+            'customer_national_code',
+            'invoice_id',        # ✅ اضافه شد
+            'invoice_number',    # ✅ اضافه شد
+            'description',
+            'created_at', 'created_at_fa', 'created_at_time',
+            'updated_at'
         ]
+        read_only_fields = ['id', 'tracking_code', 'created_at', 'updated_at']
+    
+    def get_type_display(self, obj):
+        return dict(SilverTransaction.TYPE_CHOICES).get(obj.type, obj.type)
+    
+    def get_status_display(self, obj):
+        return dict(SilverTransaction.STATUS_CHOICES).get(obj.status, obj.status)
+    
+    def get_created_at_fa(self, obj):
+        if obj.created_at:
+            shamsi = jdatetime.datetime.fromgregorian(datetime=obj.created_at)
+            return shamsi.strftime("%Y/%m/%d")
+        return None
+    
+    def get_created_at_time(self, obj):
+        if obj.created_at:
+            return obj.created_at.strftime("%H:%M")
+        return None
+    
+    def get_shop_name(self, obj):
+        return "دارینه"
+    
+    def get_customer_name(self, obj):
+        if obj.user:
+            return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+        return "کاربر ناشناس"
+    
+    def get_customer_mobile(self, obj):
+        return obj.user.mobile if obj.user else None
+    
+    def get_customer_national_code(self, obj):
+        return getattr(obj.user, 'national_code', None) if obj.user else None
+    
+    def get_fee_toman(self, obj):
+        return float(obj.fee or 0)
+    
+    def get_price_per_gram(self, obj):
+        return float(obj.price_per_gram or 0)
+    
+    def get_weight_gr(self, obj):
+        return float(obj.amount_gr or 0)
+    
+    def get_total_amount_display(self, obj):
+        return f"{int(obj.total_amount or 0):,}"
+    
+    def get_total_amount_toman(self, obj):
+        return float(obj.total_amount or 0)
+    
+    def get_fee_amount(self, obj):
+        return float(obj.fee or 0)
+    
+    def get_pure_silver_price(self, obj):
+        """محاسبه قیمت خالص نقره"""
+        if obj.price_per_gram and obj.amount_gr:
+            return float(obj.price_per_gram * obj.amount_gr)
+        return 0
+    
+    def get_invoice_id(self, obj):
+        """دریافت شناسه فاکتور مرتبط با تراکنش"""
+        try:
+            invoice = obj.silver_invoices.first()
+            return invoice.id if invoice else None
+        except:
+            return None
+    
+    def get_invoice_number(self, obj):
+        """دریافت شماره فاکتور مرتبط با تراکنش"""
+        try:
+            invoice = obj.silver_invoices.first()
+            return invoice.invoice_number if invoice else None
+        except:
+            return None
+# silver_app/serializers.py
 
-    def get_final_price(self, obj):
-        return int(obj.total_amount - obj.fee)
+from rest_framework import serializers
+from .models import SilverInvoice
+import jdatetime
 
+
+from rest_framework import serializers
+from decimal import Decimal
+from datetime import datetime
+import jdatetime
+from .models import SilverInvoice, SilverTransaction
+
+
+class SilverInvoiceSerializer(serializers.ModelSerializer):
+    """سریالایزر فاکتور نقره - مطابق با ساختار فرانت‌اند"""
+    
+    # فیلدهای مورد نیاز فرانت
+    invoice_type_display = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
+    created_at_jalali = serializers.SerializerMethodField()
+    created_at_time = serializers.SerializerMethodField()
+    
+    # فیلدهای فاکتور برای نمایش
+    buyer_name = serializers.CharField()
+    buyer_national_id = serializers.CharField()
+    buyer_phone = serializers.CharField()
+    buyer_address = serializers.CharField()
+    
+    seller_name = serializers.CharField()
+    seller_address = serializers.CharField()
+    
+    silver_weight = serializers.SerializerMethodField()
+    silver_weight_display = serializers.SerializerMethodField()
+    silver_price_per_gram = serializers.SerializerMethodField()
+    silver_price_per_gram_display = serializers.SerializerMethodField()
+    pure_silver_price = serializers.SerializerMethodField()
+    pure_silver_price_display = serializers.SerializerMethodField()
+    fee_rate = serializers.SerializerMethodField()
+    fee_amount = serializers.SerializerMethodField()
+    fee_amount_display = serializers.SerializerMethodField()
+    total_amount = serializers.SerializerMethodField()
+    total_amount_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = SilverInvoice
+        fields = [
+            'id', 'invoice_number', 'invoice_type', 'invoice_type_display',
+            'invoice_date', 'status', 'status_display',
+            'created_at_jalali', 'created_at_time',
+            'buyer_name', 'buyer_national_id', 'buyer_phone', 'buyer_address',
+            'seller_name', 'seller_address',
+            'silver_weight', 'silver_weight_display',
+            'silver_price_per_gram', 'silver_price_per_gram_display',
+            'pure_silver_price', 'pure_silver_price_display',
+            'fee_rate', 'fee_amount', 'fee_amount_display',
+            'total_amount', 'total_amount_display',
+            'tracking_code', 'description', 'created_at'
+        ]
+    
+    def get_invoice_type_display(self, obj):
+        return obj.get_invoice_type_display()
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_created_at_jalali(self, obj):
+        import jdatetime
+        if obj.created_at:
+            return jdatetime.datetime.fromgregorian(datetime=obj.created_at).strftime('%Y/%m/%d')
+        return None
+    
+    def get_created_at_time(self, obj):
+        if obj.created_at:
+            return obj.created_at.strftime("%H:%M")
+        return None
+    
+    # ======================== فیلدهای فرمت‌شده ========================
+    
+    def get_silver_weight(self, obj):
+        return float(obj.silver_weight) if obj.silver_weight else 0
+    
+    def get_silver_weight_display(self, obj):
+        """وزن نقره با فرمت فارسی برای نمایش"""
+        if obj.silver_weight:
+            weight_str = f"{obj.silver_weight:,.3f}"
+            persian_digits = {'0': '۰', '1': '۱', '2': '۲', '3': '۳', '4': '۴',
+                            '5': '۵', '6': '۶', '7': '۷', '8': '۸', '9': '۹'}
+            for eng, per in persian_digits.items():
+                weight_str = weight_str.replace(eng, per)
+            return weight_str
+        return "۰"
+    
+    def get_silver_price_per_gram(self, obj):
+        return float(obj.silver_price_per_gram) if obj.silver_price_per_gram else 0
+    
+    def get_silver_price_per_gram_display(self, obj):
+        """قیمت هر گرم نقره با فرمت تومان"""
+        if obj.silver_price_per_gram:
+            price_str = f"{int(obj.silver_price_per_gram):,}"
+            persian_digits = {'0': '۰', '1': '۱', '2': '۲', '3': '۳', '4': '۴',
+                            '5': '۵', '6': '۶', '7': '۷', '8': '۸', '9': '۹'}
+            for eng, per in persian_digits.items():
+                price_str = price_str.replace(eng, per)
+            return f"{price_str} تومان"
+        return "۰ تومان"
+    
+    def get_pure_silver_price(self, obj):
+        return float(obj.pure_silver_price) if obj.pure_silver_price else 0
+    
+    def get_pure_silver_price_display(self, obj):
+        """قیمت خالص نقره با فرمت تومان"""
+        if obj.pure_silver_price:
+            price_str = f"{int(obj.pure_silver_price):,}"
+            persian_digits = {'0': '۰', '1': '۱', '2': '۲', '3': '۳', '4': '۴',
+                            '5': '۵', '6': '۶', '7': '۷', '8': '۸', '9': '۹'}
+            for eng, per in persian_digits.items():
+                price_str = price_str.replace(eng, per)
+            return f"{price_str} تومان"
+        return "۰ تومان"
+    
+    def get_fee_rate(self, obj):
+        return float(obj.fee_rate) if obj.fee_rate else 0
+    
+    def get_fee_amount(self, obj):
+        return float(obj.fee_amount) if obj.fee_amount else 0
+    
+    def get_fee_amount_display(self, obj):
+        """کارمزد با فرمت تومان"""
+        if obj.fee_amount:
+            fee_str = f"{int(obj.fee_amount):,}"
+            persian_digits = {'0': '۰', '1': '۱', '2': '۲', '3': '۳', '4': '۴',
+                            '5': '۵', '6': '۶', '7': '۷', '8': '۸', '9': '۹'}
+            for eng, per in persian_digits.items():
+                fee_str = fee_str.replace(eng, per)
+            return f"{fee_str} تومان"
+        return "۰ تومان"
+    
+    def get_total_amount(self, obj):
+        return float(obj.total_amount) if obj.total_amount else 0
+    
+    def get_total_amount_display(self, obj):
+        """مبلغ کل با فرمت تومان"""
+        if obj.total_amount:
+            total_str = f"{int(obj.total_amount):,}"
+            persian_digits = {'0': '۰', '1': '۱', '2': '۲', '3': '۳', '4': '۴',
+                            '5': '۵', '6': '۶', '7': '۷', '8': '۸', '9': '۹'}
+            for eng, per in persian_digits.items():
+                total_str = total_str.replace(eng, per)
+            return f"{total_str} تومان"
+        return "۰ تومان"
 
 # =========================================================
 # FINANCIAL (DEPOSIT / WITHDRAW)

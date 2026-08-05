@@ -378,309 +378,527 @@ class UserFeeUpdateSerializer(serializers.ModelSerializer):
 
 
 
-# admin_panel/serializers.py
+# # admin_panel/serializers.py
+
+# from rest_framework import serializers
+
+
+# class UserTransactionSerializer(serializers.Serializer):
+
+#     SOURCE_CHOICES = (
+#         ("GOLD_WALLET", "کیف پول طلا"),
+#         ("GOLD", "خرید و فروش طلا"),
+#         ("GOLD_ORDER", "سفارش فیزیکی طلا"),
+#         ("GOLD_LIMIT_ORDER", "سفارش با قیمت طلا"),  # ✅ اضافه شد
+#         ("SILVER_WALLET", "کیف پول نقره"),
+#         ("SILVER", "خرید و فروش نقره"),
+#         ("SILVER_ORDER", "سفارش فیزیکی نقره"),
+#         ("SILVER_LIMIT_ORDER", "سفارش با قیمت نقره"),  # ✅ اضافه شد
+#         ("ADMIN_GOLD", "افزودن موجودی طلا توسط ادمین"),
+#         ("ADMIN_SILVER", "افزودن موجودی نقره توسط ادمین"),
+#     )
+
+#     source = serializers.ChoiceField(
+#         choices=SOURCE_CHOICES
+#     )
+
+#     type = serializers.CharField()
+
+#     status = serializers.CharField()
+
+#     amount = serializers.DecimalField(
+#         max_digits=20,
+#         decimal_places=3,
+#         allow_null=True,
+#     )
+
+#     toman_amount = serializers.DecimalField(
+#         max_digits=20,
+#         decimal_places=0,
+#         allow_null=True,
+#     )
+
+#     payment_method = serializers.CharField(
+#         allow_null=True,
+#         required=False,
+#     )
+
+#     delivery_type = serializers.CharField(
+#         allow_null=True,
+#         required=False,
+#     )
+
+#     tracking_code = serializers.CharField(
+#         allow_null=True,
+#         required=False,
+#     )
+
+#     description = serializers.CharField(
+#         allow_null=True,
+#         required=False,
+#     )
+
+#     created_at = serializers.DateTimeField()
+
+
+# admin_panel/serializers.py - UserTransactionSerializer کامل
 
 from rest_framework import serializers
 
 
 class UserTransactionSerializer(serializers.Serializer):
+    """
+    سریالایزر تراکنش‌های کاربر برای پنل ادمین
+    """
 
     SOURCE_CHOICES = (
         ("GOLD_WALLET", "کیف پول طلا"),
         ("GOLD", "خرید و فروش طلا"),
         ("GOLD_ORDER", "سفارش فیزیکی طلا"),
-        ("GOLD_LIMIT_ORDER", "سفارش با قیمت طلا"),  # ✅ اضافه شد
+        ("GOLD_LIMIT_ORDER", "سفارش با قیمت طلا"),
+        ("GOLD_INVESTMENT", "سرمایه‌گذاری طلا"),
+        ("GOLD_GUARANTEE", "تضمین طلا"),
         ("SILVER_WALLET", "کیف پول نقره"),
         ("SILVER", "خرید و فروش نقره"),
         ("SILVER_ORDER", "سفارش فیزیکی نقره"),
-        ("SILVER_LIMIT_ORDER", "سفارش با قیمت نقره"),  # ✅ اضافه شد
+        ("SILVER_LIMIT_ORDER", "سفارش با قیمت نقره"),
         ("ADMIN_GOLD", "افزودن موجودی طلا توسط ادمین"),
         ("ADMIN_SILVER", "افزودن موجودی نقره توسط ادمین"),
     )
 
-    source = serializers.ChoiceField(
-        choices=SOURCE_CHOICES
-    )
-
+    source = serializers.ChoiceField(choices=SOURCE_CHOICES)
     type = serializers.CharField()
-
     status = serializers.CharField()
-
     amount = serializers.DecimalField(
         max_digits=20,
         decimal_places=3,
         allow_null=True,
     )
-
     toman_amount = serializers.DecimalField(
         max_digits=20,
         decimal_places=0,
         allow_null=True,
     )
-
     payment_method = serializers.CharField(
         allow_null=True,
         required=False,
     )
-
     delivery_type = serializers.CharField(
         allow_null=True,
         required=False,
     )
-
     tracking_code = serializers.CharField(
         allow_null=True,
         required=False,
     )
-
     description = serializers.CharField(
         allow_null=True,
         required=False,
     )
-
     created_at = serializers.DateTimeField()
+# # =========================================================
+# # GOLD BALANCE ADJUSTMENT
+# # =========================================================
+
+# class GoldBalanceAdjustmentSerializer(serializers.ModelSerializer):
+
+#     user_mobile = serializers.CharField(
+#         source="user.mobile",
+#         read_only=True,
+#     )
+
+#     admin_mobile = serializers.CharField(
+#         source="admin.mobile",
+#         read_only=True,
+#     )
+
+#     class Meta:
+#         model = GoldBalanceAdjustment
+#         fields = (
+#             "id",
+#             "user",
+#             "user_mobile",
+#             "admin",
+#             "admin_mobile",
+#             "wallet_amount",
+#             "gold_amount",
+#             "admin_note",
+#             "created_at",
+#             "updated_at",
+#         )
+
+#         read_only_fields = (
+#             "id",
+#             "admin",
+#             "user_mobile",
+#             "admin_mobile",
+#             "created_at",
+#             "updated_at",
+#         )
+
+#     def validate_wallet_amount(self, value):
+
+#         if value < 0:
+#             raise serializers.ValidationError(
+#                 "مبلغ کیف پول نمی‌تواند منفی باشد."
+#             )
+
+#         return value
+
+#     def validate_gold_amount(self, value):
+
+#         if value < 0:
+#             raise serializers.ValidationError(
+#                 "مقدار طلا نمی‌تواند منفی باشد."
+#             )
+
+#         return value
+    
+    
 
 
+# # =========================================================
+# # SILVER BALANCE ADJUSTMENT
+# # =========================================================
 
-# =========================================================
-# GOLD BALANCE ADJUSTMENT
-# =========================================================
+# class SilverBalanceAdjustmentSerializer(serializers.ModelSerializer):
+
+#     user_mobile = serializers.CharField(
+#         source="user.mobile",
+#         read_only=True,
+#     )
+
+#     admin_mobile = serializers.CharField(
+#         source="admin.mobile",
+#         read_only=True,
+#     )
+
+#     class Meta:
+#         model = SilverBalanceAdjustment
+#         fields = (
+#             "id",
+#             "user",
+#             "user_mobile",
+#             "admin",
+#             "admin_mobile",
+#             "wallet_amount",
+#             "silver_amount",
+#             "admin_note",
+#             "created_at",
+#             "updated_at",
+#         )
+
+#         read_only_fields = (
+#             "id",
+#             "admin",
+#             "user_mobile",
+#             "admin_mobile",
+#             "created_at",
+#             "updated_at",
+#         )
+
+#     def validate_wallet_amount(self, value):
+
+#         if value < 0:
+#             raise serializers.ValidationError(
+#                 "مبلغ کیف پول نمی‌تواند منفی باشد."
+#             )
+
+#         return value
+
+#     def validate_silver_amount(self, value):
+
+#         if value < 0:
+#             raise serializers.ValidationError(
+#                 "مقدار نقره نمی‌تواند منفی باشد."
+#             )
+
+#         return value
+
+
+# # =========================================================
+# # GOLD BALANCE WITHDRAWAL
+# # =========================================================
+
+# class GoldBalanceWithdrawalSerializer(serializers.ModelSerializer):
+
+#     user_mobile = serializers.CharField(
+#         source="user.mobile",
+#         read_only=True,
+#     )
+
+#     admin_mobile = serializers.CharField(
+#         source="admin.mobile",
+#         read_only=True,
+#     )
+
+#     class Meta:
+#         model = GoldBalanceWithdrawal
+#         fields = (
+#             "id",
+#             "user",
+#             "user_mobile",
+#             "admin",
+#             "admin_mobile",
+#             "wallet_amount",
+#             "gold_amount",
+#             "admin_note",
+#             "created_at",
+#             "updated_at",
+#         )
+
+#         read_only_fields = (
+#             "id",
+#             "admin",
+#             "user_mobile",
+#             "admin_mobile",
+#             "created_at",
+#             "updated_at",
+#         )
+
+#     def validate_wallet_amount(self, value):
+
+#         if value < 0:
+#             raise serializers.ValidationError(
+#                 "مبلغ کیف پول نمی‌تواند منفی باشد."
+#             )
+
+#         return value
+
+#     def validate_gold_amount(self, value):
+
+#         if value < 0:
+#             raise serializers.ValidationError(
+#                 "مقدار طلا نمی‌تواند منفی باشد."
+#             )
+
+#         return value
+    
+
+
+# # =========================================================
+# # SILVER BALANCE WITHDRAWAL
+# # =========================================================
+
+# class SilverBalanceWithdrawalSerializer(serializers.ModelSerializer):
+
+#     user_mobile = serializers.CharField(
+#         source="user.mobile",
+#         read_only=True,
+#     )
+
+#     admin_mobile = serializers.CharField(
+#         source="admin.mobile",
+#         read_only=True,
+#     )
+
+#     class Meta:
+#         model = SilverBalanceWithdrawal
+#         fields = (
+#             "id",
+#             "user",
+#             "user_mobile",
+#             "admin",
+#             "admin_mobile",
+#             "wallet_amount",
+#             "silver_amount",
+#             "admin_note",
+#             "created_at",
+#             "updated_at",
+#         )
+
+#         read_only_fields = (
+#             "id",
+#             "admin",
+#             "user_mobile",
+#             "admin_mobile",
+#             "created_at",
+#             "updated_at",
+#         )
+
+#     def validate_wallet_amount(self, value):
+
+#         if value < 0:
+#             raise serializers.ValidationError(
+#                 "مبلغ کیف پول نمی‌تواند منفی باشد."
+#             )
+
+#         return value
+
+#     def validate_silver_amount(self, value):
+
+#         if value < 0:
+#             raise serializers.ValidationError(
+#                 "مقدار نقره نمی‌تواند منفی باشد."
+#             )
+
+#         return value
+
+# admin_panel/serializers.py
+
+from rest_framework import serializers
+from .models import (
+    GoldBalanceAdjustment,
+    GoldBalanceWithdrawal,
+    SilverBalanceAdjustment,
+    SilverBalanceWithdrawal,
+)
+
 
 class GoldBalanceAdjustmentSerializer(serializers.ModelSerializer):
-
-    user_mobile = serializers.CharField(
-        source="user.mobile",
-        read_only=True,
-    )
-
-    admin_mobile = serializers.CharField(
-        source="admin.mobile",
-        read_only=True,
-    )
-
+    """سریالایزر افزایش موجودی طلا"""
+    
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    admin_name = serializers.SerializerMethodField()
+    
     class Meta:
         model = GoldBalanceAdjustment
-        fields = (
-            "id",
-            "user",
-            "user_mobile",
-            "admin",
-            "admin_mobile",
-            "wallet_amount",
-            "gold_amount",
-            "admin_note",
-            "created_at",
-            "updated_at",
-        )
-
-        read_only_fields = (
-            "id",
-            "admin",
-            "user_mobile",
-            "admin_mobile",
-            "created_at",
-            "updated_at",
-        )
-
-    def validate_wallet_amount(self, value):
-
-        if value < 0:
-            raise serializers.ValidationError(
-                "مبلغ کیف پول نمی‌تواند منفی باشد."
-            )
-
-        return value
-
-    def validate_gold_amount(self, value):
-
-        if value < 0:
-            raise serializers.ValidationError(
-                "مقدار طلا نمی‌تواند منفی باشد."
-            )
-
-        return value
+        fields = [
+            'id',
+            'tracking_code',  # ✅ کد رهگیری اضافه شد
+            'user',
+            'user_mobile',
+            'user_full_name',
+            'admin',
+            'admin_name',
+            'wallet_amount',
+            'gold_amount',
+            'admin_note',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['tracking_code', 'created_at', 'updated_at']
     
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
     
+    def get_admin_name(self, obj):
+        if obj.admin:
+            return f"{obj.admin.first_name} {obj.admin.last_name}".strip() or obj.admin.mobile
+        return None
 
-
-# =========================================================
-# SILVER BALANCE ADJUSTMENT
-# =========================================================
-
-class SilverBalanceAdjustmentSerializer(serializers.ModelSerializer):
-
-    user_mobile = serializers.CharField(
-        source="user.mobile",
-        read_only=True,
-    )
-
-    admin_mobile = serializers.CharField(
-        source="admin.mobile",
-        read_only=True,
-    )
-
-    class Meta:
-        model = SilverBalanceAdjustment
-        fields = (
-            "id",
-            "user",
-            "user_mobile",
-            "admin",
-            "admin_mobile",
-            "wallet_amount",
-            "silver_amount",
-            "admin_note",
-            "created_at",
-            "updated_at",
-        )
-
-        read_only_fields = (
-            "id",
-            "admin",
-            "user_mobile",
-            "admin_mobile",
-            "created_at",
-            "updated_at",
-        )
-
-    def validate_wallet_amount(self, value):
-
-        if value < 0:
-            raise serializers.ValidationError(
-                "مبلغ کیف پول نمی‌تواند منفی باشد."
-            )
-
-        return value
-
-    def validate_silver_amount(self, value):
-
-        if value < 0:
-            raise serializers.ValidationError(
-                "مقدار نقره نمی‌تواند منفی باشد."
-            )
-
-        return value
-
-
-# =========================================================
-# GOLD BALANCE WITHDRAWAL
-# =========================================================
 
 class GoldBalanceWithdrawalSerializer(serializers.ModelSerializer):
-
-    user_mobile = serializers.CharField(
-        source="user.mobile",
-        read_only=True,
-    )
-
-    admin_mobile = serializers.CharField(
-        source="admin.mobile",
-        read_only=True,
-    )
-
+    """سریالایزر برداشت موجودی طلا"""
+    
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    admin_name = serializers.SerializerMethodField()
+    
     class Meta:
         model = GoldBalanceWithdrawal
-        fields = (
-            "id",
-            "user",
-            "user_mobile",
-            "admin",
-            "admin_mobile",
-            "wallet_amount",
-            "gold_amount",
-            "admin_note",
-            "created_at",
-            "updated_at",
-        )
-
-        read_only_fields = (
-            "id",
-            "admin",
-            "user_mobile",
-            "admin_mobile",
-            "created_at",
-            "updated_at",
-        )
-
-    def validate_wallet_amount(self, value):
-
-        if value < 0:
-            raise serializers.ValidationError(
-                "مبلغ کیف پول نمی‌تواند منفی باشد."
-            )
-
-        return value
-
-    def validate_gold_amount(self, value):
-
-        if value < 0:
-            raise serializers.ValidationError(
-                "مقدار طلا نمی‌تواند منفی باشد."
-            )
-
-        return value
+        fields = [
+            'id',
+            'tracking_code',  # ✅ کد رهگیری اضافه شد
+            'user',
+            'user_mobile',
+            'user_full_name',
+            'admin',
+            'admin_name',
+            'wallet_amount',
+            'gold_amount',
+            'admin_note',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['tracking_code', 'created_at', 'updated_at']
     
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+    
+    def get_admin_name(self, obj):
+        if obj.admin:
+            return f"{obj.admin.first_name} {obj.admin.last_name}".strip() or obj.admin.mobile
+        return None
 
 
-# =========================================================
-# SILVER BALANCE WITHDRAWAL
-# =========================================================
+class SilverBalanceAdjustmentSerializer(serializers.ModelSerializer):
+    """سریالایزر افزایش موجودی نقره"""
+    
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    admin_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = SilverBalanceAdjustment
+        fields = [
+            'id',
+            'tracking_code',  # ✅ کد رهگیری اضافه شد
+            'user',
+            'user_mobile',
+            'user_full_name',
+            'admin',
+            'admin_name',
+            'wallet_amount',
+            'silver_amount',
+            'admin_note',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['tracking_code', 'created_at', 'updated_at']
+    
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+    
+    def get_admin_name(self, obj):
+        if obj.admin:
+            return f"{obj.admin.first_name} {obj.admin.last_name}".strip() or obj.admin.mobile
+        return None
+
 
 class SilverBalanceWithdrawalSerializer(serializers.ModelSerializer):
-
-    user_mobile = serializers.CharField(
-        source="user.mobile",
-        read_only=True,
-    )
-
-    admin_mobile = serializers.CharField(
-        source="admin.mobile",
-        read_only=True,
-    )
-
+    """سریالایزر برداشت موجودی نقره"""
+    
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    admin_name = serializers.SerializerMethodField()
+    
     class Meta:
         model = SilverBalanceWithdrawal
-        fields = (
-            "id",
-            "user",
-            "user_mobile",
-            "admin",
-            "admin_mobile",
-            "wallet_amount",
-            "silver_amount",
-            "admin_note",
-            "created_at",
-            "updated_at",
-        )
-
-        read_only_fields = (
-            "id",
-            "admin",
-            "user_mobile",
-            "admin_mobile",
-            "created_at",
-            "updated_at",
-        )
-
-    def validate_wallet_amount(self, value):
-
-        if value < 0:
-            raise serializers.ValidationError(
-                "مبلغ کیف پول نمی‌تواند منفی باشد."
-            )
-
-        return value
-
-    def validate_silver_amount(self, value):
-
-        if value < 0:
-            raise serializers.ValidationError(
-                "مقدار نقره نمی‌تواند منفی باشد."
-            )
-
-        return value
+        fields = [
+            'id',
+            'tracking_code',  # ✅ کد رهگیری اضافه شد
+            'user',
+            'user_mobile',
+            'user_full_name',
+            'admin',
+            'admin_name',
+            'wallet_amount',
+            'silver_amount',
+            'admin_note',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['tracking_code', 'created_at', 'updated_at']
+    
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+    
+    def get_admin_name(self, obj):
+        if obj.admin:
+            return f"{obj.admin.first_name} {obj.admin.last_name}".strip() or obj.admin.mobile
+        return None
 
 
+class AdminTransactionSummarySerializer(serializers.Serializer):
+    """سریالایزر خلاصه تراکنش‌های ادمین"""
+    
+    id = serializers.IntegerField()
+    tracking_code = serializers.CharField()
+    user_id = serializers.IntegerField()
+    user_mobile = serializers.CharField()
+    user_full_name = serializers.CharField()
+    admin_id = serializers.IntegerField(allow_null=True)
+    admin_name = serializers.CharField(allow_null=True)
+    type = serializers.CharField()
+    type_display = serializers.CharField()
+    wallet_type = serializers.CharField()
+    wallet_type_display = serializers.CharField()
+    amount = serializers.DecimalField(max_digits=20, decimal_places=3)
+    toman_amount = serializers.DecimalField(max_digits=20, decimal_places=0, allow_null=True)
+    admin_note = serializers.CharField(allow_null=True)
+    created_at = serializers.DateTimeField()
 
 # =========================================================
 # USER FEE
@@ -1598,25 +1816,48 @@ class CooperationRequestListSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+# admin_panel/serializers.py - اضافه کردن سریالایزرها
+
 class GoldLiveSerializer(serializers.Serializer):
-
+    """سریالایزر قیمت لحظه‌ای با بابل"""
+    
     market_price = serializers.IntegerField()
-
     intrinsic_price = serializers.IntegerField()
-
     bubble_amount = serializers.IntegerField()
-
     bubble_percent = serializers.FloatField()
-
     is_positive = serializers.BooleanField()
 
 
+class GoldPlatformPriceSerializer(serializers.Serializer):
+    """سریالایزر قیمت هر پلتفرم"""
+    
+    platform_code = serializers.CharField()
+    platform_name = serializers.CharField()
+    price = serializers.FloatField(allow_null=True)
+    change_24h = serializers.FloatField(allow_null=True)
+    max_24h = serializers.FloatField(allow_null=True)
+    min_24h = serializers.FloatField(allow_null=True)
+    last_updated = serializers.CharField(allow_null=True)
+    error = serializers.CharField(allow_null=True)
+
+
+class GoldPlatformPricesSerializer(serializers.Serializer):
+    """سریالایزر لیست قیمت پلتفرم‌ها"""
+    
+    platforms = GoldPlatformPriceSerializer(many=True)
+    last_updated = serializers.CharField()
+
+
 class GoldChartSerializer(serializers.Serializer):
+    """سریالایزر چارت"""
+    
     labels = serializers.ListField(child=serializers.CharField())
     prices = serializers.ListField(child=serializers.IntegerField())
 
 
 class GoldStatsSerializer(serializers.Serializer):
+    """سریالایزر آمار چارت"""
+    
     current_price = serializers.IntegerField()
     highest_price = serializers.IntegerField()
     lowest_price = serializers.IntegerField()
@@ -1627,32 +1868,55 @@ class GoldStatsSerializer(serializers.Serializer):
 
 
 class GoldChartDataSerializer(serializers.Serializer):
+    """سریالایزر داده‌های چارت"""
+    
     chart = GoldChartSerializer()
     stats = GoldStatsSerializer()
 
-
 # ---
+# admin_panel/serializers.py - سریالایزرهای نقره
 
 
 class SilverLiveSerializer(serializers.Serializer):
-
+    """سریالایزر قیمت لحظه‌ای نقره با بابل"""
+    
     market_price = serializers.IntegerField()
-
     intrinsic_price = serializers.IntegerField()
-
     bubble_amount = serializers.IntegerField()
-
     bubble_percent = serializers.FloatField()
-
     is_positive = serializers.BooleanField()
 
 
+class SilverPlatformPriceSerializer(serializers.Serializer):
+    """سریالایزر قیمت هر پلتفرم برای نقره"""
+    
+    platform_code = serializers.CharField()
+    platform_name = serializers.CharField()
+    price = serializers.FloatField(allow_null=True)
+    change_24h = serializers.FloatField(allow_null=True)
+    max_24h = serializers.FloatField(allow_null=True)
+    min_24h = serializers.FloatField(allow_null=True)
+    last_updated = serializers.CharField(allow_null=True)
+    error = serializers.CharField(allow_null=True)
+
+
+class SilverPlatformPricesSerializer(serializers.Serializer):
+    """سریالایزر لیست قیمت پلتفرم‌های نقره"""
+    
+    platforms = SilverPlatformPriceSerializer(many=True)
+    last_updated = serializers.CharField()
+
+
 class SilverChartSerializer(serializers.Serializer):
+    """سریالایزر چارت نقره"""
+    
     labels = serializers.ListField(child=serializers.CharField())
     prices = serializers.ListField(child=serializers.IntegerField())
 
 
 class SilverStatsSerializer(serializers.Serializer):
+    """سریالایزر آمار چارت نقره"""
+    
     current_price = serializers.IntegerField()
     highest_price = serializers.IntegerField()
     lowest_price = serializers.IntegerField()
@@ -1663,9 +1927,10 @@ class SilverStatsSerializer(serializers.Serializer):
 
 
 class SilverChartDataSerializer(serializers.Serializer):
+    """سریالایزر داده‌های چارت نقره"""
+    
     chart = SilverChartSerializer()
     stats = SilverStatsSerializer()
-
 
 class FinancialTransactionSerializer(serializers.ModelSerializer):
 
@@ -2659,3 +2924,791 @@ class SilverLimitOrderAdminSerializer(serializers.ModelSerializer):
     def get_silver_blocked_balance(self, obj):
         inv = getattr(obj.user, "silver_inventory", None)
         return float(inv.blocked_balance) if inv else None
+    
+    
+    
+# admin_panel/serializers.py - اضافه کردن سریالایزرهای تیکت
+
+from rest_framework import serializers
+from accounts.models import Ticket, TicketCategory, TicketMessage
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+
+class TicketCategoryAdminSerializer(serializers.ModelSerializer):
+    """سریالایزر دسته‌بندی تیکت برای ادمین"""
+    
+    ticket_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = TicketCategory
+        fields = ['id', 'name', 'slug', 'description', 'is_active', 'ticket_count', 'created_at']
+        read_only_fields = ['id', 'slug', 'created_at']
+    
+    def get_ticket_count(self, obj):
+        return obj.tickets.filter(status__in=['open', 'pending', 'answered', 'in_progress']).count()
+
+
+class TicketMessageAdminSerializer(serializers.ModelSerializer):
+    """سریالایزر پیام تیکت برای ادمین"""
+    
+    user_name = serializers.SerializerMethodField()
+    user_mobile = serializers.SerializerMethodField()
+    attachment_url = serializers.SerializerMethodField()
+    attachment_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = TicketMessage
+        fields = [
+            'id', 'ticket', 'user', 'user_name', 'user_mobile',
+            'message', 'attachment', 'attachment_url', 'attachment_name',
+            'is_admin', 'is_read', 'read_at', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+    
+    def get_user_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+    
+    def get_user_mobile(self, obj):
+        return obj.user.mobile
+    
+    def get_attachment_url(self, obj):
+        if obj.attachment:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.attachment.url)
+            return obj.attachment.url
+        return None
+    
+    def get_attachment_name(self, obj):
+        if obj.attachment:
+            return obj.attachment.name.split('/')[-1]
+        return None
+
+
+class TicketAdminListSerializer(serializers.ModelSerializer):
+    """سریالایزر لیست تیکت‌ها برای ادمین"""
+    
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    last_message = serializers.SerializerMethodField()
+    last_message_user_type = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
+    priority_display = serializers.SerializerMethodField()
+    unread_admin_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Ticket
+        fields = [
+            'id', 'tracking_code', 'title', 'category', 'category_name',
+            'user', 'user_mobile', 'user_full_name',
+            'status', 'status_display', 'priority', 'priority_display',
+            'created_at', 'updated_at', 'last_activity_at',
+            'last_message', 'last_message_user_type',
+            'unread_admin_count', 'auto_resolved'
+        ]
+    
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+    
+    def get_last_message(self, obj):
+        last_msg = obj.messages.last()
+        if last_msg:
+            return {
+                'message': last_msg.message[:100] + ('...' if len(last_msg.message) > 100 else ''),
+                'created_at': last_msg.created_at,
+                'is_admin': last_msg.is_admin,
+                'user_name': f"{last_msg.user.first_name} {last_msg.user.last_name}".strip() or last_msg.user.mobile
+            }
+        return None
+    
+    def get_last_message_user_type(self, obj):
+        last_msg = obj.messages.last()
+        if last_msg:
+            return 'admin' if last_msg.is_admin else 'user'
+        return None
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_priority_display(self, obj):
+        return obj.get_priority_display()
+    
+    def get_unread_admin_count(self, obj):
+        """تعداد پیام‌های خوانده نشده برای ادمین"""
+        return obj.messages.filter(is_admin=False, is_read=False).count()
+
+
+class TicketAdminDetailSerializer(serializers.ModelSerializer):
+    """سریالایزر جزئیات تیکت برای ادمین"""
+    
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    messages = TicketMessageAdminSerializer(many=True, read_only=True)
+    status_display = serializers.SerializerMethodField()
+    priority_display = serializers.SerializerMethodField()
+    last_message_user_type = serializers.SerializerMethodField()
+    attachment_url = serializers.SerializerMethodField()
+    attachment_name = serializers.SerializerMethodField()
+    unread_admin_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Ticket
+        fields = [
+            'id', 'tracking_code', 'user', 'user_mobile', 'user_full_name',
+            'category', 'category_name', 'title', 'description',
+            'status', 'status_display', 'priority', 'priority_display',
+            'attachment', 'attachment_url', 'attachment_name',
+            'created_at', 'updated_at', 'resolved_at', 'closed_at',
+            'last_activity_at', 'messages', 'auto_resolved',
+            'last_message_user_type', 'unread_admin_count'
+        ]
+    
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_priority_display(self, obj):
+        return obj.get_priority_display()
+    
+    def get_last_message_user_type(self, obj):
+        last_msg = obj.messages.last()
+        if last_msg:
+            return 'admin' if last_msg.is_admin else 'user'
+        return None
+    
+    def get_attachment_url(self, obj):
+        if obj.attachment:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.attachment.url)
+            return obj.attachment.url
+        return None
+    
+    def get_attachment_name(self, obj):
+        if obj.attachment:
+            return obj.attachment.name.split('/')[-1]
+        return None
+    
+    def get_unread_admin_count(self, obj):
+        """تعداد پیام‌های خوانده نشده برای ادمین"""
+        return obj.messages.filter(is_admin=False, is_read=False).count()
+
+
+class TicketStatusUpdateAdminSerializer(serializers.Serializer):
+    """سریالایزر بروزرسانی وضعیت تیکت توسط ادمین"""
+    
+    status = serializers.ChoiceField(
+        choices=['answered', 'resolved', 'closed', 'in_progress'],
+        error_messages={
+            'required': 'وضعیت الزامی است',
+            'invalid_choice': 'وضعیت نامعتبر است'
+        }
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        error_messages={
+            'blank': 'توضیحات نمی‌تواند خالی باشد'
+        }
+    )
+
+
+class TicketMessageCreateAdminSerializer(serializers.ModelSerializer):
+    """سریالایزر ایجاد پیام توسط ادمین"""
+    
+    class Meta:
+        model = TicketMessage
+        fields = ['message', 'attachment']
+    
+    def validate_message(self, value):
+        if len(value.strip()) < 3:
+            raise serializers.ValidationError("متن پیام باید حداقل ۳ کاراکتر باشد")
+        return value.strip()
+    
+    def validate_attachment(self, value):
+        if value:
+            if value.size > 10 * 1024 * 1024:
+                raise serializers.ValidationError("حجم فایل نباید بیشتر از ۱۰ مگابایت باشد")
+            
+            allowed_extensions = [
+                'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg',
+                'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+                'zip', 'rar', '7z', 'txt', 'csv', 'json', 'xml'
+            ]
+            ext = value.name.split('.')[-1].lower()
+            if ext not in allowed_extensions:
+                raise serializers.ValidationError(
+                    f"نوع فایل مجاز نیست. فرمت‌های مجاز: {', '.join(allowed_extensions)}"
+                )
+        return value
+
+
+class TicketStatisticsAdminSerializer(serializers.Serializer):
+    """سریالایزر آمار تیکت‌ها"""
+    
+    total = serializers.IntegerField()
+    open = serializers.IntegerField()
+    pending = serializers.IntegerField()
+    answered = serializers.IntegerField()
+    in_progress = serializers.IntegerField()
+    resolved = serializers.IntegerField()
+    closed = serializers.IntegerField()
+    unread_admin = serializers.IntegerField()
+    
+    
+    
+    
+# admin_panel/serializers.py - اضافه کردن سریالایزرهای تضمین طلا
+
+from rest_framework import serializers
+from gold_app.models import GoldGuarantee, GoldGuaranteePlan
+from accounts.models import User
+
+
+class GoldGuaranteePlanAdminSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر طرح‌های تضمین طلا برای ادمین
+    """
+    guarantee_count = serializers.SerializerMethodField()
+    active_guarantee_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GoldGuaranteePlan
+        fields = [
+            'id', 'name', 'duration_days', 'service_fee_percent',
+            'is_active', 'description', 'created_at', 'updated_at',
+            'guarantee_count', 'active_guarantee_count'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_guarantee_count(self, obj):
+        return obj.guarantees.count()
+    
+    def get_active_guarantee_count(self, obj):
+        return obj.guarantees.filter(status='ACTIVE').count()
+
+# admin_panel/serializers.py - اصلاح GoldGuaranteeAdminListSerializer و GoldGuaranteeAdminDetailSerializer
+
+class GoldGuaranteeAdminListSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر لیست تضمین‌های طلا برای ادمین
+    """
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    plan_name = serializers.CharField(source='plan.name', read_only=True)
+    plan_duration_days = serializers.IntegerField(source='plan.duration_days', read_only=True)
+    status_display = serializers.SerializerMethodField()
+    days_remaining = serializers.SerializerMethodField()
+    end_date_shamsi = serializers.SerializerMethodField()
+    
+    # ✅ فیلدهای جدید با نمایش صحیح
+    platform_profit_display = serializers.SerializerMethodField()
+    user_payout_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GoldGuarantee
+        fields = [
+            'id', 'user', 'user_mobile', 'user_full_name',
+            'plan', 'plan_name', 'plan_duration_days',
+            'gold_weight', 'guaranteed_price', 'service_fee',
+            'start_date', 'end_date', 'end_date_shamsi',
+            'status', 'status_display', 'days_remaining',
+            'cancelled_at', 'executed_at', 'executed_price',
+            'profit_loss', 'platform_profit', 'platform_profit_display',
+            'user_payout', 'user_payout_display',
+            'description', 'is_expired'
+        ]
+    
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_days_remaining(self, obj):
+        return obj.days_remaining
+    
+    def get_end_date_shamsi(self, obj):
+        import jdatetime
+        if obj.end_date:
+            shamsi = jdatetime.date.fromgregorian(date=obj.end_date)
+            return shamsi.strftime("%Y/%m/%d")
+        return None
+    
+    def get_platform_profit_display(self, obj):
+        """نمایش سود پلتفرم با فرمت تومان"""
+        if obj.platform_profit:
+            return f"{int(obj.platform_profit):,} تومان"
+        return "۰ تومان"
+    
+    def get_user_payout_display(self, obj):
+        """نمایش مبلغ پرداختی به کاربر با فرمت تومان"""
+        if obj.user_payout:
+            return f"{int(obj.user_payout):,} تومان"
+        return "۰ تومان"
+
+
+
+# admin_panel/serializers.py - اصلاح GoldGuaranteeAdminDetailSerializer
+
+# admin_panel/serializers.py - سریالایزر کامل GoldGuaranteeAdminDetailSerializer
+
+from rest_framework import serializers
+from gold_app.models import GoldGuarantee, GoldGuaranteePlan
+
+
+# admin_panel/serializers.py - اصلاح GoldGuaranteeAdminDetailSerializer
+
+# admin_panel/serializers.py - اصلاح GoldGuaranteeAdminDetailSerializer
+
+from rest_framework import serializers
+from gold_app.models import GoldGuarantee
+import jdatetime
+from datetime import datetime
+
+
+class GoldGuaranteeAdminDetailSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر جزئیات تضمین طلا برای ادمین
+    """
+    # =============================================
+    # فیلدهای کاربر
+    # =============================================
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    
+    # =============================================
+    # فیلدهای طرح
+    # =============================================
+    plan_name = serializers.CharField(source='plan.name', read_only=True)
+    plan_duration_days = serializers.IntegerField(source='plan.duration_days', read_only=True)
+    service_fee_percent = serializers.DecimalField(
+        source='plan.service_fee_percent', 
+        read_only=True, 
+        max_digits=5, 
+        decimal_places=2
+    )
+    
+    # =============================================
+    # فیلدهای نمایشی وضعیت
+    # =============================================
+    status_display = serializers.SerializerMethodField()
+    days_remaining = serializers.SerializerMethodField()
+    
+    # =============================================
+    # فیلدهای نمایشی قیمت‌ها
+    # =============================================
+    start_price_display = serializers.SerializerMethodField()
+    end_price_display = serializers.SerializerMethodField()
+    
+    # =============================================
+    # فیلدهای نمایشی تاریخ
+    # =============================================
+    start_date_shamsi = serializers.SerializerMethodField()
+    end_date_shamsi = serializers.SerializerMethodField()
+    
+    # =============================================
+    # فیلدهای نمایشی سود با رنگ و علامت
+    # =============================================
+    platform_profit_display = serializers.SerializerMethodField()
+    platform_profit_color = serializers.SerializerMethodField()
+    platform_profit_sign = serializers.SerializerMethodField()
+    user_payout_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GoldGuarantee
+        fields = [
+            'id', 'user', 'user_mobile', 'user_full_name',
+            'plan', 'plan_name', 'plan_duration_days', 'service_fee_percent',
+            'gold_weight',
+            'guaranteed_price', 'start_price_display',
+            'executed_price', 'end_price_display',
+            'service_fee',
+            'start_date', 'start_date_shamsi',
+            'end_date', 'end_date_shamsi',
+            'status', 'status_display',
+            'days_remaining', 'is_expired',
+            'cancelled_at', 'executed_at',
+            'profit_loss',
+            'platform_profit', 'platform_profit_display',
+            'platform_profit_color', 'platform_profit_sign',
+            'user_payout', 'user_payout_display',
+            'description',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'user', 'plan', 'created_at', 'updated_at',
+            'start_date', 'end_date'
+        ]
+    
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_days_remaining(self, obj):
+        return obj.days_remaining
+    
+    # =============================================
+    # نمایش قیمت شروع
+    # =============================================
+    def get_start_price_display(self, obj):
+        if obj.guaranteed_price:
+            return f"{int(obj.guaranteed_price):,} تومان"
+        return "۰ تومان"
+    
+    # =============================================
+    # نمایش قیمت اتمام (سررسید)
+    # =============================================
+    def get_end_price_display(self, obj):
+        if obj.executed_price is not None:
+            return f"{int(obj.executed_price):,} تومان"
+        
+        from gold_app.utils import get_live_gold_price
+        current_price = get_live_gold_price()
+        if current_price:
+            return f"{int(current_price):,} تومان"
+        
+        return "در انتظار قیمت‌دهی"
+    
+    # =============================================
+    # متدهای نمایش تاریخ
+    # =============================================
+    def get_start_date_shamsi(self, obj):
+        if obj.start_date:
+            shamsi = jdatetime.datetime.fromgregorian(datetime=obj.start_date)
+            return shamsi.strftime("%Y/%m/%d %H:%M")
+        return None
+    
+    def get_end_date_shamsi(self, obj):
+        if obj.end_date:
+            shamsi = jdatetime.datetime.fromgregorian(datetime=obj.end_date)
+            return shamsi.strftime("%Y/%m/%d %H:%M")
+        return None
+    
+    # =============================================
+    # متدهای نمایش سود با رنگ و علامت
+    # =============================================
+    def get_platform_profit_display(self, obj):
+        """نمایش سود پلتفرم با علامت مثبت/منفی"""
+        profit = obj.platform_profit or 0
+        if profit > 0:
+            return f"+{int(profit):,}"
+        elif profit < 0:
+            return f"{int(profit):,}"
+        return "۰"
+    
+    def get_platform_profit_color(self, obj):
+        """
+        رنگ سود پلتفرم:
+        - success (سبز): سود > 0
+        - danger (قرمز): سود < 0
+        - secondary (خاکستری): سود = 0
+        """
+        profit = obj.platform_profit or 0
+        if profit > 0:
+            return "success"
+        elif profit < 0:
+            return "danger"
+        return "secondary"
+    
+    def get_platform_profit_sign(self, obj):
+        """علامت سود پلتفرم برای نمایش"""
+        profit = obj.platform_profit or 0
+        if profit > 0:
+            return "positive"
+        elif profit < 0:
+            return "negative"
+        return "zero"
+    
+    def get_user_payout_display(self, obj):
+        if obj.user_payout:
+            return f"{int(obj.user_payout):,} تومان"
+        return "۰ تومان"
+
+class GoldGuaranteeStatusUpdateAdminSerializer(serializers.Serializer):
+    """
+    سریالایزر بروزرسانی وضعیت تضمین طلا توسط ادمین
+    """
+    status = serializers.ChoiceField(
+        choices=['CANCELLED', 'EXPIRED'],
+        error_messages={
+            'required': 'وضعیت الزامی است',
+            'invalid_choice': 'وضعیت نامعتبر است'
+        }
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        error_messages={
+            'blank': 'توضیحات نمی‌تواند خالی باشد'
+        }
+    )
+
+
+class GoldGuaranteeStatisticsAdminSerializer(serializers.Serializer):
+    """
+    سریالایزر آمار تضمین‌های طلا
+    """
+    total = serializers.IntegerField()
+    active = serializers.IntegerField()
+    expired = serializers.IntegerField()
+    cancelled = serializers.IntegerField()
+    executed = serializers.IntegerField()
+    total_gold_weight = serializers.DecimalField(max_digits=20, decimal_places=3)
+    total_service_fee = serializers.DecimalField(max_digits=20, decimal_places=0)
+    total_profit_loss = serializers.DecimalField(max_digits=20, decimal_places=0)
+    plans_count = serializers.IntegerField()
+    
+    
+    
+# admin_panel/serializers.py - اصلاح شده با ایمپورت‌های کامل
+
+from rest_framework import serializers
+from django.db import models  # ✅ اضافه کردن این خط
+from gold_app.models import GoldInvestment, GoldInvestmentPlan, GoldInventory
+from accounts.models import User
+
+
+# admin_panel/serializers.py - اصلاح GoldInvestmentPlanAdminSerializer
+# admin_panel/serializers.py - سریالایزرهای ادمین
+
+from rest_framework import serializers
+from gold_app.models import GoldInvestment, GoldInvestmentPlan
+from django.db import models
+
+
+# admin_panel/serializers.py - اصلاح GoldInvestmentPlanAdminSerializer
+
+class GoldInvestmentPlanAdminSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر طرح‌های سرمایه‌گذاری طلا برای ادمین
+    """
+    investment_count = serializers.SerializerMethodField()
+    active_investment_count = serializers.SerializerMethodField()
+    total_invested_gold = serializers.SerializerMethodField()
+    duration_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GoldInvestmentPlan
+        fields = [
+            'id', 'name', 
+            'duration_days', 'duration_display',
+            'total_profit_percent',  # ✅ فقط total_profit_percent
+            'is_active', 'description',
+            'created_at', 'updated_at',
+            'investment_count', 'active_investment_count', 'total_invested_gold'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_investment_count(self, obj):
+        return obj.investments.count()
+    
+    def get_active_investment_count(self, obj):
+        return obj.investments.filter(status='ACTIVE').count()
+    
+    def get_total_invested_gold(self, obj):
+        total = obj.investments.aggregate(
+            total=models.Sum('gold_weight')
+        )['total']
+        return float(total) if total else 0
+    
+    def get_duration_display(self, obj):
+        days = obj.duration_days
+        if days == 1:
+            return "۱ روز"
+        elif days < 30:
+            return f"{days} روز"
+        elif days == 30:
+            return "۱ ماه"
+        elif days % 30 == 0:
+            return f"{days // 30} ماه"
+        else:
+            return f"{days} روز"
+class GoldInvestmentAdminListSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر لیست سرمایه‌گذاری‌های طلا برای ادمین
+    """
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    plan_name = serializers.CharField(source='plan.name', read_only=True)
+    plan_duration_days = serializers.IntegerField(source='plan.duration_days', read_only=True)
+    status_display = serializers.SerializerMethodField()
+    end_date_shamsi = serializers.SerializerMethodField()
+    total_expected_profit = serializers.SerializerMethodField()
+    total_return = serializers.SerializerMethodField()
+    days_passed = serializers.SerializerMethodField()
+    remaining_days = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GoldInvestment
+        fields = [
+            'id', 'user', 'user_mobile', 'user_full_name',
+            'plan', 'plan_name', 'plan_duration_days',
+            'gold_weight', 'investment_price',
+            'start_date', 'end_date', 'end_date_shamsi',
+            'status', 'status_display',
+            'total_expected_profit', 'paid_profit',
+            'total_return', 'days_passed', 'remaining_days',
+            'cancelled_at', 'completed_at', 'last_profit_paid_at',
+            'cancellation_profit', 'description'
+        ]
+    
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_end_date_shamsi(self, obj):
+        import jdatetime
+        if obj.end_date:
+            shamsi = jdatetime.date.fromgregorian(date=obj.end_date)
+            return shamsi.strftime("%Y/%m/%d")
+        return None
+    
+    def get_total_expected_profit(self, obj):
+        return float(obj.total_expected_profit)
+    
+    def get_total_return(self, obj):
+        return float(obj.total_return_amount)
+    
+    def get_days_passed(self, obj):
+        return obj.days_passed
+    
+    def get_remaining_days(self, obj):
+        return obj.remaining_days
+
+
+class GoldInvestmentAdminDetailSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر جزئیات سرمایه‌گذاری طلا برای ادمین
+    """
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    plan_name = serializers.CharField(source='plan.name', read_only=True)
+    plan_duration_days = serializers.IntegerField(source='plan.duration_days', read_only=True)
+    total_profit_percent = serializers.DecimalField(source='plan.total_profit_percent', read_only=True, max_digits=10, decimal_places=2)
+    status_display = serializers.SerializerMethodField()
+    end_date_shamsi = serializers.SerializerMethodField()
+    total_expected_profit = serializers.SerializerMethodField()
+    total_return = serializers.SerializerMethodField()
+    days_passed = serializers.SerializerMethodField()
+    remaining_days = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GoldInvestment
+        fields = [
+            'id', 'user', 'user_mobile', 'user_full_name',
+            'plan', 'plan_name', 'plan_duration_days',
+            'total_profit_percent',
+            'gold_weight', 'investment_price',
+            'start_date', 'end_date', 'end_date_shamsi',
+            'status', 'status_display',
+            'total_expected_profit', 'paid_profit',
+            'paid_profit_toman', 'total_return',
+            'days_passed', 'remaining_days',
+            'cancelled_at', 'completed_at', 'last_profit_paid_at',
+            'cancellation_profit', 'description',
+            'created_at', 'updated_at', 'is_completed'
+        ]
+    
+    def get_user_full_name(self, obj):
+        return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_end_date_shamsi(self, obj):
+        import jdatetime
+        if obj.end_date:
+            shamsi = jdatetime.date.fromgregorian(date=obj.end_date)
+            return shamsi.strftime("%Y/%m/%d")
+        return None
+    
+    def get_total_expected_profit(self, obj):
+        return float(obj.total_expected_profit)
+    
+    def get_total_return(self, obj):
+        return float(obj.total_return_amount)
+    
+    def get_days_passed(self, obj):
+        return obj.days_passed
+    
+    def get_remaining_days(self, obj):
+        return obj.remaining_days
+
+
+class GoldInvestmentStatusUpdateAdminSerializer(serializers.Serializer):
+    """
+    سریالایزر بروزرسانی وضعیت سرمایه‌گذاری توسط ادمین
+    """
+    status = serializers.ChoiceField(
+        choices=['COMPLETED', 'CANCELLED'],
+        error_messages={
+            'required': 'وضعیت الزامی است',
+            'invalid_choice': 'وضعیت نامعتبر است'
+        }
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        error_messages={
+            'blank': 'توضیحات نمی‌تواند خالی باشد'
+        }
+    )
+
+
+class GoldInvestmentStatisticsAdminSerializer(serializers.Serializer):
+    """
+    سریالایزر آمار سرمایه‌گذاری‌های طلا
+    """
+    total = serializers.IntegerField()
+    active = serializers.IntegerField()
+    completed = serializers.IntegerField()
+    cancelled = serializers.IntegerField()
+    total_invested_gold = serializers.DecimalField(max_digits=20, decimal_places=3)
+    total_paid_profit = serializers.DecimalField(max_digits=20, decimal_places=3)
+    total_expected_profit = serializers.DecimalField(max_digits=20, decimal_places=3)
+    total_cancellation_profit = serializers.DecimalField(max_digits=20, decimal_places=3)
+    plans_count = serializers.IntegerField()
+    active_plans_count = serializers.IntegerField()
+    
+    
+    
+# admin_panel/serializers.py - اضافه کردن AppVersionSerializer
+
+from rest_framework import serializers
+from gold_app.models import AppVersion
+
+
+class AppVersionSerializer(serializers.ModelSerializer):
+    """سریالایزر نسخه اپلیکیشن"""
+    
+    class Meta:
+        model = AppVersion
+        fields = [
+            'id',
+            'version_code',
+            'version_name',
+            'min_required_version_code',
+            'update_message',
+            'release_notes',
+            'store_url',
+            'is_active',
+            'is_force_update',
+            'release_date',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'release_date', 'created_at', 'updated_at']

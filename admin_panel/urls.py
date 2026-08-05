@@ -20,6 +20,12 @@ from admin_panel.views import (
     GoldBalanceAdjustmentViewSet,
     GoldBankAdminViewSet,
     GoldBannerAdminViewSet,
+    GoldGuaranteeAdminViewSet,
+    GoldGuaranteePlanAdminViewSet,
+    GoldGuaranteeStatisticsAdminView,
+    GoldInvestmentAdminViewSet,
+    GoldInvestmentPlanAdminViewSet,
+    GoldInvestmentStatisticsAdminView,
     GoldLimitOrderAdminViewSet,
     GoldPriceOffsetAdminViewSet,
     GoldTransactionAdminViewSet,
@@ -37,11 +43,17 @@ from admin_panel.views import (
     SilverProductAdminViewSet,
     SilverTransactionAdminViewSet,
     SilverWithdrawAdminViewSet,
+    TicketAdminViewSet,
+    TicketCategoryAdminViewSet,
+    TicketMessageAdminViewSet,
+    TicketStatisticsAdminView,
     UserAdminViewSet,
     SilverBalanceWithdrawalViewSet,
+    VersionControlAdminViewSet,
     WithdrawAdminViewSet,
     GoldBalanceWithdrawalViewSet,
 )
+from gold_app.views import GoldInvestmentCancelView, GoldInvestmentCollectProfitView, GoldInvestmentCreateView, GoldInvestmentDetailView, GoldInvestmentInfoView, GoldInvestmentListView, GoldInvestmentPlansView, GoldInvestmentPreviewView
 
 router = DefaultRouter()
 
@@ -221,7 +233,9 @@ router.register(
     SilverAnnouncementAdminViewSet,
     basename="silver-announcements",
 )
-
+router.register(r'ticket-categories', TicketCategoryAdminViewSet, basename='admin-ticket-categories')
+router.register(r'tickets', TicketAdminViewSet, basename='admin-tickets')
+router.register(r'ticket-messages', TicketMessageAdminViewSet, basename='admin-ticket-messages')
 # =========================================================
 # BALANCE ADJUSTMENTS
 # =========================================================
@@ -296,8 +310,34 @@ router.register(
     SilverLimitOrderAdminViewSet,
     basename="silver-limit-orders",
 )
+router.register(
+    r"gold-investment-plans",
+    GoldInvestmentPlanAdminViewSet,
+    basename="gold-investment-plans"
+)
 
+router.register(
+    r"gold-investments",
+    GoldInvestmentAdminViewSet,
+    basename="gold-investments"
+)
 
+router.register(
+    r"gold-guarantee-plans",
+    GoldGuaranteePlanAdminViewSet,
+    basename="gold-guarantee-plans"
+)
+
+router.register(
+    r"gold-guarantees",
+    GoldGuaranteeAdminViewSet,
+    basename="gold-guarantees"
+)
+router.register(
+    r"version-control",
+    VersionControlAdminViewSet,
+    basename="version-control",
+)
 # =========================================================
 # URL PATTERNS
 # =========================================================
@@ -317,7 +357,11 @@ urlpatterns = [
         ),
         name="admin-gold-offset-list",
     ),
-
+    path(
+        'gold-guarantees/statistics/',
+        GoldGuaranteeStatisticsAdminView.as_view(),
+        name='gold-guarantee-statistics'
+    ),
     path(
         "market/gold/offset/<int:pk>/",
         GoldPriceOffsetAdminViewSet.as_view(
@@ -329,7 +373,11 @@ urlpatterns = [
         ),
         name="admin-gold-offset-detail",
     ),
-
+    path(
+        'gold-investments/statistics/',
+        GoldInvestmentStatisticsAdminView.as_view(),
+        name='gold-investment-statistics'
+    ),
     path(
         "market/silver/offset/",
         SilverPriceOffsetAdminViewSet.as_view(
@@ -340,7 +388,7 @@ urlpatterns = [
         ),
         name="admin-silver-offset-list",
     ),
-
+    path('tickets/statistics/', TicketStatisticsAdminView.as_view(), name='admin-ticket-statistics'),
     path(
         "market/silver/offset/<int:pk>/",
         SilverPriceOffsetAdminViewSet.as_view(
@@ -477,6 +525,18 @@ urlpatterns = [
         ),
         name="silver-balance-withdrawal-detail",
     ),
+    
+        # =========================================================
+    # GOLD INVESTMENT URLs
+    # =========================================================
+    path('investment/info/', GoldInvestmentInfoView.as_view(), name='gold-investment-info'),
+    path('investment/plans/', GoldInvestmentPlansView.as_view(), name='gold-investment-plans'),
+    path('investment/preview/', GoldInvestmentPreviewView.as_view(), name='gold-investment-preview'),
+    path('investment/create/', GoldInvestmentCreateView.as_view(), name='gold-investment-create'),
+    path('investment/list/', GoldInvestmentListView.as_view(), name='gold-investment-list'),
+    path('investment/<int:investment_id>/', GoldInvestmentDetailView.as_view(), name='gold-investment-detail'),
+    path('investment/<int:investment_id>/cancel/', GoldInvestmentCancelView.as_view(), name='gold-investment-cancel'),
+    path('investment/<int:investment_id>/collect-profit/', GoldInvestmentCollectProfitView.as_view(), name='gold-investment-collect-profit'),
 ]
 
 urlpatterns += router.urls

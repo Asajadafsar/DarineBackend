@@ -69,6 +69,7 @@ class AdminLog(models.Model):
     action_type = models.CharField(max_length=30, choices=ACTION_TYPE, db_index=True)
 
     action = models.CharField(max_length=255, db_index=True)
+    
 
     description = models.TextField(blank=True, null=True)
 
@@ -81,7 +82,7 @@ class AdminLog(models.Model):
     app_name = models.CharField(max_length=100, blank=True, null=True)
 
     model_name = models.CharField(max_length=100, blank=True, null=True)
-
+    
     object_id = models.CharField(max_length=100, blank=True, null=True)
 
     # ============================
@@ -386,8 +387,545 @@ class SilverAnnouncementRead(models.Model):
 
 
 
+# # =========================================================
+# # GOLD BALANCE ADJUSTMENT
+# # =========================================================
+
+# class GoldBalanceAdjustment(models.Model):
+
+#     user = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.CASCADE,
+#         related_name="gold_balance_adjustments",
+#     )
+
+#     admin = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         blank=True,
+#         related_name="created_gold_balance_adjustments",
+#     )
+
+#     wallet_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=0,
+#         default=0,
+#     )
+
+#     gold_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=3,
+#         default=0,
+#     )
+
+#     admin_note = models.TextField(
+#         blank=True,
+#         null=True,
+#     )
+
+
+#     created_at = models.DateTimeField(
+#         auto_now_add=True,
+#     )
+
+#     updated_at = models.DateTimeField(
+#         auto_now=True,
+#     )
+
+#     class Meta:
+#         ordering = ["-id"]
+#         verbose_name = "افزایش موجودی طلا"
+#         verbose_name_plural = "افزایش موجودی طلا"
+
+#     def __str__(self):
+#         return f"{self.user.mobile} - {self.id}"
+    
+    
+    
+    
+    
+    
+    
+    
+    
+# # =========================================================
+# # SILVER BALANCE ADJUSTMENT
+# # =========================================================
+
+# class SilverBalanceAdjustment(models.Model):
+
+#     user = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.CASCADE,
+#         related_name="silver_balance_adjustments",
+#     )
+
+#     admin = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         blank=True,
+#         related_name="created_silver_balance_adjustments",
+#     )
+
+#     wallet_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=0,
+#         default=0,
+#     )
+
+#     silver_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=3,
+#         default=0,
+#     )
+
+#     admin_note = models.TextField(
+#         blank=True,
+#         null=True,
+#     )
+
+#     created_at = models.DateTimeField(
+#         auto_now_add=True,
+#     )
+
+#     updated_at = models.DateTimeField(
+#         auto_now=True,
+#     )
+
+#     class Meta:
+#         ordering = ["-id"]
+#         verbose_name = "افزایش موجودی نقره"
+#         verbose_name_plural = "افزایش موجودی نقره"
+
+#     def __str__(self):
+#         return f"{self.user.mobile} - {self.id}"
+    
+    
+    
+    
+# # =========================================================
+# # GOLD BALANCE WITHDRAWAL
+# # =========================================================
+
+# class GoldBalanceWithdrawal(models.Model):
+
+#     user = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.CASCADE,
+#         related_name="gold_balance_withdrawals",
+#     )
+
+#     admin = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         blank=True,
+#         related_name="created_gold_balance_withdrawals",
+#     )
+
+#     wallet_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=0,
+#         default=0,
+#     )
+
+#     gold_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=3,
+#         default=0,
+#     )
+
+#     admin_note = models.TextField(
+#         blank=True,
+#         null=True,
+#     )
+
+#     created_at = models.DateTimeField(
+#         auto_now_add=True,
+#     )
+
+#     updated_at = models.DateTimeField(
+#         auto_now=True,
+#     )
+
+#     class Meta:
+#         ordering = ["-id"]
+#         verbose_name = "برداشت موجودی طلا"
+#         verbose_name_plural = "برداشت موجودی طلا"
+
+#     def __str__(self):
+#         return f"{self.user.mobile} - {self.id}"
+    
+    
+# # =========================================================
+# # SILVER BALANCE WITHDRAWAL
+# # =========================================================
+
+# class SilverBalanceWithdrawal(models.Model):
+
+#     user = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.CASCADE,
+#         related_name="silver_balance_withdrawals",
+#     )
+
+#     admin = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         blank=True,
+#         related_name="created_silver_balance_withdrawals",
+#     )
+
+#     wallet_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=0,
+#         default=0,
+#     )
+
+#     silver_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=3,
+#         default=0,
+#     )
+
+#     admin_note = models.TextField(
+#         blank=True,
+#         null=True,
+#     )
+
+#     created_at = models.DateTimeField(
+#         auto_now_add=True,
+#     )
+
+#     updated_at = models.DateTimeField(
+#         auto_now=True,
+#     )
+
+#     class Meta:
+#         ordering = ["-id"]
+#         verbose_name = "برداشت موجودی نقره"
+#         verbose_name_plural = "برداشت موجودی نقره"
+
+#     def __str__(self):
+#         return f"{self.user.mobile} - {self.id}"
+
+
+
+# admin_panel/models.py
+
+import random
+import string
+from django.db import models
+from django.utils import timezone
+from darine_config import settings
+
+
+# # =========================================================
+# # GOLD BALANCE ADJUSTMENT (با کد رهگیری)
+# # =========================================================
+
+# class GoldBalanceAdjustment(models.Model):
+
+#     user = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.CASCADE,
+#         related_name="gold_balance_adjustments",
+#     )
+
+#     admin = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         blank=True,
+#         related_name="created_gold_balance_adjustments",
+#     )
+
+#     wallet_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=0,
+#         default=0,
+#     )
+
+#     gold_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=3,
+#         default=0,
+#     )
+
+#     admin_note = models.TextField(
+#         blank=True,
+#         null=True,
+#     )
+    
+#     # ✅ اضافه کردن کد رهگیری
+#     tracking_code = models.CharField(
+#         max_length=50,
+#         unique=True,
+#         blank=True,
+#         verbose_name="کد رهگیری"
+#     )
+
+#     created_at = models.DateTimeField(
+#         auto_now_add=True,
+#     )
+
+#     updated_at = models.DateTimeField(
+#         auto_now=True,
+#     )
+
+#     class Meta:
+#         ordering = ["-id"]
+#         verbose_name = "افزایش موجودی طلا"
+#         verbose_name_plural = "افزایش موجودی طلا"
+
+#     def save(self, *args, **kwargs):
+#         if not self.tracking_code:
+#             self.tracking_code = self.generate_tracking_code()
+#         super().save(*args, **kwargs)
+    
+#     def generate_tracking_code(self):
+#         """تولید کد رهگیری یکتا"""
+#         date_str = timezone.now().strftime('%Y%m%d')
+#         random_str = ''.join(random.choices(string.digits, k=6))
+#         return f"ADM-GOLD-DEP-{date_str}-{random_str}"
+
+#     def __str__(self):
+#         return f"{self.user.mobile} - {self.id} - {self.tracking_code}"
+
+
+# # =========================================================
+# # GOLD BALANCE WITHDRAWAL (با کد رهگیری)
+# # =========================================================
+
+# class GoldBalanceWithdrawal(models.Model):
+
+#     user = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.CASCADE,
+#         related_name="gold_balance_withdrawals",
+#     )
+
+#     admin = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         blank=True,
+#         related_name="created_gold_balance_withdrawals",
+#     )
+
+#     wallet_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=0,
+#         default=0,
+#     )
+
+#     gold_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=3,
+#         default=0,
+#     )
+
+#     admin_note = models.TextField(
+#         blank=True,
+#         null=True,
+#     )
+    
+#     # ✅ اضافه کردن کد رهگیری
+#     tracking_code = models.CharField(
+#         max_length=50,
+#         unique=True,
+#         blank=True,
+#         verbose_name="کد رهگیری"
+#     )
+
+#     created_at = models.DateTimeField(
+#         auto_now_add=True,
+#     )
+
+#     updated_at = models.DateTimeField(
+#         auto_now=True,
+#     )
+
+#     class Meta:
+#         ordering = ["-id"]
+#         verbose_name = "برداشت موجودی طلا"
+#         verbose_name_plural = "برداشت موجودی طلا"
+
+#     def save(self, *args, **kwargs):
+#         if not self.tracking_code:
+#             self.tracking_code = self.generate_tracking_code()
+#         super().save(*args, **kwargs)
+    
+#     def generate_tracking_code(self):
+#         """تولید کد رهگیری یکتا"""
+#         date_str = timezone.now().strftime('%Y%m%d')
+#         random_str = ''.join(random.choices(string.digits, k=6))
+#         return f"ADM-GOLD-WTH-{date_str}-{random_str}"
+
+#     def __str__(self):
+#         return f"{self.user.mobile} - {self.id} - {self.tracking_code}"
+
+
+# # =========================================================
+# # SILVER BALANCE ADJUSTMENT (با کد رهگیری)
+# # =========================================================
+
+# class SilverBalanceAdjustment(models.Model):
+
+#     user = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.CASCADE,
+#         related_name="silver_balance_adjustments",
+#     )
+
+#     admin = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         blank=True,
+#         related_name="created_silver_balance_adjustments",
+#     )
+
+#     wallet_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=0,
+#         default=0,
+#     )
+
+#     silver_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=3,
+#         default=0,
+#     )
+
+#     admin_note = models.TextField(
+#         blank=True,
+#         null=True,
+#     )
+    
+#     # ✅ اضافه کردن کد رهگیری
+#     tracking_code = models.CharField(
+#         max_length=50,
+#         unique=True,
+#         blank=True,
+#         verbose_name="کد رهگیری"
+#     )
+
+#     created_at = models.DateTimeField(
+#         auto_now_add=True,
+#     )
+
+#     updated_at = models.DateTimeField(
+#         auto_now=True,
+#     )
+
+#     class Meta:
+#         ordering = ["-id"]
+#         verbose_name = "افزایش موجودی نقره"
+#         verbose_name_plural = "افزایش موجودی نقره"
+
+#     def save(self, *args, **kwargs):
+#         if not self.tracking_code:
+#             self.tracking_code = self.generate_tracking_code()
+#         super().save(*args, **kwargs)
+    
+#     def generate_tracking_code(self):
+#         """تولید کد رهگیری یکتا"""
+#         date_str = timezone.now().strftime('%Y%m%d')
+#         random_str = ''.join(random.choices(string.digits, k=6))
+#         return f"ADM-SLVR-DEP-{date_str}-{random_str}"
+
+#     def __str__(self):
+#         return f"{self.user.mobile} - {self.id} - {self.tracking_code}"
+
+
+# # =========================================================
+# # SILVER BALANCE WITHDRAWAL (با کد رهگیری)
+# # =========================================================
+
+# class SilverBalanceWithdrawal(models.Model):
+
+#     user = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.CASCADE,
+#         related_name="silver_balance_withdrawals",
+#     )
+
+#     admin = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         blank=True,
+#         related_name="created_silver_balance_withdrawals",
+#     )
+
+#     wallet_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=0,
+#         default=0,
+#     )
+
+#     silver_amount = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=3,
+#         default=0,
+#     )
+
+#     admin_note = models.TextField(
+#         blank=True,
+#         null=True,
+#     )
+    
+#     # ✅ اضافه کردن کد رهگیری
+#     tracking_code = models.CharField(
+#         max_length=50,
+#         unique=True,
+#         blank=True,
+#         verbose_name="کد رهگیری"
+#     )
+
+#     created_at = models.DateTimeField(
+#         auto_now_add=True,
+#     )
+
+#     updated_at = models.DateTimeField(
+#         auto_now=True,
+#     )
+
+#     class Meta:
+#         ordering = ["-id"]
+#         verbose_name = "برداشت موجودی نقره"
+#         verbose_name_plural = "برداشت موجودی نقره"
+
+#     def save(self, *args, **kwargs):
+#         if not self.tracking_code:
+#             self.tracking_code = self.generate_tracking_code()
+#         super().save(*args, **kwargs)
+    
+#     def generate_tracking_code(self):
+#         """تولید کد رهگیری یکتا"""
+#         date_str = timezone.now().strftime('%Y%m%d')
+#         random_str = ''.join(random.choices(string.digits, k=6))
+#         return f"ADM-SLVR-WTH-{date_str}-{random_str}"
+
+#     def __str__(self):
+#         return f"{self.user.mobile} - {self.id} - {self.tracking_code}"
+
+
+# admin_panel/models.py
+
+import random
+import string
+from django.db import models
+from django.utils import timezone
+from darine_config import settings
+
+
 # =========================================================
-# GOLD BALANCE ADJUSTMENT
+# GOLD BALANCE ADJUSTMENT (با کد رهگیری یکتا)
 # =========================================================
 
 class GoldBalanceAdjustment(models.Model):
@@ -422,6 +960,16 @@ class GoldBalanceAdjustment(models.Model):
         blank=True,
         null=True,
     )
+    
+    # ✅ کد رهگیری یکتا - با null=True برای رکوردهای قدیمی
+    tracking_code = models.CharField(
+        max_length=50,
+        unique=True,
+        null=True,  # ✅ مهم: برای رکوردهای قدیمی که مقدار ندارند
+        blank=True,
+        db_index=True,
+        verbose_name="کد رهگیری"
+    )
 
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -436,75 +984,23 @@ class GoldBalanceAdjustment(models.Model):
         verbose_name = "افزایش موجودی طلا"
         verbose_name_plural = "افزایش موجودی طلا"
 
-    def __str__(self):
-        return f"{self.user.mobile} - {self.id}"
+    def save(self, *args, **kwargs):
+        if not self.tracking_code:
+            self.tracking_code = self.generate_tracking_code()
+        super().save(*args, **kwargs)
     
-    
-    
-    
-    
-    
-    
-    
-    
-# =========================================================
-# SILVER BALANCE ADJUSTMENT
-# =========================================================
-
-class SilverBalanceAdjustment(models.Model):
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="silver_balance_adjustments",
-    )
-
-    admin = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="created_silver_balance_adjustments",
-    )
-
-    wallet_amount = models.DecimalField(
-        max_digits=20,
-        decimal_places=0,
-        default=0,
-    )
-
-    silver_amount = models.DecimalField(
-        max_digits=20,
-        decimal_places=3,
-        default=0,
-    )
-
-    admin_note = models.TextField(
-        blank=True,
-        null=True,
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-    )
-
-    updated_at = models.DateTimeField(
-        auto_now=True,
-    )
-
-    class Meta:
-        ordering = ["-id"]
-        verbose_name = "افزایش موجودی نقره"
-        verbose_name_plural = "افزایش موجودی نقره"
+    def generate_tracking_code(self):
+        """تولید کد رهگیری یکتا"""
+        date_str = timezone.now().strftime('%Y%m%d')
+        random_str = ''.join(random.choices(string.digits, k=6))
+        return f"ADM-GOLD-DEP-{date_str}-{random_str}"
 
     def __str__(self):
-        return f"{self.user.mobile} - {self.id}"
-    
-    
-    
-    
+        return f"{self.user.mobile} - {self.id} - {self.tracking_code}"
+
+
 # =========================================================
-# GOLD BALANCE WITHDRAWAL
+# GOLD BALANCE WITHDRAWAL (با کد رهگیری یکتا)
 # =========================================================
 
 class GoldBalanceWithdrawal(models.Model):
@@ -539,6 +1035,16 @@ class GoldBalanceWithdrawal(models.Model):
         blank=True,
         null=True,
     )
+    
+    # ✅ کد رهگیری یکتا - با null=True برای رکوردهای قدیمی
+    tracking_code = models.CharField(
+        max_length=50,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="کد رهگیری"
+    )
 
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -553,12 +1059,98 @@ class GoldBalanceWithdrawal(models.Model):
         verbose_name = "برداشت موجودی طلا"
         verbose_name_plural = "برداشت موجودی طلا"
 
+    def save(self, *args, **kwargs):
+        if not self.tracking_code:
+            self.tracking_code = self.generate_tracking_code()
+        super().save(*args, **kwargs)
+    
+    def generate_tracking_code(self):
+        """تولید کد رهگیری یکتا"""
+        date_str = timezone.now().strftime('%Y%m%d')
+        random_str = ''.join(random.choices(string.digits, k=6))
+        return f"ADM-GOLD-WTH-{date_str}-{random_str}"
+
     def __str__(self):
-        return f"{self.user.mobile} - {self.id}"
-    
-    
+        return f"{self.user.mobile} - {self.id} - {self.tracking_code}"
+
+
 # =========================================================
-# SILVER BALANCE WITHDRAWAL
+# SILVER BALANCE ADJUSTMENT (با کد رهگیری یکتا)
+# =========================================================
+
+class SilverBalanceAdjustment(models.Model):
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="silver_balance_adjustments",
+    )
+
+    admin = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_silver_balance_adjustments",
+    )
+
+    wallet_amount = models.DecimalField(
+        max_digits=20,
+        decimal_places=0,
+        default=0,
+    )
+
+    silver_amount = models.DecimalField(
+        max_digits=20,
+        decimal_places=3,
+        default=0,
+    )
+
+    admin_note = models.TextField(
+        blank=True,
+        null=True,
+    )
+    
+    # ✅ کد رهگیری یکتا - با null=True برای رکوردهای قدیمی
+    tracking_code = models.CharField(
+        max_length=50,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="کد رهگیری"
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = ["-id"]
+        verbose_name = "افزایش موجودی نقره"
+        verbose_name_plural = "افزایش موجودی نقره"
+
+    def save(self, *args, **kwargs):
+        if not self.tracking_code:
+            self.tracking_code = self.generate_tracking_code()
+        super().save(*args, **kwargs)
+    
+    def generate_tracking_code(self):
+        """تولید کد رهگیری یکتا"""
+        date_str = timezone.now().strftime('%Y%m%d')
+        random_str = ''.join(random.choices(string.digits, k=6))
+        return f"ADM-SLVR-DEP-{date_str}-{random_str}"
+
+    def __str__(self):
+        return f"{self.user.mobile} - {self.id} - {self.tracking_code}"
+
+
+# =========================================================
+# SILVER BALANCE WITHDRAWAL (با کد رهگیری یکتا)
 # =========================================================
 
 class SilverBalanceWithdrawal(models.Model):
@@ -593,6 +1185,16 @@ class SilverBalanceWithdrawal(models.Model):
         blank=True,
         null=True,
     )
+    
+    # ✅ کد رهگیری یکتا - با null=True برای رکوردهای قدیمی
+    tracking_code = models.CharField(
+        max_length=50,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="کد رهگیری"
+    )
 
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -607,9 +1209,16 @@ class SilverBalanceWithdrawal(models.Model):
         verbose_name = "برداشت موجودی نقره"
         verbose_name_plural = "برداشت موجودی نقره"
 
+    def save(self, *args, **kwargs):
+        if not self.tracking_code:
+            self.tracking_code = self.generate_tracking_code()
+        super().save(*args, **kwargs)
+    
+    def generate_tracking_code(self):
+        """تولید کد رهگیری یکتا"""
+        date_str = timezone.now().strftime('%Y%m%d')
+        random_str = ''.join(random.choices(string.digits, k=6))
+        return f"ADM-SLVR-WTH-{date_str}-{random_str}"
+
     def __str__(self):
-        return f"{self.user.mobile} - {self.id}"
-
-
-
-
+        return f"{self.user.mobile} - {self.id} - {self.tracking_code}"

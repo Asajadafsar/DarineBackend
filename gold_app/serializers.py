@@ -10,6 +10,7 @@ from .models import (
     GoldInventory,
     GoldOrder,
     GoldTransaction,
+    Invoice,
     OrderStatusHistory,
     ProductCategory,
     UserAddress,
@@ -84,36 +85,450 @@ class GoldInventorySerializer(serializers.ModelSerializer):
 # =========================================================
 
 
+# class GoldTransactionSerializer(serializers.ModelSerializer):
+
+#     type_display = serializers.CharField(source="get_type_display", read_only=True)
+
+#     status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+#     final_price = serializers.SerializerMethodField()
+
+#     class Meta:
+#         model = GoldTransaction
+#         fields = [
+#             "id",
+#             "type",
+#             "type_display",
+#             "status",
+#             "status_display",
+#             "amount_gr",
+#             "price_per_gram",
+#             "fee",
+#             "total_amount",
+#             "final_price",
+#             "tracking_code",
+#             "description",
+#             "created_at",
+#             "updated_at",
+#         ]
+
+#     def get_final_price(self, obj):
+
+#         return int(obj.total_amount - obj.fee)
+
+# gold_app/serializers.py - اصلاح GoldTransactionSerializer
+
+from rest_framework import serializers
+from decimal import Decimal
+from .models import GoldTransaction
+
+
+# gold_app/serializers.py - کامل
+
+# gold_app/serializers.py - اصلاح GoldTransactionSerializer
+
+from rest_framework import serializers
+from decimal import Decimal
+from datetime import datetime
+import jdatetime
+from .models import GoldTransaction, Invoice
+
+
 class GoldTransactionSerializer(serializers.ModelSerializer):
-
-    type_display = serializers.CharField(source="get_type_display", read_only=True)
-
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
-
-    final_price = serializers.SerializerMethodField()
-
+    """
+    سریالایزر تراکنش‌های طلا برای گزارشات
+    """
+    type_display = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
+    created_at_fa = serializers.SerializerMethodField()
+    created_at_time = serializers.SerializerMethodField()
+    
+    shop_name = serializers.SerializerMethodField()
+    customer_name = serializers.SerializerMethodField()
+    customer_mobile = serializers.SerializerMethodField()
+    customer_national_code = serializers.SerializerMethodField()
+    gold_carat = serializers.SerializerMethodField()
+    fee_toman = serializers.SerializerMethodField()
+    price_per_gram = serializers.SerializerMethodField()
+    weight_gr = serializers.SerializerMethodField()
+    total_amount_display = serializers.SerializerMethodField()
+    total_amount_toman = serializers.SerializerMethodField()
+    fee_amount = serializers.SerializerMethodField()
+    pure_gold_price = serializers.SerializerMethodField()
+    
+    # ✅ اضافه کردن invoice_id و invoice_number
+    invoice_id = serializers.SerializerMethodField()
+    invoice_number = serializers.SerializerMethodField()
+    
     class Meta:
         model = GoldTransaction
         fields = [
-            "id",
-            "type",
-            "type_display",
-            "status",
-            "status_display",
-            "amount_gr",
-            "price_per_gram",
-            "fee",
-            "total_amount",
-            "final_price",
-            "tracking_code",
-            "description",
-            "created_at",
-            "updated_at",
+            'id', 'tracking_code', 'type', 'type_display',
+            'status', 'status_display',
+            'amount_gr', 'weight_gr',
+            'price_per_gram',
+            'fee', 'fee_toman', 'fee_amount',
+            'commission_percent', 'commission_amount',
+            'total_amount', 'total_amount_display', 'total_amount_toman',
+            'pure_gold_price',
+            'shop_name',
+            'customer_name',
+            'customer_mobile',
+            'customer_national_code',
+            'gold_carat',
+            'invoice_id',        # ✅ اضافه شد
+            'invoice_number',    # ✅ اضافه شد
+            'description',
+            'created_at', 'created_at_fa', 'created_at_time',
+            'updated_at'
         ]
+        read_only_fields = ['id', 'tracking_code', 'created_at', 'updated_at']
+    
+    def get_type_display(self, obj):
+        return dict(GoldTransaction.TYPE_CHOICES).get(obj.type, obj.type)
+    
+    def get_status_display(self, obj):
+        return dict(GoldTransaction.STATUS_CHOICES).get(obj.status, obj.status)
+    
+    def get_created_at_fa(self, obj):
+        if obj.created_at:
+            shamsi = jdatetime.datetime.fromgregorian(datetime=obj.created_at)
+            return shamsi.strftime("%Y/%m/%d")
+        return None
+    
+    def get_created_at_time(self, obj):
+        if obj.created_at:
+            return obj.created_at.strftime("%H:%M")
+        return None
+    
+    def get_shop_name(self, obj):
+        return "دارینه"
+    
+    def get_customer_name(self, obj):
+        if obj.user:
+            return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.mobile
+        return "کاربر ناشناس"
+    
+    def get_customer_mobile(self, obj):
+        return obj.user.mobile if obj.user else None
+    
+    def get_customer_national_code(self, obj):
+        return getattr(obj.user, 'national_code', None) if obj.user else None
+    
+    def get_gold_carat(self, obj):
+        return 18
+    
+    def get_fee_toman(self, obj):
+        return float(obj.fee or 0)
+    
+    def get_price_per_gram(self, obj):
+        return float(obj.price_per_gram or 0)
+    
+    def get_weight_gr(self, obj):
+        return float(obj.amount_gr or 0)
+    
+    def get_total_amount_display(self, obj):
+        return f"{int(obj.total_amount or 0):,}"
+    
+    def get_total_amount_toman(self, obj):
+        return float(obj.total_amount or 0)
+    
+    def get_fee_amount(self, obj):
+        return float(obj.fee or 0)
+    
+    def get_pure_gold_price(self, obj):
+        """محاسبه قیمت خالص طلا"""
+        if obj.price_per_gram and obj.amount_gr:
+            return float(obj.price_per_gram * obj.amount_gr)
+        return 0
+    
+    def get_invoice_id(self, obj):
+        """دریافت شناسه فاکتور مرتبط با تراکنش"""
+        try:
+            invoice = obj.invoices.first()
+            return invoice.id if invoice else None
+        except:
+            return None
+    
+    def get_invoice_number(self, obj):
+        """دریافت شماره فاکتور مرتبط با تراکنش"""
+        try:
+            invoice = obj.invoices.first()
+            return invoice.invoice_number if invoice else None
+        except:
+            return None
 
-    def get_final_price(self, obj):
 
-        return int(obj.total_amount - obj.fee)
+
+
+
+# gold_app/serializers.py - InvoiceSerializer کامل
+
+from rest_framework import serializers
+from decimal import Decimal
+from datetime import datetime
+import jdatetime
+from django.utils import timezone
+from .models import GoldTransaction, Invoice
+
+
+class InvoiceSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر فاکتور - مطابق با ساختار فرانت‌اند
+    """
+    
+    # =============================================
+    # فیلدهای نمایشی
+    # =============================================
+    invoice_type_display = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
+    created_at_jalali = serializers.SerializerMethodField()
+    created_at_time = serializers.SerializerMethodField()
+    invoice_date_display = serializers.SerializerMethodField()
+    
+    # =============================================
+    # فیلدهای خریدار
+    # =============================================
+    buyer_name = serializers.CharField()
+    buyer_national_id = serializers.CharField()
+    buyer_phone = serializers.CharField()
+    buyer_address = serializers.CharField()
+    
+    # =============================================
+    # فیلدهای فروشنده (فقط نام و آدرس)
+    # =============================================
+    seller_name = serializers.CharField()
+    seller_address = serializers.CharField()
+    
+    # =============================================
+    # فیلدهای طلا با فرمت
+    # =============================================
+    gold_weight = serializers.SerializerMethodField()
+    gold_weight_display = serializers.SerializerMethodField()
+    gold_carat = serializers.SerializerMethodField()
+    gold_price_per_gram = serializers.SerializerMethodField()
+    gold_price_per_gram_display = serializers.SerializerMethodField()
+    pure_gold_price = serializers.SerializerMethodField()
+    pure_gold_price_display = serializers.SerializerMethodField()
+    fee_rate = serializers.SerializerMethodField()
+    fee_amount = serializers.SerializerMethodField()
+    fee_amount_display = serializers.SerializerMethodField()
+    total_amount = serializers.SerializerMethodField()
+    total_amount_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Invoice
+        fields = [
+            # شناسه
+            'id',
+            'invoice_number',
+            'invoice_type',
+            'invoice_type_display',
+            
+            # تاریخ
+            'invoice_date',
+            'invoice_date_display',
+            'created_at_jalali',
+            'created_at_time',
+            
+            # وضعیت
+            'status',
+            'status_display',
+            
+            # خریدار (کامل)
+            'buyer_name',
+            'buyer_national_id',
+            'buyer_phone',
+            'buyer_address',
+            
+            # فروشنده (فقط نام و آدرس)
+            'seller_name',
+            'seller_address',
+            
+            # اطلاعات طلا
+            'gold_weight',
+            'gold_weight_display',
+            'gold_carat',
+            'gold_price_per_gram',
+            'gold_price_per_gram_display',
+            'pure_gold_price',
+            'pure_gold_price_display',
+            'fee_rate',
+            'fee_amount',
+            'fee_amount_display',
+            'total_amount',
+            'total_amount_display',
+            
+            # کد رهگیری و توضیحات
+            'tracking_code',
+            'description',
+            'created_at'
+        ]
+        read_only_fields = [
+            'id', 'invoice_number', 'created_at', 'invoice_date'
+        ]
+    
+    # =============================================
+    # متدهای نمایش وضعیت و نوع
+    # =============================================
+    
+    def get_invoice_type_display(self, obj):
+        """دریافت نمایش فارسی نوع فاکتور"""
+        return obj.get_invoice_type_display()
+    
+    def get_status_display(self, obj):
+        """دریافت نمایش فارسی وضعیت فاکتور"""
+        return obj.get_status_display()
+    
+    # =============================================
+    # متدهای نمایش تاریخ و زمان
+    # =============================================
+    
+    def get_created_at_jalali(self, obj):
+        """دریافت تاریخ شمسی"""
+        if obj.created_at:
+            local_time = timezone.localtime(obj.created_at)
+            shamsi = jdatetime.datetime.fromgregorian(datetime=local_time)
+            return shamsi.strftime('%Y/%m/%d')
+        return None
+    
+    def get_created_at_time(self, obj):
+        """دریافت ساعت"""
+        if obj.created_at:
+            local_time = timezone.localtime(obj.created_at)
+            return local_time.strftime('%H:%M')
+        return None
+    
+    def get_invoice_date_display(self, obj):
+        """دریافت تاریخ و ساعت کامل برای نمایش"""
+        if obj.created_at:
+            local_time = timezone.localtime(obj.created_at)
+            shamsi = jdatetime.datetime.fromgregorian(datetime=local_time)
+            return shamsi.strftime('%Y/%m/%d %H:%M')
+        return None
+    
+    # =============================================
+    # متدهای نمایش وزن طلا
+    # =============================================
+    
+    def get_gold_weight(self, obj):
+        """دریافت وزن طلا به صورت عدد"""
+        return float(obj.gold_weight) if obj.gold_weight else 0
+    
+    def get_gold_weight_display(self, obj):
+        """
+        نمایش وزن طلا با فرمت فارسی
+        مثال: ۵٫۰۰۰
+        """
+        if obj.gold_weight:
+            weight_str = f"{obj.gold_weight:,.3f}"
+            persian_digits = {'0': '۰', '1': '۱', '2': '۲', '3': '۳', '4': '۴',
+                            '5': '۵', '6': '۶', '7': '۷', '8': '۸', '9': '۹'}
+            for eng, per in persian_digits.items():
+                weight_str = weight_str.replace(eng, per)
+            return weight_str
+        return "۰"
+    
+    # =============================================
+    # متدهای نمایش عیار طلا
+    # =============================================
+    
+    def get_gold_carat(self, obj):
+        """دریافت عیار طلا"""
+        return obj.gold_carat or 18
+    
+    # =============================================
+    # متدهای نمایش قیمت هر گرم طلا
+    # =============================================
+    
+    def get_gold_price_per_gram(self, obj):
+        """دریافت قیمت هر گرم طلا به صورت عدد"""
+        return float(obj.gold_price_per_gram) if obj.gold_price_per_gram else 0
+    
+    def get_gold_price_per_gram_display(self, obj):
+        """
+        نمایش قیمت هر گرم طلا با فرمت تومان
+        مثال: ۱۷,۲۱۷,۰۰۰ تومان
+        """
+        if obj.gold_price_per_gram:
+            price_str = f"{int(obj.gold_price_per_gram):,}"
+            persian_digits = {'0': '۰', '1': '۱', '2': '۲', '3': '۳', '4': '۴',
+                            '5': '۵', '6': '۶', '7': '۷', '8': '۸', '9': '۹'}
+            for eng, per in persian_digits.items():
+                price_str = price_str.replace(eng, per)
+            return f"{price_str} تومان"
+        return "۰ تومان"
+    
+    # =============================================
+    # متدهای نمایش قیمت خالص طلا
+    # =============================================
+    
+    def get_pure_gold_price(self, obj):
+        """دریافت قیمت خالص طلا به صورت عدد"""
+        return float(obj.pure_gold_price) if obj.pure_gold_price else 0
+    
+    def get_pure_gold_price_display(self, obj):
+        """
+        نمایش قیمت خالص طلا با فرمت تومان
+        مثال: ۸۶,۰۸۵,۰۰۰ تومان
+        """
+        if obj.pure_gold_price:
+            price_str = f"{int(obj.pure_gold_price):,}"
+            persian_digits = {'0': '۰', '1': '۱', '2': '۲', '3': '۳', '4': '۴',
+                            '5': '۵', '6': '۶', '7': '۷', '8': '۸', '9': '۹'}
+            for eng, per in persian_digits.items():
+                price_str = price_str.replace(eng, per)
+            return f"{price_str} تومان"
+        return "۰ تومان"
+    
+    # =============================================
+    # متدهای نمایش کارمزد
+    # =============================================
+    
+    def get_fee_rate(self, obj):
+        """دریافت درصد کارمزد"""
+        return float(obj.fee_rate) if obj.fee_rate else 0
+    
+    def get_fee_amount(self, obj):
+        """دریافت مبلغ کارمزد به صورت عدد"""
+        return float(obj.fee_amount) if obj.fee_amount else 0
+    
+    def get_fee_amount_display(self, obj):
+        """
+        نمایش مبلغ کارمزد با فرمت تومان
+        مثال: ۸۶۰,۸۵۰ تومان
+        """
+        if obj.fee_amount:
+            fee_str = f"{int(obj.fee_amount):,}"
+            persian_digits = {'0': '۰', '1': '۱', '2': '۲', '3': '۳', '4': '۴',
+                            '5': '۵', '6': '۶', '7': '۷', '8': '۸', '9': '۹'}
+            for eng, per in persian_digits.items():
+                fee_str = fee_str.replace(eng, per)
+            return f"{fee_str} تومان"
+        return "۰ تومان"
+    
+    # =============================================
+    # متدهای نمایش مبلغ کل
+    # =============================================
+    
+    def get_total_amount(self, obj):
+        """دریافت مبلغ کل به صورت عدد"""
+        return float(obj.total_amount) if obj.total_amount else 0
+    
+    def get_total_amount_display(self, obj):
+        """
+        نمایش مبلغ کل با فرمت تومان
+        مثال: ۸۶,۹۴۵,۸۵۰ تومان
+        """
+        if obj.total_amount:
+            total_str = f"{int(obj.total_amount):,}"
+            persian_digits = {'0': '۰', '1': '۱', '2': '۲', '3': '۳', '4': '۴',
+                            '5': '۵', '6': '۶', '7': '۷', '8': '۸', '9': '۹'}
+            for eng, per in persian_digits.items():
+                total_str = total_str.replace(eng, per)
+            return f"{total_str} تومان"
+        return "۰ تومان"
+
 
 
 # =========================================================
@@ -299,47 +714,181 @@ class OrderItemSerializer(serializers.ModelSerializer):
 # =========================================================
 
 
+# class OrderSerializer(serializers.ModelSerializer):
+
+#     items = OrderItemSerializer(many=True, read_only=True)
+
+#     payment_method_display = serializers.CharField(
+#         source="get_payment_method_display", read_only=True
+#     )
+
+#     status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+#     delivery_type_display = serializers.CharField(
+#         source="get_delivery_type_display", read_only=True
+#     )
+
+#     status_history = OrderStatusHistorySerializer(many=True, read_only=True)
+
+#     class Meta:
+#         model = Order
+#         fields = [
+#             "id",
+#             "province",
+#             "city",
+#             "address",
+#             "postal_code",
+#             "plaque",
+#             "unit",
+#             "payment_method",
+#             "payment_method_display",
+#             "delivery_type",
+#             "delivery_type_display",
+#             "status",
+#             "status_display",
+#             "total_gold_amount",
+#             "total_toman_amount",
+#             "tracking_code",
+#             "created_at",
+#             "admin_note",
+#             "items",
+#             "status_history",
+#         ]
+# gold_app/serializers.py - اصلاح OrderSerializer
+
+from rest_framework import serializers
+from .models import Order, OrderItem
+
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    """سریالایزر آیتم‌های سفارش"""
+    
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    product_image = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = OrderItem
+        fields = [
+            'id',
+            'product',
+            'product_name',
+            'product_image',
+            'quantity',
+            'price_at_time',
+            'weight_at_time',
+        ]
+    
+    def get_product_image(self, obj):
+        if obj.product and obj.product.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.product.image.url)
+            return obj.product.image.url
+        return None
+
+
 class OrderSerializer(serializers.ModelSerializer):
-
+    """
+    سریالایزر سفارشات فیزیکی
+    """
+    
+    status_display = serializers.SerializerMethodField()
+    payment_method_display = serializers.SerializerMethodField()
+    created_at_jalali = serializers.SerializerMethodField()
+    created_at_time = serializers.SerializerMethodField()
     items = OrderItemSerializer(many=True, read_only=True)
-
-    payment_method_display = serializers.CharField(
-        source="get_payment_method_display", read_only=True
-    )
-
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
-
-    delivery_type_display = serializers.CharField(
-        source="get_delivery_type_display", read_only=True
-    )
-
-    status_history = OrderStatusHistorySerializer(many=True, read_only=True)
-
+    
+    # ✅ استفاده از SerializerMethodField برای فیلدهای فاکتور
+    physical_invoice_id = serializers.SerializerMethodField()
+    physical_invoice_number = serializers.SerializerMethodField()
+    physical_invoice_status = serializers.SerializerMethodField()
+    physical_invoice_status_display = serializers.SerializerMethodField()
+    
     class Meta:
         model = Order
         fields = [
-            "id",
-            "province",
-            "city",
-            "address",
-            "postal_code",
-            "plaque",
-            "unit",
-            "payment_method",
-            "payment_method_display",
-            "delivery_type",
-            "delivery_type_display",
-            "status",
-            "status_display",
-            "total_gold_amount",
-            "total_toman_amount",
-            "tracking_code",
-            "created_at",
-            "admin_note",
-            "items",
-            "status_history",
+            'id',
+            'tracking_code',
+            'status',
+            'status_display',
+            'payment_method',
+            'payment_method_display',
+            'total_gold_amount',
+            'total_toman_amount',
+            'province',
+            'city',
+            'address',
+            'postal_code',
+            'plaque',
+            'unit',
+            'description',
+            'items',
+            # ✅ فیلدهای جدید
+            'physical_invoice_id',
+            'physical_invoice_number',
+            'physical_invoice_status',
+            'physical_invoice_status_display',
+            'created_at',
+            'created_at_jalali',
+            'created_at_time',
+            'updated_at'
         ]
-
+        read_only_fields = ['id', 'tracking_code', 'created_at', 'updated_at']
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_payment_method_display(self, obj):
+        return obj.get_payment_method_display()
+    
+    def get_created_at_jalali(self, obj):
+        if obj.created_at:
+            import jdatetime
+            from datetime import datetime
+            shamsi = jdatetime.datetime.fromgregorian(datetime=obj.created_at)
+            return shamsi.strftime("%Y/%m/%d")
+        return None
+    
+    def get_created_at_time(self, obj):
+        if obj.created_at:
+            return obj.created_at.strftime("%H:%M")
+        return None
+    
+    # =============================================
+    # ✅ متدهای دریافت اطلاعات فاکتور فیزیکی
+    # =============================================
+    
+    def get_physical_invoice_id(self, obj):
+        """دریافت شناسه فاکتور سفارش فیزیکی"""
+        try:
+            invoice = obj.physical_invoices.first()
+            return invoice.id if invoice else None
+        except:
+            return None
+    
+    def get_physical_invoice_number(self, obj):
+        """دریافت شماره فاکتور سفارش فیزیکی"""
+        try:
+            invoice = obj.physical_invoices.first()
+            return invoice.invoice_number if invoice else None
+        except:
+            return None
+    
+    def get_physical_invoice_status(self, obj):
+        """دریافت وضعیت فاکتور سفارش فیزیکی"""
+        try:
+            invoice = obj.physical_invoices.first()
+            return invoice.status if invoice else None
+        except:
+            return None
+    
+    def get_physical_invoice_status_display(self, obj):
+        """دریافت نمایش فارسی وضعیت فاکتور سفارش فیزیکی"""
+        try:
+            invoice = obj.physical_invoices.first()
+            return invoice.get_status_display() if invoice else None
+        except:
+            return None
 
 # =========================================================
 # GIFT CARD
@@ -1071,7 +1620,7 @@ class WithdrawSerializer(serializers.Serializer):
 
 
 # =========================================================
-# CHECKOUT (NO ADDRESS)
+# CHECKOUT 
 # =========================================================
 
 class PhysicalOrderSerializer(serializers.Serializer):
@@ -1116,9 +1665,130 @@ class PhysicalOrderSerializer(serializers.Serializer):
 
         return data
 
+# gold_app/serializers.py - اضافه کردن PhysicalOrderInvoiceSerializer
+
+from gold_app.models import PhysicalOrderInvoice
+
+# gold_app/serializers.py - اصلاح PhysicalOrderInvoiceSerializer
+
+from gold_app.models import PhysicalOrderInvoice
 
 
-
+class PhysicalOrderInvoiceSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر فاکتور سفارش فیزیکی
+    """
+    
+    status_display = serializers.SerializerMethodField()
+    invoice_type_display = serializers.SerializerMethodField()
+    payment_method_display = serializers.SerializerMethodField()
+    created_at_jalali = serializers.SerializerMethodField()
+    created_at_time = serializers.SerializerMethodField()
+    
+    gold_weight_display = serializers.SerializerMethodField()
+    total_amount_display = serializers.SerializerMethodField()
+    pure_gold_price_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = PhysicalOrderInvoice
+        fields = [
+            'id',
+            'invoice_number',
+            'invoice_type',
+            'invoice_type_display',
+            'status',
+            'status_display',
+            'invoice_date',
+            'created_at_jalali',
+            'created_at_time',
+            
+            # اطلاعات خریدار (بدون شماره ملی و تلفن)
+            'buyer_name',
+            # 'buyer_national_id',  # ❌ حذف شد
+            # 'buyer_phone',        # ❌ حذف شد
+            'buyer_address',
+            'buyer_province',
+            'buyer_city',
+            'buyer_postal_code',
+            
+            # اطلاعات فروشنده
+            'seller_name',
+            # 'seller_national_id',  # ❌ حذف شد
+            # 'seller_phone',        # ❌ حذف شد
+            'seller_address',
+            'seller_province',
+            
+            # اطلاعات سفارش
+            'order_tracking_code',
+            'payment_method',
+            'payment_method_display',
+            
+            # اطلاعات طلا
+            'gold_weight',
+            'gold_weight_display',
+            'gold_carat',
+            'gold_price_per_gram',
+            'pure_gold_price',
+            'pure_gold_price_display',
+            
+            # اطلاعات مالی
+            'shipping_fee',
+            'tax_amount',
+            'discount_amount',
+            'total_amount',
+            'total_amount_display',
+            
+            # محصولات
+            'products_summary',
+            
+            # تکمیلی
+            'description',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'invoice_number', 'created_at', 'updated_at', 'invoice_date'
+        ]
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_invoice_type_display(self, obj):
+        return obj.get_invoice_type_display()
+    
+    def get_payment_method_display(self, obj):
+        return obj.get_payment_method_display()
+    
+    def get_created_at_jalali(self, obj):
+        if obj.created_at:
+            import jdatetime
+            from django.utils import timezone
+            local_time = timezone.localtime(obj.created_at)
+            shamsi = jdatetime.datetime.fromgregorian(datetime=local_time)
+            return shamsi.strftime('%Y/%m/%d')
+        return None
+    
+    def get_created_at_time(self, obj):
+        if obj.created_at:
+            from django.utils import timezone
+            local_time = timezone.localtime(obj.created_at)
+            return local_time.strftime('%H:%M')
+        return None
+    
+    def get_gold_weight_display(self, obj):
+        if obj.gold_weight:
+            return f"{obj.gold_weight:,.3f}"
+        return "۰"
+    
+    def get_total_amount_display(self, obj):
+        if obj.total_amount:
+            return f"{int(obj.total_amount):,} تومان"
+        return "۰ تومان"
+    
+    def get_pure_gold_price_display(self, obj):
+        if obj.pure_gold_price:
+            return f"{int(obj.pure_gold_price):,} تومان"
+        return "۰ تومان"
 from rest_framework import serializers
 
 
@@ -1893,3 +2563,524 @@ class GoldShortOrderHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = GoldShortOrderHistory
         fields = '__all__'
+        
+        
+        
+# gold_app/serializers.py - اضافه کردن سریالایزرهای تضمین طلا
+
+from rest_framework import serializers
+from django.utils import timezone
+from decimal import Decimal
+from .models import GoldGuarantee, GoldGuaranteePlan, GoldInventory, Wallet
+
+
+class GoldGuaranteePlanSerializer(serializers.ModelSerializer):
+    """سریالایزر طرح‌های تضمین طلا"""
+    
+    class Meta:
+        model = GoldGuaranteePlan
+        fields = [
+            'id', 'name', 'duration_days', 'service_fee_percent',
+            'is_active', 'description', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class GoldGuaranteeCreateSerializer(serializers.Serializer):
+    """سریالایزر ایجاد تضمین طلا"""
+    
+    plan_id = serializers.IntegerField(required=True)
+    gold_weight = serializers.DecimalField(max_digits=20, decimal_places=3, required=True)
+    
+    def validate_plan_id(self, value):
+        try:
+            plan = GoldGuaranteePlan.objects.get(id=value, is_active=True)
+            return plan
+        except GoldGuaranteePlan.DoesNotExist:
+            raise serializers.ValidationError("طرح انتخاب شده نامعتبر یا غیرفعال است")
+    
+    def validate_gold_weight(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("مقدار طلا باید بیشتر از صفر باشد")
+        return value
+    
+    def validate(self, attrs):
+        user = self.context.get('request').user
+        plan = attrs.get('plan_id')
+        gold_weight = attrs.get('gold_weight')
+        
+        # بررسی موجودی طلای در دسترس
+        inventory, _ = GoldInventory.objects.get_or_create(user=user)
+        if inventory.accessible_balance < gold_weight:
+            raise serializers.ValidationError(
+                {"gold_weight": f"موجودی طلای در دسترس شما ({inventory.accessible_balance} گرم) کافی نیست"}
+            )
+        
+        # محاسبه کارمزد سرویس
+        from gold_app.utils import get_live_gold_price
+        gold_price = get_live_gold_price()
+        if not gold_price:
+            raise serializers.ValidationError("خطا در دریافت قیمت طلا")
+        
+        service_fee = (gold_weight * gold_price * (plan.service_fee_percent / Decimal('100'))).quantize(Decimal('1'))
+        
+        # بررسی موجودی کیف پول
+        wallet, _ = Wallet.objects.get_or_create(user=user)
+        if wallet.accessible_toman < service_fee:
+            raise serializers.ValidationError(
+                {"service_fee": f"موجودی کیف پول شما برای پرداخت کارمزد ({service_fee:,} تومان) کافی نیست"}
+            )
+        
+        # ذخیره در context برای استفاده در create
+        self.context['gold_price'] = gold_price
+        self.context['service_fee'] = service_fee
+        
+        return attrs
+
+
+
+
+# gold_app/serializers.py - سریالایزر لیست تضمین‌ها برای کاربر
+
+class GoldGuaranteeListSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر لیست تضمین‌های طلا برای کاربر
+    """
+    plan_name = serializers.CharField(source='plan.name', read_only=True)
+    status_display = serializers.SerializerMethodField()
+    end_date_shamsi = serializers.SerializerMethodField()
+    days_remaining = serializers.SerializerMethodField()
+    user_payout_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GoldGuarantee
+        fields = [
+            'id',
+            'plan', 
+            'plan_name',
+            'gold_weight',
+            'guaranteed_price',
+            'service_fee',
+            'start_date',
+            'end_date',
+            'end_date_shamsi',
+            'status',
+            'status_display',
+            'days_remaining',
+            'is_expired',
+            'user_payout',
+            'user_payout_display',
+            'description',
+            'created_at',
+            'updated_at'
+        ]
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_end_date_shamsi(self, obj):
+        import jdatetime
+        if obj.end_date:
+            shamsi = jdatetime.date.fromgregorian(date=obj.end_date)
+            return shamsi.strftime("%Y/%m/%d")
+        return None
+    
+    def get_days_remaining(self, obj):
+        return obj.days_remaining
+    
+    def get_user_payout_display(self, obj):
+        if obj.user_payout:
+            return f"{int(obj.user_payout):,} تومان"
+        return "۰ تومان"
+# gold_app/serializers.py - سریالایزر جزئیات تضمین طلا برای کاربر
+
+from rest_framework import serializers
+from gold_app.models import GoldGuarantee
+# gold_app/serializers.py - سریالایزر کامل GoldGuaranteeDetailSerializer
+
+from rest_framework import serializers
+from gold_app.models import GoldGuarantee
+from django.utils import timezone
+
+# ============================================
+# gold_app/serializers.py - اصلاح شده
+# ============================================
+
+# gold_app/serializers.py - اصلاح GoldGuaranteeDetailSerializer
+
+class GoldGuaranteeDetailSerializer(serializers.ModelSerializer):
+    """
+    سریالایزر جزئیات تضمین طلا برای کاربر
+    """
+    
+    # فیلدهای طرح
+    plan_name = serializers.CharField(source='plan.name', read_only=True)
+    plan_duration_days = serializers.IntegerField(source='plan.duration_days', read_only=True)
+    service_fee_percent = serializers.DecimalField(
+        source='plan.service_fee_percent', 
+        read_only=True, 
+        max_digits=5, 
+        decimal_places=2
+    )
+    
+    # فیلدهای نمایشی
+    status_display = serializers.SerializerMethodField()
+    days_remaining = serializers.SerializerMethodField()
+    start_date_shamsi = serializers.SerializerMethodField()
+    end_date_shamsi = serializers.SerializerMethodField()
+    
+    # فیلدهای قابلیت‌ها
+    can_cancel = serializers.SerializerMethodField()
+    can_execute = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GoldGuarantee
+        fields = [
+            'id',
+            'tracking_code',
+            'plan', 
+            'plan_name', 
+            'plan_duration_days',
+            'service_fee_percent',
+            'gold_weight',
+            'guaranteed_price',
+            'executed_price',
+            'service_fee',
+            'start_date',
+            'start_date_shamsi',
+            'end_date',
+            'end_date_shamsi',
+            'status',
+            'status_display',
+            'days_remaining',
+            'is_expired',
+            'cancelled_at',
+            'executed_at',
+            'user_payout',
+            'profit_loss',
+            'platform_profit',
+            'can_cancel',
+            'can_execute',
+            'description',
+            'created_at',
+            'updated_at'
+        ]
+        # ✅ اصلاح: استفاده از لیست به جای '__all__'
+        read_only_fields = [
+            'id', 
+            'tracking_code',
+            'plan',
+            'created_at', 
+            'updated_at',
+            'start_date',
+            'end_date'
+        ]
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_days_remaining(self, obj):
+        if obj.is_expired:
+            return 0
+        delta = obj.end_date - timezone.now()
+        if delta.total_seconds() < 86400:
+            return 1
+        return delta.days
+    
+    def get_start_date_shamsi(self, obj):
+        if obj.start_date:
+            import jdatetime
+            from django.utils import timezone
+            local_time = timezone.localtime(obj.start_date)
+            shamsi = jdatetime.datetime.fromgregorian(datetime=local_time)
+            return shamsi.strftime("%Y/%m/%d %H:%M")
+        return None
+    
+    def get_end_date_shamsi(self, obj):
+        if obj.end_date:
+            import jdatetime
+            from django.utils import timezone
+            local_time = timezone.localtime(obj.end_date)
+            shamsi = jdatetime.datetime.fromgregorian(datetime=local_time)
+            return shamsi.strftime("%Y/%m/%d %H:%M")
+        return None
+    
+    def get_can_cancel(self, obj):
+        return obj.status == 'ACTIVE' and not obj.is_expired
+    
+    def get_can_execute(self, obj):
+        return obj.status == 'ACTIVE' and obj.is_expired
+
+# gold_app/serializers.py - اضافه کردن سریالایزرهای سرمایه‌گذاری
+
+from rest_framework import serializers
+from django.utils import timezone
+from decimal import Decimal
+from .models import GoldInvestment, GoldInvestmentPlan, GoldInventory
+
+# gold_app/serializers.py - اصلاح GoldInvestmentPlanSerializer
+
+# gold_app/serializers.py - سریالایزرهای سرمایه‌گذاری
+
+from rest_framework import serializers
+from .models import GoldInvestment, GoldInvestmentPlan, GoldInventory
+
+
+class GoldInvestmentPlanSerializer(serializers.ModelSerializer):
+    """سریالایزر طرح‌های سرمایه‌گذاری برای کاربر"""
+    
+    duration_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GoldInvestmentPlan
+        fields = [
+            'id', 'name', 
+            'duration_days', 'duration_display',
+            'total_profit_percent',
+            'is_active', 'description'
+        ]
+    
+    def get_duration_display(self, obj):
+        days = obj.duration_days
+        if days == 1:
+            return "۱ روز"
+        elif days < 30:
+            return f"{days} روز"
+        elif days == 30:
+            return "۱ ماه"
+        elif days % 30 == 0:
+            return f"{days // 30} ماه"
+        else:
+            return f"{days} روز"
+
+
+class GoldInvestmentPreviewSerializer(serializers.Serializer):
+    """سریالایزر پیش‌نمایش سرمایه‌گذاری"""
+    
+    plan_id = serializers.IntegerField(required=True)
+    gold_weight = serializers.DecimalField(max_digits=20, decimal_places=3, required=True)
+    
+    def validate_plan_id(self, value):
+        try:
+            plan = GoldInvestmentPlan.objects.get(id=value, is_active=True)
+            return plan
+        except GoldInvestmentPlan.DoesNotExist:
+            raise serializers.ValidationError("طرح انتخاب شده نامعتبر یا غیرفعال است")
+    
+    def validate_gold_weight(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("مقدار طلا باید بیشتر از صفر باشد")
+        return value
+    
+    def validate(self, attrs):
+        user = self.context.get('request').user
+        gold_weight = attrs.get('gold_weight')
+        
+        inventory, _ = GoldInventory.objects.get_or_create(user=user)
+        if inventory.accessible_balance < gold_weight:
+            raise serializers.ValidationError(
+                {"gold_weight": f"موجودی طلای در دسترس شما ({inventory.accessible_balance} گرم) کافی نیست"}
+            )
+        
+        return attrs
+
+
+class GoldInvestmentCreateSerializer(serializers.Serializer):
+    """سریالایزر ایجاد سرمایه‌گذاری"""
+    
+    plan_id = serializers.IntegerField(required=True)
+    gold_weight = serializers.DecimalField(max_digits=20, decimal_places=3, required=True)
+    
+    def validate_plan_id(self, value):
+        try:
+            plan = GoldInvestmentPlan.objects.get(id=value, is_active=True)
+            return plan
+        except GoldInvestmentPlan.DoesNotExist:
+            raise serializers.ValidationError("طرح انتخاب شده نامعتبر یا غیرفعال است")
+    
+    def validate_gold_weight(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("مقدار طلا باید بیشتر از صفر باشد")
+        return value
+    
+    def validate(self, attrs):
+        user = self.context.get('request').user
+        gold_weight = attrs.get('gold_weight')
+        
+        inventory, _ = GoldInventory.objects.get_or_create(user=user)
+        if inventory.accessible_balance < gold_weight:
+            raise serializers.ValidationError(
+                {"gold_weight": f"موجودی طلای در دسترس شما ({inventory.accessible_balance} گرم) کافی نیست"}
+            )
+        
+        return attrs
+
+
+class GoldInvestmentListSerializer(serializers.ModelSerializer):
+    """سریالایزر لیست سرمایه‌گذاری‌ها برای کاربر"""
+    
+    plan_name = serializers.CharField(source='plan.name', read_only=True)
+    plan_duration_days = serializers.IntegerField(source='plan.duration_days', read_only=True)
+    status_display = serializers.SerializerMethodField()
+    end_date_shamsi = serializers.SerializerMethodField()
+    total_expected_profit = serializers.SerializerMethodField()
+    total_return = serializers.SerializerMethodField()
+    can_cancel = serializers.SerializerMethodField()
+    days_passed = serializers.SerializerMethodField()
+    remaining_days = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GoldInvestment
+        fields = [
+            'id', 'plan', 'plan_name', 'plan_duration_days',
+            'gold_weight', 'investment_price',
+            'start_date', 'end_date', 'end_date_shamsi',
+            'status', 'status_display',
+            'total_expected_profit', 'paid_profit',
+            'total_return', 'days_passed', 'remaining_days',
+            'cancellation_profit', 'can_cancel'
+        ]
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_end_date_shamsi(self, obj):
+        import jdatetime
+        if obj.end_date:
+            shamsi = jdatetime.date.fromgregorian(date=obj.end_date)
+            return shamsi.strftime("%Y/%m/%d")
+        return None
+    
+    def get_total_expected_profit(self, obj):
+        return float(obj.total_expected_profit)
+    
+    def get_total_return(self, obj):
+        return float(obj.total_return_amount)
+    
+    def get_can_cancel(self, obj):
+        return obj.status == 'ACTIVE'
+    
+    def get_days_passed(self, obj):
+        return obj.days_passed
+    
+    def get_remaining_days(self, obj):
+        return obj.remaining_days
+
+
+class GoldInvestmentDetailSerializer(serializers.ModelSerializer):
+    """سریالایزر جزئیات سرمایه‌گذاری برای کاربر"""
+    
+    plan_name = serializers.CharField(source='plan.name', read_only=True)
+    plan_duration_days = serializers.IntegerField(source='plan.duration_days', read_only=True)
+    total_profit_percent = serializers.DecimalField(source='plan.total_profit_percent', read_only=True, max_digits=10, decimal_places=2)
+    status_display = serializers.SerializerMethodField()
+    end_date_shamsi = serializers.SerializerMethodField()
+    total_expected_profit = serializers.SerializerMethodField()
+    total_return = serializers.SerializerMethodField()
+    can_cancel = serializers.SerializerMethodField()
+    days_passed = serializers.SerializerMethodField()
+    remaining_days = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = GoldInvestment
+        fields = [
+            'id', 'plan', 'plan_name', 'plan_duration_days',
+            'total_profit_percent',
+            'gold_weight', 'investment_price',
+            'start_date', 'end_date', 'end_date_shamsi',
+            'status', 'status_display',
+            'total_expected_profit', 'paid_profit',
+            'total_return', 'days_passed', 'remaining_days',
+            'cancellation_profit', 'can_cancel', 'is_completed',
+            'description', 'created_at', 'updated_at'
+        ]
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_end_date_shamsi(self, obj):
+        import jdatetime
+        if obj.end_date:
+            shamsi = jdatetime.date.fromgregorian(date=obj.end_date)
+            return shamsi.strftime("%Y/%m/%d")
+        return None
+    
+    def get_total_expected_profit(self, obj):
+        return float(obj.total_expected_profit)
+    
+    def get_total_return(self, obj):
+        return float(obj.total_return_amount)
+    
+    def get_can_cancel(self, obj):
+        return obj.status == 'ACTIVE'
+    
+    def get_days_passed(self, obj):
+        return obj.days_passed
+    
+    def get_remaining_days(self, obj):
+        return obj.remaining_days
+# gold_app/serializers.py
+# gold_app/serializers.py - اصلاح InvoiceSerializer
+
+class InvoiceSerializer(serializers.ModelSerializer):
+    """سریالایزر فاکتور"""
+    
+    invoice_type_display = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
+    created_at_jalali = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Invoice
+        fields = [
+            'id', 'invoice_number', 'invoice_type', 'invoice_type_display',
+            'invoice_date', 'status', 'status_display', 'created_at_jalali',
+            'buyer_name', 'buyer_national_id', 'buyer_phone', 'buyer_address',
+            'seller_name', 'seller_address',  # ✅ فقط نام و آدرس
+            'gold_weight', 'gold_carat', 'gold_price_per_gram',
+            'pure_gold_price', 'fee_rate', 'fee_amount', 'total_amount',
+            'tracking_code', 'description',
+        ]
+    
+    def get_invoice_type_display(self, obj):
+        return obj.get_invoice_type_display()
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+    
+    def get_created_at_jalali(self, obj):
+        import jdatetime
+        from django.utils import timezone
+        if obj.created_at:
+            local_time = timezone.localtime(obj.created_at)
+            shamsi = jdatetime.datetime.fromgregorian(datetime=local_time)
+            return shamsi.strftime('%Y/%m/%d %H:%M')
+        return None
+    
+    
+    
+# gold_app/serializers.py - اضافه کردن AppVersionSerializer
+
+from rest_framework import serializers
+from .models import AppVersion
+
+
+class AppVersionSerializer(serializers.ModelSerializer):
+    """سریالایزر نسخه اپلیکیشن"""
+    
+    class Meta:
+        model = AppVersion
+        fields = [
+            'id',
+            'version_code',
+            'version_name',
+            'min_required_version_code',
+            'update_message',
+            'release_notes',
+            'store_url',
+            'is_active',
+            'is_force_update',
+            'release_date',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'release_date', 'created_at', 'updated_at']

@@ -379,3 +379,296 @@ class UserFee(models.Model):
     )
 
     updated_at = models.DateTimeField(auto_now=True)
+    
+    
+    
+    
+    
+    
+    
+# accounts/models.py - مدل‌های تیکت کامل
+
+from django.db import models
+from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
+from django.core.validators import FileExtensionValidator
+import uuid
+from datetime import timedelta
+
+
+
+class TicketCategory(models.Model):
+    """دسته‌بندی تیکت‌ها"""
+    name = models.CharField(max_length=100, verbose_name="نام دسته‌بندی")
+    slug = models.SlugField(max_length=100, unique=True, verbose_name="شناسه")
+    description = models.TextField(blank=True, null=True, verbose_name="توضیحات")
+    is_active = models.BooleanField(default=True, verbose_name="فعال")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "دسته‌بندی تیکت"
+        verbose_name_plural = "دسته‌بندی‌های تیکت"
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+def ticket_attachment_path(instance, filename):
+    """مسیر ذخیره فایل ضمیمه تیکت"""
+    return f'tickets/attachments/{instance.tracking_code}/{filename}'
+
+
+def ticket_message_attachment_path(instance, filename):
+    """مسیر ذخیره فایل ضمیمه پیام"""
+    return f'tickets/messages/{instance.ticket.tracking_code}/{filename}'
+
+
+class Ticket(models.Model):
+    """مدل اصلی تیکت"""
+    
+    # وضعیت‌های تیکت
+    STATUS_CHOICES = (
+        ('open', 'باز'),
+        ('in_progress', 'در حال بررسی'),
+        ('pending', 'در انتظار پاسخ کاربر'),  # کاربر پیام داده، منتظر پاسخ ادمین
+        ('answered', 'پاسخ داده شده'),        # ادمین پاسخ داده، منتظر بازخورد کاربر
+        ('resolved', 'حل شده'),
+        ('closed', 'بسته شده'),
+    )
+    
+    # اولویت‌های تیکت
+    PRIORITY_CHOICES = (
+        ('low', 'کم'),
+        ('medium', 'متوسط'),
+        ('high', 'بالا'),
+        ('urgent', 'فوری'),
+    )
+    
+    # کد رهگیری یکتا
+    tracking_code = models.CharField(
+        max_length=20, 
+        unique=True, 
+        editable=False,
+        verbose_name="کد رهگیری"
+    )
+    
+    user = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='tickets',
+        verbose_name="کاربر"
+    )
+    category = models.ForeignKey(
+        TicketCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='tickets',
+        verbose_name="دسته‌بندی"
+    )
+    title = models.CharField(max_length=200, verbose_name="عنوان")
+    description = models.TextField(verbose_name="توضیحات")
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='open',
+        verbose_name="وضعیت"
+    )
+    priority = models.CharField(
+        max_length=20,
+        choices=PRIORITY_CHOICES,
+        default='medium',
+        verbose_name="اولویت"
+    )
+    
+    # فایل ضمیمه (با اعتبارسنجی)
+    attachment = models.FileField(
+        upload_to=ticket_attachment_path,
+        blank=True,
+        null=True,
+        validators=[
+            FileExtensionValidator(
+                allowed_extensions=['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 
+                                   'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+                                   'zip', 'rar', '7z', 'txt', 'csv', 'json', 'xml']
+            )
+        ],
+        verbose_name="فایل ضمیمه"
+    )
+    
+    # زمان‌ها
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاریخ ایجاد")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاریخ بروزرسانی")
+    resolved_at = models.DateTimeField(blank=True, null=True, verbose_name="تاریخ حل")
+    closed_at = models.DateTimeField(blank=True, null=True, verbose_name="تاریخ بسته شدن")
+    last_activity_at = models.DateTimeField(auto_now=True, verbose_name="آخرین فعالیت")
+    
+    # کاربری که تیکت را بسته است
+    closed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='closed_tickets',
+        verbose_name="بسته شده توسط"
+    )
+    
+    # تعداد پیام‌های خوانده نشده
+    unread_count = models.IntegerField(default=0, verbose_name="پیام‌های خوانده نشده")
+    
+    # آیا اتومات حل شده است؟
+    auto_resolved = models.BooleanField(default=False, verbose_name="حل شده خودکار")
+
+    class Meta:
+        verbose_name = "تیکت"
+        verbose_name_plural = "تیکت‌ها"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.tracking_code} - {self.title} - {self.user.mobile}"
+
+    def save(self, *args, **kwargs):
+        # تولید کد رهگیری در صورت نبودن
+        if not self.tracking_code:
+            self.tracking_code = self.generate_tracking_code()
+        
+        # اگر وضعیت به resolved تغییر کرد، زمان حل را ثبت کن
+        if self.status == 'resolved' and not self.resolved_at:
+            self.resolved_at = timezone.now()
+        
+        # اگر وضعیت به closed تغییر کرد، زمان بسته شدن را ثبت کن
+        if self.status == 'closed' and not self.closed_at:
+            self.closed_at = timezone.now()
+        
+        super().save(*args, **kwargs)
+
+    def generate_tracking_code(self):
+        """تولید کد رهگیری یکتا"""
+        # فرمت: TKT-YYYYMMDD-XXXXX
+        prefix = f"TKT-{timezone.now().strftime('%Y%m%d')}"
+        random_part = str(uuid.uuid4().hex[:6].upper())
+        return f"{prefix}-{random_part}"
+
+    def update_status_based_on_last_message(self):
+        """بروزرسانی وضعیت تیکت بر اساس آخرین پیام"""
+        last_message = self.messages.last()
+        
+        if not last_message:
+            return
+        
+        # اگر آخرین پیام توسط کاربر باشد → در انتظار پاسخ
+        if not last_message.is_admin:
+            if self.status not in ['closed', 'resolved']:
+                self.status = 'pending'
+                self.save()
+        else:
+            # اگر آخرین پیام توسط ادمین باشد → پاسخ داده شده
+            if self.status not in ['closed', 'resolved']:
+                self.status = 'answered'
+                self.save()
+        
+        # بروزرسانی زمان آخرین فعالیت
+        self.last_activity_at = timezone.now()
+        self.save(update_fields=['last_activity_at'])
+
+    def check_and_auto_resolve(self):
+        """بررسی و حل خودکار تیکت در صورت عدم فعالیت"""
+        if self.status != 'answered':
+            return False
+        
+        # اگر تیکت در وضعیت پاسخ داده شده باشد و ۲ روز از آخرین فعالیت گذشته باشد
+        two_days_ago = timezone.now() - timedelta(days=2)
+        
+        if self.last_activity_at <= two_days_ago:
+            self.status = 'resolved'
+            self.resolved_at = timezone.now()
+            self.auto_resolved = True
+            self.save()
+            return True
+        
+        return False
+
+    def can_user_edit(self, user):
+        """بررسی اینکه کاربر می‌تواند این تیکت را ویرایش کند"""
+        return self.user == user and self.status in ['open', 'pending']
+
+    def can_user_close(self, user):
+        """بررسی اینکه کاربر می‌تواند این تیکت را ببندد"""
+        return self.user == user and self.status not in ['closed', 'resolved']
+
+    def get_last_message_user_type(self):
+        """نوع کاربر ارسال‌کننده آخرین پیام"""
+        last_message = self.messages.last()
+        if last_message:
+            return 'admin' if last_message.is_admin else 'user'
+        return None
+
+
+class TicketMessage(models.Model):
+    """پیام‌های تیکت"""
+    
+    ticket = models.ForeignKey(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name='messages',
+        verbose_name="تیکت"
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='ticket_messages',
+        verbose_name="فرستنده"
+    )
+    message = models.TextField(verbose_name="متن پیام")
+    
+    # فایل ضمیمه برای پیام (با اعتبارسنجی)
+    attachment = models.FileField(
+        upload_to=ticket_message_attachment_path,
+        blank=True,
+        null=True,
+        validators=[
+            FileExtensionValidator(
+                allowed_extensions=['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg',
+                                   'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+                                   'zip', 'rar', '7z', 'txt', 'csv', 'json', 'xml']
+            )
+        ],
+        verbose_name="فایل ضمیمه"
+    )
+    
+    # مشخص می‌کند که پیام توسط کاربر است یا ادمین
+    is_admin = models.BooleanField(default=False, verbose_name="پیام ادمین")
+    
+    # خوانده شده
+    is_read = models.BooleanField(default=False, verbose_name="خوانده شده")
+    read_at = models.DateTimeField(blank=True, null=True, verbose_name="زمان خواندن")
+    
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="تاریخ ارسال")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="تاریخ بروزرسانی")
+
+    class Meta:
+        verbose_name = "پیام تیکت"
+        verbose_name_plural = "پیام‌های تیکت"
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.ticket.tracking_code} - {self.user.mobile} - {self.created_at}"
+
+    def mark_as_read(self):
+        """علامت‌گذاری پیام به عنوان خوانده شده"""
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save()
+
+    def save(self, *args, **kwargs):
+        # اعتبارسنجی حجم فایل (حداکثر ۱۰ مگابایت)
+        if self.attachment:
+            if self.attachment.size > 10 * 1024 * 1024:
+                raise ValidationError("حجم فایل نباید بیشتر از ۱۰ مگابایت باشد")
+        
+        super().save(*args, **kwargs)
+        
+        # بروزرسانی وضعیت تیکت بر اساس آخرین پیام
+        self.ticket.update_status_based_on_last_message()

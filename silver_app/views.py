@@ -10,6 +10,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.utils import timezone
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
+from silver_app.services.invoice_service import SilverInvoiceService
 
 from drf_spectacular.utils import extend_schema
 
@@ -290,106 +291,106 @@ class BuySilverCalculateAPIView(APIView):
 
 
 
-class BuySilverAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+# class BuySilverAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
 
-    @transaction.atomic
-    def post(self, request):
+#     @transaction.atomic
+#     def post(self, request):
 
-        user = request.user
+#         user = request.user
 
-        silver_price = get_live_silver_price()
+#         silver_price = get_live_silver_price()
 
-        if not silver_price:
-            return error_response(message="خطا در دریافت قیمت نقره", status_code=500)
+#         if not silver_price:
+#             return error_response(message="خطا در دریافت قیمت نقره", status_code=500)
 
-        serializer = BuySilverSerializer(
-            data=request.data, context={"request": request, "silver_price": silver_price}
-        )
+#         serializer = BuySilverSerializer(
+#             data=request.data, context={"request": request, "silver_price": silver_price}
+#         )
 
-        if not serializer.is_valid():
-            return error_response(
-                message="اطلاعات خرید نامعتبر است", data=serializer.errors
-            )
+#         if not serializer.is_valid():
+#             return error_response(
+#                 message="اطلاعات خرید نامعتبر است", data=serializer.errors
+#             )
 
-        weight = serializer.validated_data["final_weight"]
-        fee = serializer.validated_data["fee"]
-        fee_rate = serializer.validated_data["fee_rate"]
-        total_toman = serializer.validated_data["total_toman"]
-        pure_silver_price = serializer.validated_data["pure_silver_price"]  # ✅ اضافه شد
+#         weight = serializer.validated_data["final_weight"]
+#         fee = serializer.validated_data["fee"]
+#         fee_rate = serializer.validated_data["fee_rate"]
+#         total_toman = serializer.validated_data["total_toman"]
+#         pure_silver_price = serializer.validated_data["pure_silver_price"]  # ✅ اضافه شد
 
-        if weight <= Decimal("0"):
-            return error_response(message="وزن نقره نامعتبر است")
+#         if weight <= Decimal("0"):
+#             return error_response(message="وزن نقره نامعتبر است")
 
-        wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
-        inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
+#         wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
+#         inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
 
-        # ==========================
-        # بررسی و بلوکه‌کردن موجودی نقدی
-        # ==========================
+#         # ==========================
+#         # بررسی و بلوکه‌کردن موجودی نقدی
+#         # ==========================
 
-        if wallet.accessible_toman < total_toman:
-            return error_response(message="موجودی کیف پول کافی نیست")
+#         if wallet.accessible_toman < total_toman:
+#             return error_response(message="موجودی کیف پول کافی نیست")
 
-        wallet.accessible_toman -= total_toman
-        wallet.blocked_toman += total_toman
-        wallet.save(update_fields=["accessible_toman", "blocked_toman", "updated_at"])
+#         wallet.accessible_toman -= total_toman
+#         wallet.blocked_toman += total_toman
+#         wallet.save(update_fields=["accessible_toman", "blocked_toman", "updated_at"])
 
-        # ==========================
-        # تراکنش نقره - در انتظار تایید ادمین
-        # ==========================
+#         # ==========================
+#         # تراکنش نقره - در انتظار تایید ادمین
+#         # ==========================
 
-        tx = SilverTransaction.objects.create(
-            user=user,
-            type="BUY",
-            status="PENDING",
-            amount_gr=weight,
-            price_per_gram=silver_price,
-            fee=fee,
-            commission_percent=(fee_rate * Decimal("100")),
-            commission_amount=fee,
-            total_amount=total_toman,
-            tracking_code=generate_tracking_code("SBUY"),
-        )
+#         tx = SilverTransaction.objects.create(
+#             user=user,
+#             type="BUY",
+#             status="PENDING",
+#             amount_gr=weight,
+#             price_per_gram=silver_price,
+#             fee=fee,
+#             commission_percent=(fee_rate * Decimal("100")),
+#             commission_amount=fee,
+#             total_amount=total_toman,
+#             tracking_code=generate_tracking_code("SBUY"),
+#         )
 
-        create_admin_log(
-            request=request,
-            user=user,
-            action_type="BUY_SILVER",
-            action="درخواست خرید نقره (در انتظار تایید)",
-            model_name="SilverTransaction",
-            object_id=tx.id,
-            tracking_code=tx.tracking_code,
-            success=True,
-            description=f"""
-درخواست خرید نقره
+#         create_admin_log(
+#             request=request,
+#             user=user,
+#             action_type="BUY_SILVER",
+#             action="درخواست خرید نقره (در انتظار تایید)",
+#             model_name="SilverTransaction",
+#             object_id=tx.id,
+#             tracking_code=tx.tracking_code,
+#             success=True,
+#             description=f"""
+# درخواست خرید نقره
 
-کاربر: {user.mobile}
-وزن: {weight} گرم
-قیمت هر گرم: {silver_price}
-قیمت خالص نقره: {pure_silver_price}
-کارمزد: {fee}
-مبلغ کل بلوکه‌شده: {total_toman}
-موجودی بلوکه فعلی کیف پول: {wallet.blocked_toman}
-""",
-        )
+# کاربر: {user.mobile}
+# وزن: {weight} گرم
+# قیمت هر گرم: {silver_price}
+# قیمت خالص نقره: {pure_silver_price}
+# کارمزد: {fee}
+# مبلغ کل بلوکه‌شده: {total_toman}
+# موجودی بلوکه فعلی کیف پول: {wallet.blocked_toman}
+# """,
+#         )
 
-        return success_response(
-            message="درخواست خرید نقره ثبت شد و در انتظار تایید ادمین است",
-            status_code=201,
-            data={
-                "transaction_id": tx.id,
-                "tracking_code": tx.tracking_code,
-                "status": tx.status,
-                "silver_weight": float(weight),
-                "pure_silver_price": float(pure_silver_price),  # ✅ اضافه شد
-                "fee": float(fee),
-                "fee_rate": float(fee_rate),
-                "total_toman": float(total_toman),
-                "accessible_toman": float(wallet.accessible_toman),
-                "blocked_toman": float(wallet.blocked_toman),
-            },
-        )
+#         return success_response(
+#             message="درخواست خرید نقره ثبت شد و در انتظار تایید ادمین است",
+#             status_code=201,
+#             data={
+#                 "transaction_id": tx.id,
+#                 "tracking_code": tx.tracking_code,
+#                 "status": tx.status,
+#                 "silver_weight": float(weight),
+#                 "pure_silver_price": float(pure_silver_price),  # ✅ اضافه شد
+#                 "fee": float(fee),
+#                 "fee_rate": float(fee_rate),
+#                 "total_toman": float(total_toman),
+#                 "accessible_toman": float(wallet.accessible_toman),
+#                 "blocked_toman": float(wallet.blocked_toman),
+#             },
+#         )
 
 
 
@@ -512,12 +513,525 @@ class SellSilverCalculateAPIView(APIView):
 # SELL SILVER API VIEW - اصلاح شده ✅
 # =========================================================
 
-class SellSilverAPIView(APIView):
+# class SellSilverAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     @transaction.atomic
+#     def post(self, request):
+
+#         silver_price = get_live_silver_price()
+
+#         if not silver_price:
+#             return error_response(
+#                 message="خطا در دریافت قیمت نقره", 
+#                 status_code=500
+#             )
+
+#         serializer = SellSilverSerializer(
+#             data=request.data, 
+#             context={"request": request, "silver_price": silver_price}
+#         )
+
+#         if not serializer.is_valid():
+#             # گرفتن اولین خطا
+#             first_error = None
+#             for field, errors in serializer.errors.items():
+#                 if errors:
+#                     if isinstance(errors, list):
+#                         first_error = errors[0]
+#                     elif isinstance(errors, dict):
+#                         for sub_errors in errors.values():
+#                             if sub_errors and isinstance(sub_errors, list):
+#                                 first_error = sub_errors[0]
+#                                 break
+#                     else:
+#                         first_error = str(errors)
+#                     break
+            
+#             error_message = first_error if first_error else "اطلاعات نامعتبر است."
+            
+#             return error_response(
+#                 message=error_message,
+#                 status_code=400
+#             )
+
+#         user = request.user
+#         final_weight = serializer.validated_data["final_weight"]
+        
+#         # ✅ اصلاح: استفاده از total_toman به جای final_amount
+#         total_toman = serializer.validated_data["total_toman"]  # مبلغ دریافتی کاربر
+#         fee = serializer.validated_data["fee"]
+#         fee_rate = serializer.validated_data["fee_rate"]
+#         pure_value = serializer.validated_data["pure_value"]
+
+#         if final_weight <= 0:
+#             return error_response(
+#                 message="وزن فروش نامعتبر است",
+#                 status_code=400
+#             )
+
+#         inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
+#         wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
+
+#         # ==========================
+#         # بررسی و بلوکه‌کردن موجودی نقره
+#         # ==========================
+
+#         if inventory.accessible_balance < final_weight:
+#             return error_response(
+#                 message="موجودی نقره قابل معامله شما کافی نیست",
+#                 status_code=400
+#             )
+
+#         inventory.accessible_balance -= final_weight
+#         inventory.blocked_balance += final_weight
+#         inventory.save(update_fields=["accessible_balance", "blocked_balance", "updated_at"])
+
+#         # ==========================
+#         # ثبت تراکنش به صورت PENDING (در انتظار تایید ادمین)
+#         # ==========================
+
+#         tx = SilverTransaction.objects.create(
+#             user=user,
+#             type="SELL",
+#             status="PENDING",
+#             amount_gr=final_weight,
+#             price_per_gram=silver_price,
+#             fee=fee,
+#             commission_percent=(fee_rate * Decimal("100")),
+#             commission_amount=fee,
+#             total_amount=total_toman,  # ✅ مبلغ دریافتی کاربر
+#             tracking_code=generate_tracking_code("SSELL"),
+#         )
+
+#         create_admin_log(
+#             request=request,
+#             user=user,
+#             action_type="SELL_SILVER",
+#             action="درخواست فروش نقره (در انتظار تایید)",
+#             model_name="SilverTransaction",
+#             object_id=tx.id,
+#             tracking_code=tx.tracking_code,
+#             success=True,
+#             description=f"""
+# درخواست فروش نقره
+
+# کاربر: {user.mobile}
+# وزن فروخته شده: {final_weight} گرم
+# ارزش خالص: {pure_value}
+# مبلغ خالص واریزی پس از کسر کارمزد: {total_toman} تومان
+# کارمزد کسر شده: {fee} تومان
+# موجودی نقره بلوکه شده فعلی: {inventory.blocked_balance} گرم
+# """,
+#         )
+
+#         return success_response(
+#             message="درخواست فروش نقره با موفقیت ثبت شد و در انتظار تایید ادمین است",
+#             status_code=201,
+#             data={
+#                 "transaction_id": tx.id,
+#                 "tracking_code": tx.tracking_code,
+#                 "status": tx.status,
+#                 "silver_weight": float(final_weight),
+#                 "pure_silver_price": float(pure_value),
+#                 "fee": float(fee),
+#                 "fee_rate": float(fee_rate),
+#                 "final_amount": float(total_toman),  # ✅ برای سازگاری با فرانت
+#                 "accessible_silver": float(inventory.accessible_balance),
+#                 "blocked_silver": float(inventory.blocked_balance),
+#             },
+#         )
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+
+# class BuySilverAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     @transaction.atomic
+#     def post(self, request):
+
+#         user = request.user
+
+#         silver_price = get_live_silver_price()
+
+#         if not silver_price:
+#             return error_response(message="خطا در دریافت قیمت نقره", status_code=500)
+
+#         serializer = BuySilverSerializer(
+#             data=request.data, context={"request": request, "silver_price": silver_price}
+#         )
+
+#         if not serializer.is_valid():
+#             return error_response(
+#                 message="اطلاعات خرید نامعتبر است", data=serializer.errors
+#             )
+
+#         weight = serializer.validated_data["final_weight"]
+#         fee = serializer.validated_data["fee"]
+#         fee_rate = serializer.validated_data["fee_rate"]
+#         total_toman = serializer.validated_data["total_toman"]
+#         pure_silver_price = serializer.validated_data["pure_silver_price"]
+
+#         if weight <= Decimal("0"):
+#             return error_response(message="وزن نقره نامعتبر است")
+
+#         wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
+#         inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
+
+#         # ==========================
+#         # بررسی و بلوکه‌کردن موجودی نقدی
+#         # ==========================
+
+#         if wallet.accessible_toman < total_toman:
+#             return error_response(message="موجودی کیف پول کافی نیست")
+
+#         wallet.accessible_toman -= total_toman
+#         wallet.blocked_toman += total_toman
+#         wallet.save(update_fields=["accessible_toman", "blocked_toman", "updated_at"])
+
+#         # ==========================
+#         # تراکنش نقره - در انتظار تایید ادمین
+#         # ==========================
+
+#         tx = SilverTransaction.objects.create(
+#             user=user,
+#             type="BUY",
+#             status="PENDING",
+#             amount_gr=weight,
+#             price_per_gram=silver_price,
+#             fee=fee,
+#             commission_percent=(fee_rate * Decimal("100")),
+#             commission_amount=fee,
+#             total_amount=total_toman,
+#             tracking_code=generate_tracking_code("SBUY"),
+#         )
+
+#         # ==========================
+#         # ✅ ایجاد فاکتور خرید نقره
+#         # ==========================
+#         invoice = None
+#         try:
+#             from silver_app.services.invoice_service import SilverInvoiceService
+#             invoice = SilverInvoiceService.create_buy_invoice(tx, request)
+#             logger.info(f"✅ فاکتور خرید نقره ساخته شد: {invoice.invoice_number}")
+#         except Exception as e:
+#             logger.error(f"⚠️ خطا در ساخت فاکتور خرید نقره: {e}")
+
+#         create_admin_log(
+#             request=request,
+#             user=user,
+#             action_type="BUY_SILVER",
+#             action="درخواست خرید نقره (در انتظار تایید)",
+#             model_name="SilverTransaction",
+#             object_id=tx.id,
+#             tracking_code=tx.tracking_code,
+#             success=True,
+#             description=f"""
+# درخواست خرید نقره
+
+# کاربر: {user.mobile}
+# وزن: {weight} گرم
+# قیمت هر گرم: {silver_price}
+# قیمت خالص نقره: {pure_silver_price}
+# کارمزد: {fee}
+# مبلغ کل بلوکه‌شده: {total_toman}
+# موجودی بلوکه فعلی کیف پول: {wallet.blocked_toman}
+# شماره فاکتور: {invoice.invoice_number if invoice else 'ندارد'}
+# """,
+#         )
+
+#         return success_response(
+#             message="درخواست خرید نقره ثبت شد و در انتظار تایید ادمین است",
+#             status_code=201,
+#             data={
+#                 "transaction_id": tx.id,
+#                 "tracking_code": tx.tracking_code,
+#                 "status": tx.status,
+#                 "silver_weight": float(weight),
+#                 "pure_silver_price": float(pure_silver_price),
+#                 "fee": float(fee),
+#                 "fee_rate": float(fee_rate),
+#                 "total_toman": float(total_toman),
+#                 "accessible_toman": float(wallet.accessible_toman),
+#                 "blocked_toman": float(wallet.blocked_toman),
+#                 "invoice": {
+#                     "id": invoice.id if invoice else None,
+#                     "invoice_number": invoice.invoice_number if invoice else None,
+#                 } if invoice else None,
+#             },
+#         )
+
+
+
+
+# class SellSilverAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     @transaction.atomic
+#     def post(self, request):
+
+#         silver_price = get_live_silver_price()
+
+#         if not silver_price:
+#             return error_response(
+#                 message="خطا در دریافت قیمت نقره", 
+#                 status_code=500
+#             )
+
+#         serializer = SellSilverSerializer(
+#             data=request.data, 
+#             context={"request": request, "silver_price": silver_price}
+#         )
+
+#         if not serializer.is_valid():
+#             # گرفتن اولین خطا
+#             first_error = None
+#             for field, errors in serializer.errors.items():
+#                 if errors:
+#                     if isinstance(errors, list):
+#                         first_error = errors[0]
+#                     elif isinstance(errors, dict):
+#                         for sub_errors in errors.values():
+#                             if sub_errors and isinstance(sub_errors, list):
+#                                 first_error = sub_errors[0]
+#                                 break
+#                     else:
+#                         first_error = str(errors)
+#                     break
+            
+#             error_message = first_error if first_error else "اطلاعات نامعتبر است."
+            
+#             return error_response(
+#                 message=error_message,
+#                 status_code=400
+#             )
+
+#         user = request.user
+#         final_weight = serializer.validated_data["final_weight"]
+        
+#         total_toman = serializer.validated_data["total_toman"]
+#         fee = serializer.validated_data["fee"]
+#         fee_rate = serializer.validated_data["fee_rate"]
+#         pure_value = serializer.validated_data["pure_value"]
+
+#         if final_weight <= 0:
+#             return error_response(
+#                 message="وزن فروش نامعتبر است",
+#                 status_code=400
+#             )
+
+#         inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
+#         wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
+
+#         # ==========================
+#         # بررسی و بلوکه‌کردن موجودی نقره
+#         # ==========================
+
+#         if inventory.accessible_balance < final_weight:
+#             return error_response(
+#                 message="موجودی نقره قابل معامله شما کافی نیست",
+#                 status_code=400
+#             )
+
+#         inventory.accessible_balance -= final_weight
+#         inventory.blocked_balance += final_weight
+#         inventory.save(update_fields=["accessible_balance", "blocked_balance", "updated_at"])
+
+#         # ==========================
+#         # ثبت تراکنش به صورت PENDING (در انتظار تایید ادمین)
+#         # ==========================
+
+#         tx = SilverTransaction.objects.create(
+#             user=user,
+#             type="SELL",
+#             status="PENDING",
+#             amount_gr=final_weight,
+#             price_per_gram=silver_price,
+#             fee=fee,
+#             commission_percent=(fee_rate * Decimal("100")),
+#             commission_amount=fee,
+#             total_amount=total_toman,
+#             tracking_code=generate_tracking_code("SSELL"),
+#         )
+
+#         # ==========================
+#         # ✅ ایجاد فاکتور فروش نقره
+#         # ==========================
+#         invoice = None
+#         try:
+#             from silver_app.services.invoice_service import SilverInvoiceService
+#             invoice = SilverInvoiceService.create_sell_invoice(tx, request)
+#             logger.info(f"✅ فاکتور فروش نقره ساخته شد: {invoice.invoice_number}")
+#         except Exception as e:
+#             logger.error(f"⚠️ خطا در ساخت فاکتور فروش نقره: {e}")
+
+#         create_admin_log(
+#             request=request,
+#             user=user,
+#             action_type="SELL_SILVER",
+#             action="درخواست فروش نقره (در انتظار تایید)",
+#             model_name="SilverTransaction",
+#             object_id=tx.id,
+#             tracking_code=tx.tracking_code,
+#             success=True,
+#             description=f"""
+# درخواست فروش نقره
+
+# کاربر: {user.mobile}
+# وزن فروخته شده: {final_weight} گرم
+# ارزش خالص: {pure_value}
+# مبلغ خالص واریزی پس از کسر کارمزد: {total_toman} تومان
+# کارمزد کسر شده: {fee} تومان
+# موجودی نقره بلوکه شده فعلی: {inventory.blocked_balance} گرم
+# شماره فاکتور: {invoice.invoice_number if invoice else 'ندارد'}
+# """,
+#         )
+
+#         return success_response(
+#             message="درخواست فروش نقره با موفقیت ثبت شد و در انتظار تایید ادمین است",
+#             status_code=201,
+#             data={
+#                 "transaction_id": tx.id,
+#                 "tracking_code": tx.tracking_code,
+#                 "status": tx.status,
+#                 "silver_weight": float(final_weight),
+#                 "pure_silver_price": float(pure_value),
+#                 "fee": float(fee),
+#                 "fee_rate": float(fee_rate),
+#                 "final_amount": float(total_toman),
+#                 "accessible_silver": float(inventory.accessible_balance),
+#                 "blocked_silver": float(inventory.blocked_balance),
+#                 "invoice": {
+#                     "id": invoice.id if invoice else None,
+#                     "invoice_number": invoice.invoice_number if invoice else None,
+#                 } if invoice else None,
+#             },
+#         )
+
+# silver_app/views.py - اصلاح BuySilverAPIView (حذف فاکتور)
+
+class BuySilverAPIView(APIView):
+    """
+    ثبت درخواست خرید نقره
+    - موجودی کیف پول را بلوکه می‌کند
+    - تراکنش با وضعیت PENDING ایجاد می‌کند
+    - ❌ فاکتور در این مرحله ایجاد نمی‌شود
+    """
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request):
+        user = request.user
+        silver_price = get_live_silver_price()
 
+        if not silver_price:
+            return error_response(message="خطا در دریافت قیمت نقره", status_code=500)
+
+        serializer = BuySilverSerializer(
+            data=request.data, context={"request": request, "silver_price": silver_price}
+        )
+
+        if not serializer.is_valid():
+            return error_response(
+                message="اطلاعات خرید نامعتبر است", data=serializer.errors
+            )
+
+        weight = serializer.validated_data["final_weight"]
+        fee = serializer.validated_data["fee"]
+        fee_rate = serializer.validated_data["fee_rate"]
+        total_toman = serializer.validated_data["total_toman"]
+        pure_silver_price = serializer.validated_data["pure_silver_price"]
+
+        if weight <= Decimal("0"):
+            return error_response(message="وزن نقره نامعتبر است")
+
+        wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
+        inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
+
+        # بررسی موجودی کیف پول
+        if wallet.accessible_toman < total_toman:
+            return error_response(message="موجودی کیف پول کافی نیست")
+
+        # بلوکه کردن مبلغ
+        wallet.accessible_toman -= total_toman
+        wallet.blocked_toman += total_toman
+        wallet.save(update_fields=["accessible_toman", "blocked_toman", "updated_at"])
+
+        # ایجاد تراکنش
+        tx = SilverTransaction.objects.create(
+            user=user,
+            type="BUY",
+            status="PENDING",
+            amount_gr=weight,
+            price_per_gram=silver_price,
+            fee=fee,
+            commission_percent=(fee_rate * Decimal("100")),
+            commission_amount=fee,
+            total_amount=total_toman,
+            tracking_code=generate_tracking_code("SBUY"),
+        )
+
+        # ==========================
+        # ❌ فاکتور در این مرحله ایجاد نمی‌شود
+        # ==========================
+        # فاکتور فقط بعد از تایید ادمین (COMPLETED) ایجاد می‌شود
+
+        create_admin_log(
+            request=request,
+            user=user,
+            action_type="BUY_SILVER",
+            action="درخواست خرید نقره (در انتظار تایید)",
+            model_name="SilverTransaction",
+            object_id=tx.id,
+            tracking_code=tx.tracking_code,
+            success=True,
+            description=f"""
+درخواست خرید نقره
+
+کاربر: {user.mobile}
+وزن: {weight} گرم
+قیمت هر گرم: {silver_price}
+قیمت خالص نقره: {pure_silver_price}
+کارمزد: {fee}
+مبلغ کل بلوکه‌شده: {total_toman}
+موجودی بلوکه فعلی کیف پول: {wallet.blocked_toman}
+""",
+        )
+
+        return success_response(
+            message="درخواست خرید نقره ثبت شد و در انتظار تایید ادمین است",
+            status_code=201,
+            data={
+                "transaction_id": tx.id,
+                "tracking_code": tx.tracking_code,
+                "status": tx.status,
+                "silver_weight": float(weight),
+                "pure_silver_price": float(pure_silver_price),
+                "fee": float(fee),
+                "fee_rate": float(fee_rate),
+                "total_toman": float(total_toman),
+                "accessible_toman": float(wallet.accessible_toman),
+                "blocked_toman": float(wallet.blocked_toman),
+                # ❌ فیلد invoice حذف شد
+            },
+        )
+        
+# silver_app/views.py - اصلاح SellSilverAPIView (حذف فاکتور)
+
+class SellSilverAPIView(APIView):
+    """
+    ثبت درخواست فروش نقره
+    - موجودی نقره را بلوکه می‌کند
+    - تراکنش با وضعیت PENDING ایجاد می‌کند
+    - ❌ فاکتور در این مرحله ایجاد نمی‌شود
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
         silver_price = get_live_silver_price()
 
         if not silver_price:
@@ -532,7 +1046,6 @@ class SellSilverAPIView(APIView):
         )
 
         if not serializer.is_valid():
-            # گرفتن اولین خطا
             first_error = None
             for field, errors in serializer.errors.items():
                 if errors:
@@ -556,9 +1069,7 @@ class SellSilverAPIView(APIView):
 
         user = request.user
         final_weight = serializer.validated_data["final_weight"]
-        
-        # ✅ اصلاح: استفاده از total_toman به جای final_amount
-        total_toman = serializer.validated_data["total_toman"]  # مبلغ دریافتی کاربر
+        total_toman = serializer.validated_data["total_toman"]
         fee = serializer.validated_data["fee"]
         fee_rate = serializer.validated_data["fee_rate"]
         pure_value = serializer.validated_data["pure_value"]
@@ -572,24 +1083,19 @@ class SellSilverAPIView(APIView):
         inventory, _ = SilverInventory.objects.select_for_update().get_or_create(user=user)
         wallet, _ = SilverWallet.objects.select_for_update().get_or_create(user=user)
 
-        # ==========================
-        # بررسی و بلوکه‌کردن موجودی نقره
-        # ==========================
-
+        # بررسی موجودی نقره
         if inventory.accessible_balance < final_weight:
             return error_response(
                 message="موجودی نقره قابل معامله شما کافی نیست",
                 status_code=400
             )
 
+        # بلوکه کردن نقره
         inventory.accessible_balance -= final_weight
         inventory.blocked_balance += final_weight
         inventory.save(update_fields=["accessible_balance", "blocked_balance", "updated_at"])
 
-        # ==========================
-        # ثبت تراکنش به صورت PENDING (در انتظار تایید ادمین)
-        # ==========================
-
+        # ایجاد تراکنش
         tx = SilverTransaction.objects.create(
             user=user,
             type="SELL",
@@ -599,9 +1105,14 @@ class SellSilverAPIView(APIView):
             fee=fee,
             commission_percent=(fee_rate * Decimal("100")),
             commission_amount=fee,
-            total_amount=total_toman,  # ✅ مبلغ دریافتی کاربر
+            total_amount=total_toman,
             tracking_code=generate_tracking_code("SSELL"),
         )
+
+        # ==========================
+        # ❌ فاکتور در این مرحله ایجاد نمی‌شود
+        # ==========================
+        # فاکتور فقط بعد از تایید ادمین (COMPLETED) ایجاد می‌شود
 
         create_admin_log(
             request=request,
@@ -635,14 +1146,12 @@ class SellSilverAPIView(APIView):
                 "pure_silver_price": float(pure_value),
                 "fee": float(fee),
                 "fee_rate": float(fee_rate),
-                "final_amount": float(total_toman),  # ✅ برای سازگاری با فرانت
+                "final_amount": float(total_toman),
                 "accessible_silver": float(inventory.accessible_balance),
                 "blocked_silver": float(inventory.blocked_balance),
+                # ❌ فیلد invoice حذف شد
             },
         )
-
-
-
 
 # =========================================================
 # DEPOSIT WALLET (SILVER)
@@ -1632,6 +2141,259 @@ class SilverOrderDetailAPIView(APIView):
         return success_response(message="جزئیات سفارش نقره", data=serializer.data)
 
 
+# class SilverReportsAPIView(APIView):
+
+#     permission_classes = [IsAuthenticated]
+
+#     # ==========================================
+#     # DATE PARSER
+#     # ==========================================
+#     def parse_date(self, value):
+
+#         if not value:
+#             return None
+
+#         try:
+#             if "/" in value:
+#                 y, m, d = map(int, value.split("/"))
+#                 return jdatetime.date(y, m, d).togregorian()
+
+#             return datetime.strptime(value, "%Y-%m-%d").date()
+
+#         except (ValueError, TypeError):
+#             return False
+
+#     # ==========================================
+#     # GET
+#     # ==========================================
+#     def get(self, request):
+
+#         report_type = request.GET.get("type")
+#         status_filter = request.GET.get("status")
+#         method_filter = request.GET.get("method")
+
+#         start_date_raw = request.GET.get("start_date")
+#         end_date_raw = request.GET.get("end_date")
+
+#         start_date = self.parse_date(start_date_raw)
+#         end_date = self.parse_date(end_date_raw)
+
+#         # ==========================================
+#         # VALIDATIONS
+#         # ==========================================
+#         allowed_types = ["silver", "deposit", "withdraw", "orders"]
+
+#         if not report_type:
+#             return error_response(message="نوع گزارش الزامی است")
+
+#         if report_type not in allowed_types:
+#             return error_response(message="نوع گزارش نامعتبر است")
+
+#         if start_date_raw and start_date is False:
+#             return error_response(message="فرمت تاریخ شروع نامعتبر است")
+
+#         if end_date_raw and end_date is False:
+#             return error_response(message="فرمت تاریخ پایان نامعتبر است")
+
+#         if start_date and end_date and start_date > end_date:
+#             return error_response(message="تاریخ شروع نمی‌تواند بزرگ‌تر باشد")
+
+#         # ==========================================
+#         # SILVER TRANSACTIONS (BUY / SELL)
+#         # ==========================================
+#         if report_type == "silver":
+
+#             queryset = SilverTransaction.objects.filter(user=request.user)
+
+#             if method_filter:
+#                 queryset = queryset.filter(type=method_filter.upper())
+
+#             if status_filter:
+#                 queryset = queryset.filter(status=status_filter)
+
+#             if start_date:
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             queryset = queryset.order_by("-created_at")
+
+#             serializer = SilverTransactionSerializer(
+#                 queryset, many=True, context={"request": request}
+#             )
+
+#             return success_response(
+#                 message="گزارش معاملات نقره دریافت شد", data=serializer.data
+#             )
+
+#         # ==========================================
+#         # DEPOSIT (واریز مستقیم + تبدیل طلا -> نقره)
+#         # ==========================================
+#         if report_type == "deposit":
+
+#             # -----------------------------------------
+#             # واریزهای مستقیم (type=DEPOSIT)
+#             # -----------------------------------------
+#             queryset = SilverFinancialTransaction.objects.filter(
+#                 user=request.user, type="DEPOSIT"
+#             )
+
+#             if method_filter:
+#                 queryset = queryset.filter(method=method_filter.upper())
+
+#             if status_filter:
+#                 queryset = queryset.filter(status=status_filter)
+
+#             if start_date:
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             queryset = queryset.order_by("-created_at")[:50]
+
+#             serializer = SilverFinancialTransactionSerializer(
+#                 queryset, many=True, context={"request": request}
+#             )
+
+#             combined_data = list(serializer.data)
+
+#             # -----------------------------------------
+#             # تبدیل از طلا به نقره (type=TRANSFER)
+#             # این‌ها هم از دید کاربر «واریز» به کیف پول نقره هستند
+#             # -----------------------------------------
+#             transfer_queryset = SilverFinancialTransaction.objects.filter(
+#                 user=request.user, type="TRANSFER"
+#             )
+
+#             if status_filter:
+#                 transfer_queryset = transfer_queryset.filter(status=status_filter)
+
+#             if start_date:
+#                 transfer_queryset = transfer_queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+#                 transfer_queryset = transfer_queryset.filter(created_at__date__lte=end_date)
+
+#             transfer_queryset = transfer_queryset.order_by("-created_at")[:50]
+
+#             transfer_serializer = SilverFinancialTransactionSerializer(
+#                 transfer_queryset, many=True, context={"request": request}
+#             )
+
+#             transfer_data = list(transfer_serializer.data)
+
+#             for item in transfer_data:
+#                 item["type"] = "DEPOSIT"
+#                 item["type_display"] = "واریز"
+#                 item["method"] = "GOLD_CONVERT"
+#                 item["method_display"] = "تبدیل از طلا"
+
+#             # -----------------------------------------
+#             # فیلتر method روی نتیجه‌ی نهایی (چون method واقعی
+#             # در دیتابیس برای این رکوردها BANK است نه GOLD_CONVERT)
+#             # -----------------------------------------
+#             if method_filter and method_filter.upper() != "GOLD_CONVERT":
+#                 transfer_data = []
+#             elif method_filter and method_filter.upper() == "GOLD_CONVERT":
+#                 pass  # نگه‌داشتن همه، چون همه از این نوع‌اند
+#             # اگر method_filter خالی باشد، همه نمایش داده می‌شوند
+
+#             combined_data.extend(transfer_data)
+
+#             combined_data.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+
+#             return success_response(
+#                 message="گزارش واریزهای نقره دریافت شد", data=combined_data
+#             )
+
+#         # ==========================================
+#         # WITHDRAW (برداشت مستقیم + انتقال نقره -> طلا)
+#         # ==========================================
+#         if report_type == "withdraw":
+
+#             queryset = SilverFinancialTransaction.objects.filter(
+#                 user=request.user, type="WITHDRAW"
+#             )
+
+#             if method_filter and method_filter.upper() != "GOLD_CONVERT":
+#                 queryset = queryset.filter(method=method_filter.upper())
+
+#             if status_filter:
+#                 queryset = queryset.filter(status=status_filter)
+
+#             if start_date:
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             queryset = queryset.order_by("-created_at")[:50]
+
+#             serializer = SilverFinancialTransactionSerializer(
+#                 queryset, many=True, context={"request": request}
+#             )
+
+#             combined_data = list(serializer.data)
+
+#             # -----------------------------------------
+#             # این رکوردها همان تراکنش‌های انتقال نقره -> طلا هستند
+#             # (در WithdrawAPIView نقره با tracking_code شروع‌شونده با
+#             # "SLV_TO_GOLD" و method=BANK ساخته می‌شوند)
+#             # برچسب دقیق‌تر برای نمایش در گزارش قرار می‌دهیم
+#             # -----------------------------------------
+#             for item in combined_data:
+#                 if str(item.get("tracking_code", "")).startswith("SLV_TO_GOLD"):
+#                     item["method"] = "GOLD_CONVERT"
+#                     item["method_display"] = "تبدیل به طلا"
+
+#             # -----------------------------------------
+#             # اگر method_filter=GOLD_CONVERT بود، فقط همین‌ها را نگه دار
+#             # -----------------------------------------
+#             if method_filter and method_filter.upper() == "GOLD_CONVERT":
+#                 combined_data = [
+#                     item for item in combined_data
+#                     if item.get("method") == "GOLD_CONVERT"
+#                 ]
+
+#             combined_data.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+
+#             return success_response(
+#                 message="گزارش برداشت‌های نقره دریافت شد", data=combined_data
+#             )
+
+#         # ==========================================
+#         # ORDERS
+#         # ==========================================
+#         if report_type == "orders":
+
+#             queryset = SilverOrder.objects.filter(user=request.user)
+
+#             if method_filter:
+#                 queryset = queryset.filter(payment_method=method_filter.upper())
+
+#             if status_filter:
+#                 queryset = queryset.filter(status=status_filter)
+
+#             if start_date:
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             queryset = queryset.order_by("-created_at")
+
+#             serializer = SilverOrderSerializer(
+#                 queryset, many=True, context={"request": request}
+#             )
+
+#             return success_response(
+#                 message="گزارش سفارشات نقره دریافت شد", data=serializer.data
+#             )
+
+#         return error_response(message="نوع گزارش نامعتبر است")
+
 class SilverReportsAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -1672,7 +2434,7 @@ class SilverReportsAPIView(APIView):
         # ==========================================
         # VALIDATIONS
         # ==========================================
-        allowed_types = ["silver", "deposit", "withdraw", "orders"]
+        allowed_types = ["silver", "deposit", "withdraw", "orders", "invoices"]
 
         if not report_type:
             return error_response(message="نوع گزارش الزامی است")
@@ -1715,7 +2477,8 @@ class SilverReportsAPIView(APIView):
             )
 
             return success_response(
-                message="گزارش معاملات نقره دریافت شد", data=serializer.data
+                message="گزارش معاملات نقره دریافت شد", 
+                data=serializer.data
             )
 
         # ==========================================
@@ -1752,7 +2515,6 @@ class SilverReportsAPIView(APIView):
 
             # -----------------------------------------
             # تبدیل از طلا به نقره (type=TRANSFER)
-            # این‌ها هم از دید کاربر «واریز» به کیف پول نقره هستند
             # -----------------------------------------
             transfer_queryset = SilverFinancialTransaction.objects.filter(
                 user=request.user, type="TRANSFER"
@@ -1781,22 +2543,15 @@ class SilverReportsAPIView(APIView):
                 item["method"] = "GOLD_CONVERT"
                 item["method_display"] = "تبدیل از طلا"
 
-            # -----------------------------------------
-            # فیلتر method روی نتیجه‌ی نهایی (چون method واقعی
-            # در دیتابیس برای این رکوردها BANK است نه GOLD_CONVERT)
-            # -----------------------------------------
             if method_filter and method_filter.upper() != "GOLD_CONVERT":
                 transfer_data = []
-            elif method_filter and method_filter.upper() == "GOLD_CONVERT":
-                pass  # نگه‌داشتن همه، چون همه از این نوع‌اند
-            # اگر method_filter خالی باشد، همه نمایش داده می‌شوند
 
             combined_data.extend(transfer_data)
-
             combined_data.sort(key=lambda item: item.get("created_at") or "", reverse=True)
 
             return success_response(
-                message="گزارش واریزهای نقره دریافت شد", data=combined_data
+                message="گزارش واریزهای نقره دریافت شد", 
+                data=combined_data
             )
 
         # ==========================================
@@ -1828,20 +2583,11 @@ class SilverReportsAPIView(APIView):
 
             combined_data = list(serializer.data)
 
-            # -----------------------------------------
-            # این رکوردها همان تراکنش‌های انتقال نقره -> طلا هستند
-            # (در WithdrawAPIView نقره با tracking_code شروع‌شونده با
-            # "SLV_TO_GOLD" و method=BANK ساخته می‌شوند)
-            # برچسب دقیق‌تر برای نمایش در گزارش قرار می‌دهیم
-            # -----------------------------------------
             for item in combined_data:
                 if str(item.get("tracking_code", "")).startswith("SLV_TO_GOLD"):
                     item["method"] = "GOLD_CONVERT"
                     item["method_display"] = "تبدیل به طلا"
 
-            # -----------------------------------------
-            # اگر method_filter=GOLD_CONVERT بود، فقط همین‌ها را نگه دار
-            # -----------------------------------------
             if method_filter and method_filter.upper() == "GOLD_CONVERT":
                 combined_data = [
                     item for item in combined_data
@@ -1851,21 +2597,139 @@ class SilverReportsAPIView(APIView):
             combined_data.sort(key=lambda item: item.get("created_at") or "", reverse=True)
 
             return success_response(
-                message="گزارش برداشت‌های نقره دریافت شد", data=combined_data
+                message="گزارش برداشت‌های نقره دریافت شد", 
+                data=combined_data
             )
 
         # ==========================================
-        # ORDERS
+        # ORDERS (سفارشات نقره + فاکتورهای نقره)
         # ==========================================
         if report_type == "orders":
 
-            queryset = SilverOrder.objects.filter(user=request.user)
+            from silver_app.serializers import SilverInvoiceSerializer
+            from silver_app.models import SilverInvoice
+
+            # -------- سفارشات نقره --------
+            order_queryset = SilverOrder.objects.filter(user=request.user)
 
             if method_filter:
-                queryset = queryset.filter(payment_method=method_filter.upper())
+                order_queryset = order_queryset.filter(payment_method=method_filter.upper())
 
             if status_filter:
-                queryset = queryset.filter(status=status_filter)
+                order_queryset = order_queryset.filter(status=status_filter)
+
+            if start_date:
+                order_queryset = order_queryset.filter(created_at__date__gte=start_date)
+
+            if end_date:
+                order_queryset = order_queryset.filter(created_at__date__lte=end_date)
+
+            order_queryset = order_queryset.order_by("-created_at")
+
+            order_serializer = SilverOrderSerializer(
+                order_queryset, many=True, context={"request": request}
+            )
+
+            orders_data = []
+            for item in order_serializer.data:
+                created_at = item.get("created_at")
+                jalali_date = ""
+                if created_at:
+                    try:
+                        dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        jalali = jdatetime.datetime.fromgregorian(datetime=dt)
+                        jalali_date = jalali.strftime('%Y/%m/%d %H:%M')
+                    except:
+                        jalali_date = created_at
+
+                orders_data.append({
+                    "id": item.get("id"),
+                    "type": "ORDER",
+                    "type_display": "سفارش نقره",
+                    "tracking_code": item.get("tracking_code", "---"),
+                    "status": item.get("status", "PENDING"),
+                    "status_display": item.get("status_display", "در انتظار"),
+                    "total_amount": item.get("total_amount", "0"),
+                    "created_at": jalali_date,
+                    "is_invoice": False,
+                    "order_items": item.get("items", []),
+                    "payment_method": item.get("payment_method", ""),
+                    "shipping_address": item.get("shipping_address", ""),
+                    "silver_weight": item.get("silver_weight", "0"),
+                    "amount_gr": item.get("amount_gr", "0"),
+                })
+
+            # -------- فاکتورهای نقره --------
+            invoice_queryset = SilverInvoice.objects.filter(
+                transaction__user=request.user
+            )
+
+            if status_filter:
+                invoice_queryset = invoice_queryset.filter(status__iexact=status_filter)
+
+            if start_date:
+                invoice_queryset = invoice_queryset.filter(created_at__date__gte=start_date)
+
+            if end_date:
+                invoice_queryset = invoice_queryset.filter(created_at__date__lte=end_date)
+
+            invoice_queryset = invoice_queryset.order_by("-created_at")
+
+            invoice_serializer = SilverInvoiceSerializer(
+                invoice_queryset, many=True, context={"request": request}
+            )
+
+            invoices_data = []
+            for item in invoice_serializer.data:
+                created_at = item.get("created_at_jalali", "")
+                if not created_at:
+                    created_at = item.get("created_at", "")
+
+                invoices_data.append({
+                    "id": item.get("id"),
+                    "type": item.get("invoice_type", "BUY"),
+                    "type_display": item.get("invoice_type_display", "فاکتور نقره"),
+                    "invoice_number": item.get("invoice_number"),
+                    "tracking_code": item.get("tracking_code", "---"),
+                    "status": item.get("status", "PENDING"),
+                    "status_display": item.get("status_display", "در انتظار"),
+                    "total_amount": item.get("total_amount", "0"),
+                    "created_at": created_at,
+                    "is_invoice": True,
+                    "silver_weight": item.get("silver_weight", "0"),
+                    "silver_price": item.get("silver_price_per_gram", "0"),
+                    "fee_amount": item.get("fee_amount", "0"),
+                    "pure_silver_price": item.get("pure_silver_price", "0"),
+                    "buyer_name": item.get("buyer_name", ""),
+                    "seller_name": item.get("seller_name", ""),
+                })
+
+            # -------- ترکیب و مرتب‌سازی --------
+            combined_data = orders_data + invoices_data
+            combined_data.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
+            return success_response(
+                message="گزارش سفارشات و فاکتورهای نقره دریافت شد", 
+                data=combined_data
+            )
+
+        # ==========================================
+        # INVOICES (فقط فاکتورهای نقره)
+        # ==========================================
+        if report_type == "invoices":
+
+            from silver_app.serializers import SilverInvoiceSerializer
+            from silver_app.models import SilverInvoice
+
+            queryset = SilverInvoice.objects.filter(
+                transaction__user=request.user
+            )
+
+            if status_filter:
+                queryset = queryset.filter(status__iexact=status_filter)
+
+            if method_filter:
+                queryset = queryset.filter(invoice_type__iexact=method_filter)
 
             if start_date:
                 queryset = queryset.filter(created_at__date__gte=start_date)
@@ -1875,15 +2739,78 @@ class SilverReportsAPIView(APIView):
 
             queryset = queryset.order_by("-created_at")
 
-            serializer = SilverOrderSerializer(
+            serializer = SilverInvoiceSerializer(
                 queryset, many=True, context={"request": request}
             )
 
             return success_response(
-                message="گزارش سفارشات نقره دریافت شد", data=serializer.data
+                message="لیست فاکتورهای نقره دریافت شد", 
+                data=serializer.data
             )
 
         return error_response(message="نوع گزارش نامعتبر است")
+# silver_app/views.py
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from .models import SilverInvoice
+from .serializers import SilverInvoiceSerializer
+from .services.invoice_service import SilverInvoiceService
+from .services.pdf_service import SilverInvoicePDFService
+
+
+class SilverInvoiceListAPIView(APIView):
+    """لیست فاکتورهای نقره کاربر"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        invoices = SilverInvoice.objects.filter(
+            transaction__user=request.user
+        ).order_by('-created_at')
+
+        serializer = SilverInvoiceSerializer(invoices, many=True)
+
+        return success_response(
+            message="لیست فاکتورهای نقره",
+            data=serializer.data
+        )
+
+
+class SilverInvoiceDetailAPIView(APIView):
+    """دریافت جزئیات فاکتور نقره"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, invoice_id):
+        try:
+            invoice = SilverInvoice.objects.get(id=invoice_id, transaction__user=request.user)
+        except SilverInvoice.DoesNotExist:
+            return error_response(message="فاکتور نقره یافت نشد", status_code=404)
+
+        data = SilverInvoiceService.get_invoice_data(invoice)
+
+        return success_response(
+            message="اطلاعات فاکتور نقره",
+            data=data
+        )
+
+
+class SilverInvoiceDownloadPDFAPIView(APIView):
+    """دانلود فاکتور نقره به صورت PDF"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, invoice_id):
+        try:
+            response = SilverInvoicePDFService.generate_invoice_pdf(invoice_id, request)
+            if response:
+                return response
+            return error_response(message="خطا در تولید فاکتور نقره", status_code=500)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"خطا در تولید PDF نقره: {e}")
+            return error_response(message="خطا در تولید فاکتور نقره", status_code=500)
+
+
 # =========================================================
 # RECENT TRANSACTIONS (SILVER)
 # =========================================================

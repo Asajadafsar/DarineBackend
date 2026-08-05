@@ -10,8 +10,8 @@ from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from decimal import Decimal
-from .models import GoldInventory, Wallet, GoldTransaction
-from .serializers import GoldLimitOrderCreateSerializer, SellGoldSerializer
+from .models import GoldInventory, Invoice, Wallet, GoldTransaction
+from .serializers import GoldLimitOrderCreateSerializer, InvoiceSerializer, SellGoldSerializer
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -300,59 +300,207 @@ class BuyGoldCalculateAPIView(APIView):
 # BUY GOLD (1)
 # =========================================================
 
+# class BuyGoldAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     @transaction.atomic
+#     def post(self, request):
+
+#         user = request.user
+
+#         gold_price = get_live_gold_price()
+
+#         if not gold_price:
+#             return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
+
+#         serializer = BuyGoldSerializer(
+#             data=request.data, context={"request": request, "gold_price": gold_price}
+#         )
+
+#         if not serializer.is_valid():
+#             return error_response(
+#                 message="اطلاعات خرید نامعتبر است", data=serializer.errors
+#             )
+
+#         weight = serializer.validated_data["final_weight"]
+#         fee = serializer.validated_data["fee"]
+#         fee_rate = serializer.validated_data["fee_rate"]
+#         total_toman = serializer.validated_data["total_toman"]
+#         pure_gold_price = serializer.validated_data["pure_gold_price"]  # ✅ اضافه شد
+
+#         if weight <= Decimal("0"):
+#             return error_response(message="وزن طلا نامعتبر است")
+
+#         # select_for_update تا در صورت درخواست‌های همزمان، race condition روی موجودی نداشته باشیم
+#         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+#         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+
+#         # ==========================
+#         # بررسی و بلوکه‌کردن موجودی نقدی
+#         # ==========================
+
+#         if wallet.accessible_toman < total_toman:
+#             return error_response(message="موجودی کیف پول کافی نیست")
+
+#         wallet.accessible_toman -= total_toman
+#         wallet.blocked_toman += total_toman
+#         wallet.save(update_fields=["accessible_toman", "blocked_toman", "updated_at"])
+
+#         # توجه: موجودی طلا (inventory) در این مرحله دست نمی‌خوره؛
+#         # فقط بعد از تایید ادمین به accessible_balance اضافه می‌شه
+
+#         # ==========================
+#         # تراکنش طلا - در انتظار تایید ادمین
+#         # ==========================
+
+#         tx = GoldTransaction.objects.create(
+#             user=user,
+#             type="BUY",
+#             status="PENDING",
+#             amount_gr=weight,
+#             price_per_gram=gold_price,
+#             fee=fee,
+#             commission_percent=(fee_rate * Decimal("100")),
+#             commission_amount=fee,
+#             total_amount=total_toman,
+#             tracking_code=generate_tracking_code("BUY"),
+#         )
+
+#         create_admin_log(
+#             request=request,
+#             user=user,
+#             action_type="BUY_GOLD",
+#             action="درخواست خرید طلا (در انتظار تایید)",
+#             model_name="GoldTransaction",
+#             object_id=tx.id,
+#             tracking_code=tx.tracking_code,
+#             success=True,
+#             description=f"""
+# درخواست خرید طلا
+
+# کاربر:
+# {user.mobile}
+
+# وزن:
+# {weight} گرم
+
+# قیمت هر گرم:
+# {gold_price}
+
+# قیمت خالص طلا:
+# {pure_gold_price}
+
+# کارمزد:
+# {fee}
+
+# مبلغ کل بلوکه‌شده:
+# {total_toman}
+
+# موجودی بلوکه فعلی کیف پول:
+# {wallet.blocked_toman}
+# """,
+#         )
+
+#         return success_response(
+#             message="درخواست خرید طلا ثبت شد و در انتظار تایید ادمین است",
+#             status_code=201,
+#             data={
+#                 "transaction_id": tx.id,
+#                 "tracking_code": tx.tracking_code,
+#                 "status": tx.status,
+#                 "gold_weight": float(weight),
+#                 "pure_gold_price": float(pure_gold_price),  # ✅ اضافه شد
+#                 "fee": float(fee),
+#                 "fee_rate": float(fee_rate),
+#                 "total_toman": float(total_toman),
+#                 "accessible_toman": float(wallet.accessible_toman),
+#                 "blocked_toman": float(wallet.blocked_toman),
+#             },
+#         )
+    
+
+from django.db import transaction
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+
+from .models import Wallet, GoldInventory, GoldTransaction
+from .serializers import BuyGoldSerializer
+
+# gold_app/views.py - ویوهای خرید و فروش طلا (کامل)
+
+import logging
+from decimal import Decimal
+from django.db import transaction
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+
+from .models import (
+    GoldTransaction,
+    GoldInventory,
+    Wallet,
+)
+from .serializers import (
+    BuyGoldSerializer,
+    SellGoldSerializer,
+)
+from .services.invoice_service import InvoiceService
+
+
+logger = logging.getLogger(__name__)
+
+# gold_app/views.py - اصلاح BuyGoldAPIView (حذف فاکتور)
+
 class BuyGoldAPIView(APIView):
+    """
+    ثبت درخواست خرید طلا
+    - موجودی کیف پول را بلوکه می‌کند
+    - تراکنش با وضعیت PENDING ایجاد می‌کند
+    - ❌ فاکتور در این مرحله ایجاد نمی‌شود
+    """
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request):
-
         user = request.user
-
         gold_price = get_live_gold_price()
 
         if not gold_price:
             return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
 
         serializer = BuyGoldSerializer(
-            data=request.data, context={"request": request, "gold_price": gold_price}
+            data=request.data,
+            context={"request": request, "gold_price": gold_price}
         )
 
         if not serializer.is_valid():
             return error_response(
-                message="اطلاعات خرید نامعتبر است", data=serializer.errors
+                message="اطلاعات خرید نامعتبر است",
+                data=serializer.errors
             )
 
         weight = serializer.validated_data["final_weight"]
         fee = serializer.validated_data["fee"]
         fee_rate = serializer.validated_data["fee_rate"]
         total_toman = serializer.validated_data["total_toman"]
-        pure_gold_price = serializer.validated_data["pure_gold_price"]  # ✅ اضافه شد
+        pure_gold_price = serializer.validated_data["pure_gold_price"]
 
         if weight <= Decimal("0"):
             return error_response(message="وزن طلا نامعتبر است")
 
-        # select_for_update تا در صورت درخواست‌های همزمان، race condition روی موجودی نداشته باشیم
+        # قفل روی موجودی برای جلوگیری از race condition
         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
 
-        # ==========================
-        # بررسی و بلوکه‌کردن موجودی نقدی
-        # ==========================
-
+        # بررسی موجودی کیف پول
         if wallet.accessible_toman < total_toman:
             return error_response(message="موجودی کیف پول کافی نیست")
 
+        # بلوکه کردن مبلغ
         wallet.accessible_toman -= total_toman
         wallet.blocked_toman += total_toman
         wallet.save(update_fields=["accessible_toman", "blocked_toman", "updated_at"])
 
-        # توجه: موجودی طلا (inventory) در این مرحله دست نمی‌خوره؛
-        # فقط بعد از تایید ادمین به accessible_balance اضافه می‌شه
-
-        # ==========================
-        # تراکنش طلا - در انتظار تایید ادمین
-        # ==========================
-
+        # ایجاد تراکنش
         tx = GoldTransaction.objects.create(
             user=user,
             type="BUY",
@@ -366,6 +514,12 @@ class BuyGoldAPIView(APIView):
             tracking_code=generate_tracking_code("BUY"),
         )
 
+        # ==========================
+        # ❌ فاکتور در این مرحله ایجاد نمی‌شود
+        # ==========================
+        # فاکتور فقط بعد از تایید ادمین (COMPLETED) ایجاد می‌شود
+
+        # لاگ ادمین
         create_admin_log(
             request=request,
             user=user,
@@ -378,26 +532,12 @@ class BuyGoldAPIView(APIView):
             description=f"""
 درخواست خرید طلا
 
-کاربر:
-{user.mobile}
-
-وزن:
-{weight} گرم
-
-قیمت هر گرم:
-{gold_price}
-
-قیمت خالص طلا:
-{pure_gold_price}
-
-کارمزد:
-{fee}
-
-مبلغ کل بلوکه‌شده:
-{total_toman}
-
-موجودی بلوکه فعلی کیف پول:
-{wallet.blocked_toman}
+کاربر: {user.mobile}
+وزن: {weight} گرم
+قیمت هر گرم: {gold_price}
+قیمت خالص: {pure_gold_price}
+کارمزد: {fee}
+مبلغ کل: {total_toman}
 """,
         )
 
@@ -409,27 +549,123 @@ class BuyGoldAPIView(APIView):
                 "tracking_code": tx.tracking_code,
                 "status": tx.status,
                 "gold_weight": float(weight),
-                "pure_gold_price": float(pure_gold_price),  # ✅ اضافه شد
+                "pure_gold_price": float(pure_gold_price),
                 "fee": float(fee),
                 "fee_rate": float(fee_rate),
                 "total_toman": float(total_toman),
                 "accessible_toman": float(wallet.accessible_toman),
                 "blocked_toman": float(wallet.blocked_toman),
+                # ❌ فیلد invoice حذف شد
             },
         )
-    
+        
+        
+# gold_app/views.py - اصلاح SellGoldAPIView (حذف فاکتور)
 
-from django.db import transaction
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+class SellGoldAPIView(APIView):
+    """
+    ثبت درخواست فروش طلا
+    - موجودی طلا را بلوکه می‌کند
+    - تراکنش با وضعیت PENDING ایجاد می‌کند
+    - ❌ فاکتور در این مرحله ایجاد نمی‌شود
+    """
+    permission_classes = [IsAuthenticated]
 
-from .models import Wallet, GoldInventory, GoldTransaction
-from .serializers import BuyGoldSerializer
+    @transaction.atomic
+    def post(self, request):
+        gold_price = get_live_gold_price()
+        if not gold_price:
+            return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
 
+        serializer = SellGoldSerializer(
+            data=request.data,
+            context={"request": request, "gold_price": gold_price}
+        )
 
+        if not serializer.is_valid():
+            return error_response(
+                message="اطلاعات فروش نامعتبر است",
+                data=serializer.errors
+            )
 
+        user = request.user
+        final_weight = serializer.validated_data["final_weight"]
+        final_amount = serializer.validated_data["final_amount"]
+        fee = serializer.validated_data["fee"]
+        fee_rate = serializer.validated_data["fee_rate"]
 
+        if final_weight <= 0:
+            return error_response(message="وزن فروش نامعتبر است")
 
+        # قفل روی موجودی
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+
+        # بررسی موجودی طلا
+        if inventory.accessible_balance < final_weight:
+            return error_response(message="موجودی طلای قابل معامله شما کافی نیست")
+
+        # بلوکه کردن طلا
+        inventory.accessible_balance -= final_weight
+        inventory.blocked_balance += final_weight
+        inventory.save(update_fields=["accessible_balance", "blocked_balance", "updated_at"])
+
+        # ایجاد تراکنش
+        tx = GoldTransaction.objects.create(
+            user=user,
+            type="SELL",
+            status="PENDING",
+            amount_gr=final_weight,
+            price_per_gram=gold_price,
+            fee=fee,
+            commission_percent=(fee_rate * Decimal("100")),
+            commission_amount=fee,
+            total_amount=final_amount,
+            tracking_code=generate_tracking_code("SELL"),
+        )
+
+        # ==========================
+        # ❌ فاکتور در این مرحله ایجاد نمی‌شود
+        # ==========================
+        # فاکتور فقط بعد از تایید ادمین (COMPLETED) ایجاد می‌شود
+
+        # لاگ ادمین
+        create_admin_log(
+            request=request,
+            user=user,
+            action_type="SELL_GOLD",
+            action="درخواست فروش طلا (در انتظار تایید)",
+            model_name="GoldTransaction",
+            object_id=tx.id,
+            tracking_code=tx.tracking_code,
+            success=True,
+            description=f"""
+درخواست فروش طلا
+
+کاربر: {user.mobile}
+وزن فروخته شده: {final_weight} گرم
+مبلغ نهایی: {final_amount} تومان
+کارمزد: {fee} تومان
+موجودی طلای بلوکه شده: {inventory.blocked_balance} گرم
+""",
+        )
+
+        return success_response(
+            message="درخواست فروش طلا با موفقیت ثبت شد و در انتظار تایید ادمین است",
+            status_code=201,
+            data={
+                "transaction_id": tx.id,
+                "tracking_code": tx.tracking_code,
+                "status": tx.status,
+                "gold_weight": float(final_weight),
+                "fee": float(fee),
+                "fee_rate": float(fee_rate),
+                "final_amount": float(final_amount),
+                "accessible_gold": float(inventory.accessible_balance),
+                "blocked_gold": float(inventory.blocked_balance),
+                # ❌ فیلد invoice حذف شد
+            },
+        )
 # # =========================================================
 # # BUY GOLD(2)
 # # =========================================================
@@ -624,89 +860,93 @@ class SellGoldCalculateAPIView(APIView):
                 },
             },
         )  
-class SellGoldAPIView(APIView):
-    permission_classes = [IsAuthenticated]
 
-    @transaction.atomic
-    def post(self, request):
-        gold_price = get_live_gold_price()
-        if not gold_price:
-            return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
 
-        serializer = SellGoldSerializer(
-            data=request.data, context={"request": request, "gold_price": gold_price}
-        )
 
-        if not serializer.is_valid():
-            return error_response(message="اطلاعات نامعتبر است", data=serializer.errors)
 
-        user = request.user
-        final_weight = serializer.validated_data["final_weight"]
-        final_amount = serializer.validated_data["final_amount"]
-        fee = serializer.validated_data["fee"]
-        fee_rate = serializer.validated_data["fee_rate"]
+# class SellGoldAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
 
-        if final_weight <= 0:
-            return error_response(message="وزن فروش نامعتبر است")
+#     @transaction.atomic
+#     def post(self, request):
+#         gold_price = get_live_gold_price()
+#         if not gold_price:
+#             return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
 
-        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
-        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+#         serializer = SellGoldSerializer(
+#             data=request.data, context={"request": request, "gold_price": gold_price}
+#         )
 
-        if inventory.accessible_balance < final_weight:
-            return error_response(message="موجودی طلای قابل معامله شما کافی نیست")
+#         if not serializer.is_valid():
+#             return error_response(message="اطلاعات نامعتبر است", data=serializer.errors)
 
-        inventory.accessible_balance -= final_weight
-        inventory.blocked_balance += final_weight
-        inventory.save(update_fields=["accessible_balance", "blocked_balance", "updated_at"])
+#         user = request.user
+#         final_weight = serializer.validated_data["final_weight"]
+#         final_amount = serializer.validated_data["final_amount"]
+#         fee = serializer.validated_data["fee"]
+#         fee_rate = serializer.validated_data["fee_rate"]
 
-        tx = GoldTransaction.objects.create(
-            user=user,
-            type="SELL",
-            status="PENDING",
-            amount_gr=final_weight,
-            price_per_gram=gold_price,
-            fee=fee,
-            commission_percent=(fee_rate * Decimal("100")),
-            commission_amount=fee,
-            total_amount=final_amount,
-            tracking_code=generate_tracking_code("SELL"),
-        )
+#         if final_weight <= 0:
+#             return error_response(message="وزن فروش نامعتبر است")
 
-        create_admin_log(
-            request=request,
-            user=user,
-            action_type="SELL_GOLD",
-            action="درخواست فروش طلا (در انتظار تایید)",
-            model_name="GoldTransaction",
-            object_id=tx.id,
-            tracking_code=tx.tracking_code,
-            success=True,
-            description=f"""
-درخواست فروش طلا
+#         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+#         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
 
-کاربر: {user.mobile}
-وزن فروخته شده: {final_weight} گرم
-مبلغ خالص واریزی پس از کسر کارمزد: {final_amount} تومان
-کارمزد کسر شده: {fee} تومان
-موجودی طلای بلوکه شده فعلی: {inventory.blocked_balance} گرم
-""",
-        )
+#         if inventory.accessible_balance < final_weight:
+#             return error_response(message="موجودی طلای قابل معامله شما کافی نیست")
 
-        return success_response(
-            message="درخواست فروش طلا با موفقیت ثبت شد و در انتظار تایید ادمین است",
-            status_code=201,
-            data={
-                "transaction_id": tx.id,
-                "tracking_code": tx.tracking_code,
-                "status": tx.status,
-                "gold_weight": float(final_weight),
-                "fee": float(fee),
-                "fee_rate": float(fee_rate),
-                "final_amount": float(final_amount),
-                "accessible_gold": float(inventory.accessible_balance),
-                "blocked_gold": float(inventory.blocked_balance),
-            },
-        )
+#         inventory.accessible_balance -= final_weight
+#         inventory.blocked_balance += final_weight
+#         inventory.save(update_fields=["accessible_balance", "blocked_balance", "updated_at"])
+
+#         tx = GoldTransaction.objects.create(
+#             user=user,
+#             type="SELL",
+#             status="PENDING",
+#             amount_gr=final_weight,
+#             price_per_gram=gold_price,
+#             fee=fee,
+#             commission_percent=(fee_rate * Decimal("100")),
+#             commission_amount=fee,
+#             total_amount=final_amount,
+#             tracking_code=generate_tracking_code("SELL"),
+#         )
+
+#         create_admin_log(
+#             request=request,
+#             user=user,
+#             action_type="SELL_GOLD",
+#             action="درخواست فروش طلا (در انتظار تایید)",
+#             model_name="GoldTransaction",
+#             object_id=tx.id,
+#             tracking_code=tx.tracking_code,
+#             success=True,
+#             description=f"""
+# درخواست فروش طلا
+
+# کاربر: {user.mobile}
+# وزن فروخته شده: {final_weight} گرم
+# مبلغ خالص واریزی پس از کسر کارمزد: {final_amount} تومان
+# کارمزد کسر شده: {fee} تومان
+# موجودی طلای بلوکه شده فعلی: {inventory.blocked_balance} گرم
+# """,
+#         )
+
+#         return success_response(
+#             message="درخواست فروش طلا با موفقیت ثبت شد و در انتظار تایید ادمین است",
+#             status_code=201,
+#             data={
+#                 "transaction_id": tx.id,
+#                 "tracking_code": tx.tracking_code,
+#                 "status": tx.status,
+#                 "gold_weight": float(final_weight),
+#                 "fee": float(fee),
+#                 "fee_rate": float(fee_rate),
+#                 "final_amount": float(final_amount),
+#                 "accessible_gold": float(inventory.accessible_balance),
+#                 "blocked_gold": float(inventory.blocked_balance),
+#             },
+#         )
         
 
 
@@ -1642,6 +1882,79 @@ class PhysicalOrderNoAddressAPIView(APIView):
         )
 
 
+# gold_app/views.py - اضافه کردن ویوهای فاکتور فیزیکی
+
+from gold_app.models import PhysicalOrderInvoice
+from gold_app.serializers import PhysicalOrderInvoiceSerializer
+from gold_app.services.physical_invoice_service import PhysicalOrderInvoiceService
+
+
+class PhysicalOrderInvoiceListView(APIView):
+    """لیست فاکتورهای سفارش فیزیکی کاربر"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        invoices = PhysicalOrderInvoice.objects.filter(
+            order__user=request.user
+        ).order_by('-created_at')
+        
+        serializer = PhysicalOrderInvoiceSerializer(invoices, many=True)
+        
+        return success_response(
+            message="لیست فاکتورهای سفارش فیزیکی",
+            data=serializer.data
+        )
+
+
+class PhysicalOrderInvoiceDetailView(APIView):
+    """جزئیات فاکتور سفارش فیزیکی"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, invoice_id):
+        try:
+            invoice = PhysicalOrderInvoice.objects.get(
+                id=invoice_id,
+                order__user=request.user
+            )
+        except PhysicalOrderInvoice.DoesNotExist:
+            return error_response("فاکتور یافت نشد", status_code=404)
+        
+        data = PhysicalOrderInvoiceService.get_invoice_data(invoice)
+        
+        return success_response(
+            message="جزئیات فاکتور سفارش فیزیکی",
+            data=data
+        )
+
+
+# gold_app/views.py - اصلاح PhysicalOrderInvoiceDownloadView
+
+class PhysicalOrderInvoiceDownloadView(APIView):
+    """دانلود PDF فاکتور سفارش فیزیکی"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, invoice_id):
+        try:
+            invoice = PhysicalOrderInvoice.objects.get(
+                id=invoice_id,
+                order__user=request.user
+            )
+        except PhysicalOrderInvoice.DoesNotExist:
+            return error_response("فاکتور یافت نشد", status_code=404)
+        
+        from .services.physical_pdf_service import PhysicalOrderInvoicePDFService
+        response = PhysicalOrderInvoicePDFService.generate_invoice_pdf(invoice_id, request)
+        
+        if response:
+            return response
+        
+        return error_response("خطا در تولید فاکتور", status_code=500)
+
+
+
 class ProductCategoryListAPIView(APIView):
 
     permission_classes = [AllowAny]
@@ -2150,113 +2463,705 @@ class GoldReferralInfoAPIView(APIView):
 # =========================================================
 
 
+# class ReportsAPIView(APIView):
+
+#     permission_classes = [IsAuthenticated]
+
+#     def parse_date(self, value):
+
+#         if not value:
+#             return None
+
+#         try:
+
+#             if "/" in value:
+
+#                 y, m, d = map(int, value.split("/"))
+
+#                 return jdatetime.date(y, m, d).togregorian()
+
+#             return datetime.strptime(value, "%Y-%m-%d").date()
+
+#         except Exception:
+#             return None
+
+#     def get(self, request):
+
+#         # -----------------------------------------
+#         # نرمال‌سازی ورودی‌ها (رفع باگ حساس بودن به بزرگی/کوچکی حروف)
+#         # -----------------------------------------
+
+#         report_type = (request.GET.get("type") or "").strip().lower()
+#         status_filter = request.GET.get("status")
+#         method_filter = request.GET.get("method")
+
+#         start_date = self.parse_date(request.GET.get("start_date"))
+
+#         end_date = self.parse_date(request.GET.get("end_date"))
+
+#         # =====================================================
+#         # FINANCIAL (DEPOSIT / WITHDRAW)
+#         # =====================================================
+#         if report_type in ["deposit", "withdraw"]:
+
+#             transaction_type = "DEPOSIT" if report_type == "deposit" else "WITHDRAW"
+
+#             queryset = FinancialTransaction.objects.filter(
+#                 user=request.user, type=transaction_type
+#             )
+
+#             # method
+#             if method_filter:
+
+#                 queryset = queryset.filter(method__iexact=method_filter)
+
+#             # status
+#             if status_filter:
+
+#                 queryset = queryset.filter(status__iexact=status_filter)
+
+#             # date
+#             if start_date:
+
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             queryset = queryset.order_by("-created_at")
+
+#             serializer = FinancialTransactionSerializer(
+#                 queryset, many=True, context={"request": request}
+#             )
+
+#             combined_data = list(serializer.data)
+
+#             # =====================================================
+#             # اضافه کردن انتقال (طلا -> نقره) به گزارش برداشت
+#             # =====================================================
+
+#             if report_type == "withdraw":
+
+#                 silver_queryset = SilverFinancialTransaction.objects.filter(
+#                     user=request.user, type="TRANSFER"
+#                 )
+
+#                 if status_filter:
+
+#                     silver_queryset = silver_queryset.filter(status__iexact=status_filter)
+
+#                 if start_date:
+
+#                     silver_queryset = silver_queryset.filter(created_at__date__gte=start_date)
+
+#                 if end_date:
+
+#                     silver_queryset = silver_queryset.filter(created_at__date__lte=end_date)
+
+#                 silver_queryset = silver_queryset.order_by("-created_at")
+
+#                 silver_serializer = SilverFinancialTransactionSerializer(
+#                     silver_queryset, many=True, context={"request": request}
+#                 )
+
+#                 silver_data = list(silver_serializer.data)
+
+#                 # -----------------------------------------
+#                 # این تراکنش‌ها در واقع "برداشت به روش تبدیل به نقره" هستند
+#                 # -----------------------------------------
+
+#                 for item in silver_data:
+#                     item["type"] = "WITHDRAW"
+#                     item["type_display"] = "برداشت"
+#                     item["method"] = "SILVER"
+#                     item["method_display"] = "تبدیل به نقره"
+
+#                 combined_data.extend(silver_data)
+
+#             # =====================================================
+#             # اضافه کردن انتقال (نقره -> طلا) به گزارش واریز طلا
+#             # =====================================================
+
+#             if report_type == "deposit":
+
+#                 silver_to_gold_queryset = SilverFinancialTransaction.objects.filter(
+#                     user=request.user,
+#                     type="WITHDRAW",
+#                     tracking_code__startswith="SLV_TO_GOLD",
+#                 )
+
+#                 if status_filter:
+
+#                     silver_to_gold_queryset = silver_to_gold_queryset.filter(
+#                         status__iexact=status_filter
+#                     )
+
+#                 if start_date:
+
+#                     silver_to_gold_queryset = silver_to_gold_queryset.filter(
+#                         created_at__date__gte=start_date
+#                     )
+
+#                 if end_date:
+
+#                     silver_to_gold_queryset = silver_to_gold_queryset.filter(
+#                         created_at__date__lte=end_date
+#                     )
+
+#                 silver_to_gold_queryset = silver_to_gold_queryset.order_by("-created_at")
+
+#                 silver_to_gold_serializer = SilverFinancialTransactionSerializer(
+#                     silver_to_gold_queryset, many=True, context={"request": request}
+#                 )
+
+#                 silver_to_gold_data = list(silver_to_gold_serializer.data)
+
+#                 # -----------------------------------------
+#                 # این تراکنش‌ها در واقع "واریز به روش تبدیل از نقره" هستند
+#                 # -----------------------------------------
+
+#                 for item in silver_to_gold_data:
+#                     item["type"] = "DEPOSIT"
+#                     item["type_display"] = "واریز"
+#                     item["method"] = "SILVER"
+#                     item["method_display"] = "تبدیل از نقره"
+
+#                 combined_data.extend(silver_to_gold_data)
+
+#             # -----------------------------------------
+#             # فیلتر method روی نتیجه‌ی نهایی (چون method واقعی
+#             # این رکوردها در دیتابیس BANK است نه SILVER)
+#             # -----------------------------------------
+
+#             if method_filter and method_filter.upper() == "SILVER":
+
+#                 combined_data = [
+#                     item for item in combined_data
+#                     if item.get("method") == "SILVER"
+#                 ]
+
+#             # -----------------------------------------
+#             # مرتب‌سازی نهایی بر اساس تاریخ (جدیدترین اول)
+#             # -----------------------------------------
+
+#             combined_data.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+
+#             return success_response(
+#                 message=(
+#                     "گزارش واریزها" if report_type == "deposit" else "گزارش برداشت‌ها"
+#                 ),
+#                 data=combined_data,
+#             )
+
+#         # =====================================================
+#         # GOLD
+#         # =====================================================
+
+#         if report_type == "gold":
+
+#             queryset = GoldTransaction.objects.filter(user=request.user)
+
+#             if method_filter:
+
+#                 queryset = queryset.filter(type__iexact=method_filter)
+
+#             if status_filter:
+
+#                 queryset = queryset.filter(status__iexact=status_filter)
+
+#             if start_date:
+
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             queryset = queryset.order_by("-created_at")
+
+#             serializer = GoldTransactionSerializer(
+#                 queryset, many=True, context={"request": request}
+#             )
+
+#             return success_response(message="گزارش معاملات طلا", data=serializer.data)
+
+#         # =====================================================
+#         # ORDERS
+#         # =====================================================
+
+#         if report_type == "orders":
+
+#             queryset = Order.objects.filter(user=request.user)
+
+#             if method_filter:
+
+#                 queryset = queryset.filter(payment_method__iexact=method_filter)
+
+#             if status_filter:
+
+#                 queryset = queryset.filter(status__iexact=status_filter)
+
+#             if start_date:
+
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+
+#             if end_date:
+
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             queryset = queryset.order_by("-created_at")
+
+#             serializer = OrderSerializer(
+#                 queryset, many=True, context={"request": request}
+#             )
+
+#             return success_response(message="گزارش سفارشات", data=serializer.data)
+
+#         return error_response(message="نوع گزارش نامعتبر است")
+
+
+
+
+# gold_app/views.py
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
+from datetime import datetime
+import jdatetime
+from decimal import Decimal
+
+from .models import (
+    GoldTransaction, 
+    FinancialTransaction, 
+    Order,
+    Invoice,
+    GoldInventory,
+    Wallet,
+)
+from .serializers import (
+    GoldTransactionSerializer,
+    FinancialTransactionSerializer,
+    OrderSerializer,
+    InvoiceSerializer,
+)
+from silver_app.serializers import(
+    SilverFinancialTransactionSerializer
+)
+from silver_app.models import (
+    SilverFinancialTransaction,
+)
+from .services.invoice_service import InvoiceService
+from .services.pdf_service import InvoicePDFService
+
+
+# class ReportsAPIView(APIView):
+#     """گزارشات کامل کاربر شامل واریز، برداشت، معاملات طلا، سفارشات و فاکتورها"""
+
+#     permission_classes = [IsAuthenticated]
+
+#     def parse_date(self, value):
+#         """تبدیل تاریخ شمسی یا میلادی به آبجکت date"""
+#         if not value:
+#             return None
+#         try:
+#             if "/" in value:
+#                 y, m, d = map(int, value.split("/"))
+#                 return jdatetime.date(y, m, d).togregorian()
+#             return datetime.strptime(value, "%Y-%m-%d").date()
+#         except Exception:
+#             return None
+
+#     def get(self, request):
+#         # -----------------------------------------
+#         # نرمال‌سازی ورودی‌ها
+#         # -----------------------------------------
+#         report_type = (request.GET.get("type") or "").strip().lower()
+#         status_filter = request.GET.get("status")
+#         method_filter = request.GET.get("method")
+
+#         start_date = self.parse_date(request.GET.get("start_date"))
+#         end_date = self.parse_date(request.GET.get("end_date"))
+
+#         # =====================================================
+#         # 1. FINANCIAL (DEPOSIT / WITHDRAW)
+#         # =====================================================
+#         if report_type in ["deposit", "withdraw"]:
+#             transaction_type = "DEPOSIT" if report_type == "deposit" else "WITHDRAW"
+
+#             queryset = FinancialTransaction.objects.filter(
+#                 user=request.user, type=transaction_type
+#             )
+
+#             if method_filter:
+#                 queryset = queryset.filter(method__iexact=method_filter)
+#             if status_filter:
+#                 queryset = queryset.filter(status__iexact=status_filter)
+#             if start_date:
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+#             if end_date:
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             queryset = queryset.order_by("-created_at")
+#             serializer = FinancialTransactionSerializer(
+#                 queryset, many=True, context={"request": request}
+#             )
+#             combined_data = list(serializer.data)
+
+#             # اضافه کردن انتقال طلا -> نقره به گزارش برداشت
+#             if report_type == "withdraw":
+#                 silver_queryset = SilverFinancialTransaction.objects.filter(
+#                     user=request.user, type="TRANSFER"
+#                 )
+#                 if status_filter:
+#                     silver_queryset = silver_queryset.filter(status__iexact=status_filter)
+#                 if start_date:
+#                     silver_queryset = silver_queryset.filter(created_at__date__gte=start_date)
+#                 if end_date:
+#                     silver_queryset = silver_queryset.filter(created_at__date__lte=end_date)
+
+#                 silver_queryset = silver_queryset.order_by("-created_at")
+#                 silver_serializer = SilverFinancialTransactionSerializer(
+#                     silver_queryset, many=True, context={"request": request}
+#                 )
+#                 silver_data = list(silver_serializer.data)
+
+#                 for item in silver_data:
+#                     item["type"] = "WITHDRAW"
+#                     item["type_display"] = "برداشت"
+#                     item["method"] = "SILVER"
+#                     item["method_display"] = "تبدیل به نقره"
+
+#                 combined_data.extend(silver_data)
+
+#             # اضافه کردن انتقال نقره -> طلا به گزارش واریز
+#             if report_type == "deposit":
+#                 silver_to_gold_queryset = SilverFinancialTransaction.objects.filter(
+#                     user=request.user,
+#                     type="WITHDRAW",
+#                     tracking_code__startswith="SLV_TO_GOLD",
+#                 )
+#                 if status_filter:
+#                     silver_to_gold_queryset = silver_to_gold_queryset.filter(
+#                         status__iexact=status_filter
+#                     )
+#                 if start_date:
+#                     silver_to_gold_queryset = silver_to_gold_queryset.filter(
+#                         created_at__date__gte=start_date
+#                     )
+#                 if end_date:
+#                     silver_to_gold_queryset = silver_to_gold_queryset.filter(
+#                         created_at__date__lte=end_date
+#                     )
+
+#                 silver_to_gold_queryset = silver_to_gold_queryset.order_by("-created_at")
+#                 silver_to_gold_serializer = SilverFinancialTransactionSerializer(
+#                     silver_to_gold_queryset, many=True, context={"request": request}
+#                 )
+#                 silver_to_gold_data = list(silver_to_gold_serializer.data)
+
+#                 for item in silver_to_gold_data:
+#                     item["type"] = "DEPOSIT"
+#                     item["type_display"] = "واریز"
+#                     item["method"] = "SILVER"
+#                     item["method_display"] = "تبدیل از نقره"
+
+#                 combined_data.extend(silver_to_gold_data)
+
+#             # فیلتر method روی نتیجه نهایی
+#             if method_filter and method_filter.upper() == "SILVER":
+#                 combined_data = [
+#                     item for item in combined_data
+#                     if item.get("method") == "SILVER"
+#                 ]
+
+#             combined_data.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+
+#             return success_response(
+#                 message=(
+#                     "گزارش واریزها" if report_type == "deposit" else "گزارش برداشت‌ها"
+#                 ),
+#                 data=combined_data,
+#             )
+
+#         # =====================================================
+#         # 2. GOLD (معاملات طلا)
+#         # =====================================================
+#         if report_type == "gold":
+#             queryset = GoldTransaction.objects.filter(user=request.user)
+
+#             if method_filter:
+#                 queryset = queryset.filter(type__iexact=method_filter)
+#             if status_filter:
+#                 queryset = queryset.filter(status__iexact=status_filter)
+#             if start_date:
+#                 queryset = queryset.filter(created_at__date__gte=start_date)
+#             if end_date:
+#                 queryset = queryset.filter(created_at__date__lte=end_date)
+
+#             queryset = queryset.order_by("-created_at")
+#             serializer = GoldTransactionSerializer(
+#                 queryset, many=True, context={"request": request}
+#             )
+
+#             return success_response(
+#                 message="گزارش معاملات طلا",
+#                 data=serializer.data
+#             )
+
+#         # =====================================================
+#         # 3. ORDERS (سفارشات + فاکتورهای طلا)
+#         # =====================================================
+#         if report_type == "orders":
+#             # -------- سفارشات محصولات --------
+#             order_queryset = Order.objects.filter(user=request.user)
+
+#             if method_filter:
+#                 order_queryset = order_queryset.filter(payment_method__iexact=method_filter)
+#             if status_filter:
+#                 order_queryset = order_queryset.filter(status__iexact=status_filter)
+#             if start_date:
+#                 order_queryset = order_queryset.filter(created_at__date__gte=start_date)
+#             if end_date:
+#                 order_queryset = order_queryset.filter(created_at__date__lte=end_date)
+
+#             order_queryset = order_queryset.order_by("-created_at")
+#             order_serializer = OrderSerializer(
+#                 order_queryset, many=True, context={"request": request}
+#             )
+
+#             # تبدیل داده‌های سفارشات به فرمت یکسان
+#             orders_data = []
+#             for item in order_serializer.data:
+#                 # تبدیل تاریخ به شمسی
+#                 created_at = item.get("created_at")
+#                 jalali_date = ""
+#                 if created_at:
+#                     try:
+#                         dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+#                         jalali = jdatetime.datetime.fromgregorian(datetime=dt)
+#                         jalali_date = jalali.strftime('%Y/%m/%d %H:%M')
+#                     except:
+#                         jalali_date = created_at
+
+#                 orders_data.append({
+#                     "id": item.get("id"),
+#                     "type": "ORDER",
+#                     "type_display": "سفارش محصول",
+#                     "tracking_code": item.get("tracking_code", "---"),
+#                     "status": item.get("status", "PENDING"),
+#                     "status_display": item.get("status_display", "در انتظار"),
+#                     "total_amount": item.get("total_amount", "0"),
+#                     "created_at": jalali_date,
+#                     "is_invoice": False,
+#                     "order_items": item.get("items", []),
+#                     "payment_method": item.get("payment_method", ""),
+#                     "shipping_address": item.get("shipping_address", ""),
+#                 })
+
+#             # -------- فاکتورهای طلا --------
+#             invoice_queryset = Invoice.objects.filter(
+#                 transaction__user=request.user
+#             )
+
+#             if status_filter:
+#                 invoice_queryset = invoice_queryset.filter(status__iexact=status_filter)
+#             if start_date:
+#                 invoice_queryset = invoice_queryset.filter(created_at__date__gte=start_date)
+#             if end_date:
+#                 invoice_queryset = invoice_queryset.filter(created_at__date__lte=end_date)
+
+#             invoice_queryset = invoice_queryset.order_by("-created_at")
+#             invoice_serializer = InvoiceSerializer(
+#                 invoice_queryset, many=True, context={"request": request}
+#             )
+
+#             invoices_data = []
+#             for item in invoice_serializer.data:
+#                 # تبدیل تاریخ
+#                 created_at = item.get("created_at_jalali", "")
+#                 if not created_at:
+#                     created_at = item.get("created_at", "")
+
+#                 invoices_data.append({
+#                     "id": item.get("id"),
+#                     "type": item.get("invoice_type", "BUY"),
+#                     "type_display": item.get("invoice_type_display", "فاکتور"),
+#                     "invoice_number": item.get("invoice_number"),
+#                     "tracking_code": item.get("tracking_code", "---"),
+#                     "status": item.get("status", "PENDING"),
+#                     "status_display": item.get("status_display", "در انتظار"),
+#                     "total_amount": item.get("total_amount", "0"),
+#                     "created_at": created_at,
+#                     "is_invoice": True,
+#                     "gold_weight": item.get("gold_weight", "0"),
+#                     "gold_price": item.get("gold_price_per_gram", "0"),
+#                     "fee_amount": item.get("fee_amount", "0"),
+#                     "pure_gold_price": item.get("pure_gold_price", "0"),
+#                 })
+
+#             # -------- ترکیب و مرتب‌سازی --------
+#             combined_data = orders_data + invoices_data
+
+#             # مرتب‌سازی بر اساس تاریخ (جدیدترین اول)
+#             combined_data.sort(
+#                 key=lambda x: x.get("created_at", ""),
+#                 reverse=True
+#             )
+
+#             return success_response(
+#                 message="گزارش سفارشات و فاکتورها",
+#                 data=combined_data,
+#                 meta={
+#                     "total_orders": len(orders_data),
+#                     "total_invoices": len(invoices_data),
+#                     "total": len(combined_data),
+#                 }
+#             )
+
+#         return error_response(
+#             message="نوع گزارش نامعتبر است. گزینه‌های مجاز: deposit, withdraw, gold, orders"
+#         )
+
+# gold_app/views.py - ReportsAPIView کامل
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
+from datetime import datetime
+import jdatetime
+from decimal import Decimal
+
+from .models import (
+    GoldTransaction, 
+    FinancialTransaction, 
+    Order,
+    Invoice,
+    PhysicalOrderInvoice,
+    GoldInventory,
+    Wallet,
+)
+from .serializers import (
+    GoldTransactionSerializer,
+    FinancialTransactionSerializer,
+    OrderSerializer,
+    InvoiceSerializer,
+    PhysicalOrderInvoiceSerializer,
+)
+from silver_app.serializers import(
+    SilverFinancialTransactionSerializer
+)
+from silver_app.models import (
+    SilverFinancialTransaction,
+)
+from .services.invoice_service import InvoiceService
+from .services.pdf_service import InvoicePDFService
+from accounts.utils import success_response, error_response
+
+# gold_app/views.py - ReportsAPIView کامل با ساختار صحیح
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
+from datetime import datetime
+import jdatetime
+from decimal import Decimal
+
+from .models import (
+    GoldTransaction, 
+    FinancialTransaction, 
+    Order,
+    Invoice,
+    PhysicalOrderInvoice,
+    GoldInventory,
+    Wallet,
+)
+from .serializers import (
+    GoldTransactionSerializer,
+    FinancialTransactionSerializer,
+    OrderSerializer,
+    InvoiceSerializer,
+    PhysicalOrderInvoiceSerializer,
+)
+from silver_app.serializers import(
+    SilverFinancialTransactionSerializer
+)
+from silver_app.models import (
+    SilverFinancialTransaction,
+)
+from .services.invoice_service import InvoiceService
+from .services.pdf_service import InvoicePDFService
+from accounts.utils import success_response, error_response
+
+
 class ReportsAPIView(APIView):
+    """گزارشات کامل کاربر شامل واریز، برداشت، معاملات طلا، سفارشات و فاکتورها"""
 
     permission_classes = [IsAuthenticated]
 
     def parse_date(self, value):
-
+        """تبدیل تاریخ شمسی یا میلادی به آبجکت date"""
         if not value:
             return None
-
         try:
-
             if "/" in value:
-
                 y, m, d = map(int, value.split("/"))
-
                 return jdatetime.date(y, m, d).togregorian()
-
             return datetime.strptime(value, "%Y-%m-%d").date()
-
         except Exception:
             return None
 
     def get(self, request):
-
-        # -----------------------------------------
-        # نرمال‌سازی ورودی‌ها (رفع باگ حساس بودن به بزرگی/کوچکی حروف)
-        # -----------------------------------------
-
         report_type = (request.GET.get("type") or "").strip().lower()
         status_filter = request.GET.get("status")
         method_filter = request.GET.get("method")
 
         start_date = self.parse_date(request.GET.get("start_date"))
-
         end_date = self.parse_date(request.GET.get("end_date"))
 
         # =====================================================
-        # FINANCIAL (DEPOSIT / WITHDRAW)
+        # 1. FINANCIAL (DEPOSIT / WITHDRAW)
         # =====================================================
         if report_type in ["deposit", "withdraw"]:
-
             transaction_type = "DEPOSIT" if report_type == "deposit" else "WITHDRAW"
 
             queryset = FinancialTransaction.objects.filter(
                 user=request.user, type=transaction_type
             )
 
-            # method
             if method_filter:
-
                 queryset = queryset.filter(method__iexact=method_filter)
-
-            # status
             if status_filter:
-
                 queryset = queryset.filter(status__iexact=status_filter)
-
-            # date
             if start_date:
-
                 queryset = queryset.filter(created_at__date__gte=start_date)
-
             if end_date:
-
                 queryset = queryset.filter(created_at__date__lte=end_date)
 
             queryset = queryset.order_by("-created_at")
-
             serializer = FinancialTransactionSerializer(
                 queryset, many=True, context={"request": request}
             )
-
             combined_data = list(serializer.data)
 
-            # =====================================================
-            # اضافه کردن انتقال (طلا -> نقره) به گزارش برداشت
-            # =====================================================
-
+            # اضافه کردن انتقال طلا -> نقره به گزارش برداشت
             if report_type == "withdraw":
-
                 silver_queryset = SilverFinancialTransaction.objects.filter(
                     user=request.user, type="TRANSFER"
                 )
-
                 if status_filter:
-
                     silver_queryset = silver_queryset.filter(status__iexact=status_filter)
-
                 if start_date:
-
                     silver_queryset = silver_queryset.filter(created_at__date__gte=start_date)
-
                 if end_date:
-
                     silver_queryset = silver_queryset.filter(created_at__date__lte=end_date)
 
                 silver_queryset = silver_queryset.order_by("-created_at")
-
                 silver_serializer = SilverFinancialTransactionSerializer(
                     silver_queryset, many=True, context={"request": request}
                 )
-
                 silver_data = list(silver_serializer.data)
-
-                # -----------------------------------------
-                # این تراکنش‌ها در واقع "برداشت به روش تبدیل به نقره" هستند
-                # -----------------------------------------
 
                 for item in silver_data:
                     item["type"] = "WITHDRAW"
@@ -2266,47 +3171,31 @@ class ReportsAPIView(APIView):
 
                 combined_data.extend(silver_data)
 
-            # =====================================================
-            # اضافه کردن انتقال (نقره -> طلا) به گزارش واریز طلا
-            # =====================================================
-
+            # اضافه کردن انتقال نقره -> طلا به گزارش واریز
             if report_type == "deposit":
-
                 silver_to_gold_queryset = SilverFinancialTransaction.objects.filter(
                     user=request.user,
                     type="WITHDRAW",
                     tracking_code__startswith="SLV_TO_GOLD",
                 )
-
                 if status_filter:
-
                     silver_to_gold_queryset = silver_to_gold_queryset.filter(
                         status__iexact=status_filter
                     )
-
                 if start_date:
-
                     silver_to_gold_queryset = silver_to_gold_queryset.filter(
                         created_at__date__gte=start_date
                     )
-
                 if end_date:
-
                     silver_to_gold_queryset = silver_to_gold_queryset.filter(
                         created_at__date__lte=end_date
                     )
 
                 silver_to_gold_queryset = silver_to_gold_queryset.order_by("-created_at")
-
                 silver_to_gold_serializer = SilverFinancialTransactionSerializer(
                     silver_to_gold_queryset, many=True, context={"request": request}
                 )
-
                 silver_to_gold_data = list(silver_to_gold_serializer.data)
-
-                # -----------------------------------------
-                # این تراکنش‌ها در واقع "واریز به روش تبدیل از نقره" هستند
-                # -----------------------------------------
 
                 for item in silver_to_gold_data:
                     item["type"] = "DEPOSIT"
@@ -2316,21 +3205,11 @@ class ReportsAPIView(APIView):
 
                 combined_data.extend(silver_to_gold_data)
 
-            # -----------------------------------------
-            # فیلتر method روی نتیجه‌ی نهایی (چون method واقعی
-            # این رکوردها در دیتابیس BANK است نه SILVER)
-            # -----------------------------------------
-
             if method_filter and method_filter.upper() == "SILVER":
-
                 combined_data = [
                     item for item in combined_data
                     if item.get("method") == "SILVER"
                 ]
-
-            # -----------------------------------------
-            # مرتب‌سازی نهایی بر اساس تاریخ (جدیدترین اول)
-            # -----------------------------------------
 
             combined_data.sort(key=lambda item: item.get("created_at") or "", reverse=True)
 
@@ -2342,77 +3221,196 @@ class ReportsAPIView(APIView):
             )
 
         # =====================================================
-        # GOLD
+        # 2. GOLD (معاملات طلا)
         # =====================================================
-
         if report_type == "gold":
-
             queryset = GoldTransaction.objects.filter(user=request.user)
 
             if method_filter:
-
                 queryset = queryset.filter(type__iexact=method_filter)
-
             if status_filter:
-
                 queryset = queryset.filter(status__iexact=status_filter)
-
             if start_date:
-
                 queryset = queryset.filter(created_at__date__gte=start_date)
-
             if end_date:
-
                 queryset = queryset.filter(created_at__date__lte=end_date)
 
             queryset = queryset.order_by("-created_at")
-
             serializer = GoldTransactionSerializer(
                 queryset, many=True, context={"request": request}
             )
 
-            return success_response(message="گزارش معاملات طلا", data=serializer.data)
-
-        # =====================================================
-        # ORDERS
-        # =====================================================
-
-        if report_type == "orders":
-
-            queryset = Order.objects.filter(user=request.user)
-
-            if method_filter:
-
-                queryset = queryset.filter(payment_method__iexact=method_filter)
-
-            if status_filter:
-
-                queryset = queryset.filter(status__iexact=status_filter)
-
-            if start_date:
-
-                queryset = queryset.filter(created_at__date__gte=start_date)
-
-            if end_date:
-
-                queryset = queryset.filter(created_at__date__lte=end_date)
-
-            queryset = queryset.order_by("-created_at")
-
-            serializer = OrderSerializer(
-                queryset, many=True, context={"request": request}
+            return success_response(
+                message="گزارش معاملات طلا",
+                data=serializer.data
             )
 
-            return success_response(message="گزارش سفارشات", data=serializer.data)
+        # =====================================================
+        # 3. ORDERS (فقط سفارشات فیزیکی)
+        # =====================================================
+        if report_type == "orders":
+            results = []
 
-        return error_response(message="نوع گزارش نامعتبر است")
+            try:
+                # دریافت سفارشات فیزیکی کاربر
+                order_queryset = Order.objects.filter(user=request.user)
 
+                # اعمال فیلترها
+                if method_filter:
+                    order_queryset = order_queryset.filter(payment_method__iexact=method_filter)
+                if status_filter:
+                    order_queryset = order_queryset.filter(status__iexact=status_filter)
+                if start_date:
+                    order_queryset = order_queryset.filter(created_at__date__gte=start_date)
+                if end_date:
+                    order_queryset = order_queryset.filter(created_at__date__lte=end_date)
 
+                order_queryset = order_queryset.order_by("-created_at")
+
+                # Prefetch برای بهینه‌سازی
+                order_queryset = order_queryset.prefetch_related(
+                    'items',
+                    'items__product',
+                    'physical_invoices'
+                )
+
+                # ساخت خروجی مطابق با Interface
+                for order in order_queryset:
+                    # دریافت آیتم‌های سفارش
+                    order_items = order.items.all()
+
+                    # دریافت فاکتور فیزیکی
+                    physical_invoice = order.physical_invoices.first()
+
+                    # ساخت آیتم‌های سفارش
+                    items = []
+                    for item in order_items:
+                        items.append({
+                            "id": item.id,
+                            "product": item.product.id,
+                            "product_name": item.product.name,
+                            "quantity": item.quantity,
+                            "price_at_time": float(item.price_at_time),
+                            "weight_at_time": float(item.weight_at_time),
+                        })
+
+                    # تبدیل تاریخ به شمسی
+                    created_at = order.created_at
+                    if created_at:
+                        shamsi = jdatetime.datetime.fromgregorian(datetime=created_at)
+                        created_at_str = shamsi.strftime('%Y/%m/%d %H:%M')
+                    else:
+                        created_at_str = ""
+
+                    # ساختار خروجی
+                    order_data = {
+                        "id": order.id,
+                        "tracking_code": order.tracking_code,
+                        "status": order.status,
+                        "payment_method": order.payment_method,
+                        "payment_method_display": order.get_payment_method_display(),
+                        "delivery_type_display": "ارسال به آدرس",
+                        "total_toman_amount": float(order.total_toman_amount),
+                        "total_gold_amount": float(order.total_gold_amount),
+                        "created_at": created_at_str,
+                        "admin_note": getattr(order, 'admin_note', '') or '',
+                        "items": items,
+                    }
+
+                    # اضافه کردن اطلاعات فاکتور
+                    if physical_invoice:
+                        order_data["physical_invoice_id"] = physical_invoice.id
+                        order_data["physical_invoice_number"] = physical_invoice.invoice_number
+                    else:
+                        order_data["physical_invoice_id"] = None
+                        order_data["physical_invoice_number"] = None
+
+                    results.append(order_data)
+
+            except Exception as e:
+                print(f"❌ خطا در دریافت سفارشات: {e}")
+                import traceback
+                traceback.print_exc()
+                return error_response(
+                    message=f"خطا در دریافت سفارشات: {str(e)}",
+                    status_code=500
+                )
+
+            # ✅ ساختار صحیح: data مستقیماً آرایه است
+            return success_response(
+                message="گزارش سفارشات فیزیکی",
+                data=results  # ✅ فقط آرایه، نه {results: [], total: 0}
+            )
+
+        # =====================================================
+        # 4. گزارشات دیگر (پیش‌فرض)
+        # =====================================================
+        return error_response(
+            message="نوع گزارش نامعتبر است. گزینه‌های مجاز: deposit, withdraw, gold, orders"
+        )
+# =========================================================
+# INVOICE LIST
+# =========================================================
+
+class InvoiceListAPIView(APIView):
+    """لیست فاکتورهای کاربر"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        invoices = Invoice.objects.filter(
+            transaction__user=request.user
+        ).order_by('-created_at')
+
+        serializer = InvoiceSerializer(invoices, many=True)
+
+        return success_response(
+            message="لیست فاکتورها",
+            data=serializer.data
+        )
 
 
 # =========================================================
-# RECENT TRANSACTIONS (GOLD)
+# INVOICE DETAIL
 # =========================================================
+
+class InvoiceDetailAPIView(APIView):
+    """دریافت جزئیات فاکتور"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, invoice_id):
+        try:
+            invoice = Invoice.objects.get(id=invoice_id, transaction__user=request.user)
+        except Invoice.DoesNotExist:
+            return error_response(message="فاکتور یافت نشد", status_code=404)
+
+        data = InvoiceService.get_invoice_data(invoice)
+
+        return success_response(
+            message="اطلاعات فاکتور",
+            data=data
+        )
+
+
+# =========================================================
+# INVOICE DOWNLOAD PDF
+# =========================================================
+
+class InvoiceDownloadPDFAPIView(APIView):
+    """دانلود فاکتور به صورت PDF"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, invoice_id):
+        try:
+            response = InvoicePDFService.generate_invoice_pdf(invoice_id, request)
+            if response:
+                return response
+            return error_response(message="خطا در تولید فاکتور", status_code=500)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"خطا در تولید PDF: {e}")
+            return error_response(message="خطا در تولید فاکتور", status_code=500)
+
 
 
 class RecentTransactionsAPIView(APIView):
@@ -5685,3 +6683,1132 @@ class GoldShortOrderHistoryAPIView(APIView):
             message="تاریخچه فروش تعهدی",
             data=serializer.data
         )
+        
+        
+        
+        
+        
+# gold_app/views.py - اضافه کردن ویوهای تضمین طلا
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
+from django.utils import timezone
+from decimal import Decimal
+
+from .models import GoldGuarantee, GoldGuaranteePlan, GoldInventory, Wallet
+from .serializers import (
+    GoldGuaranteePlanSerializer,
+    GoldGuaranteeCreateSerializer,
+    GoldGuaranteeListSerializer,
+    GoldGuaranteeDetailSerializer
+)
+from accounts.utils import success_response, error_response
+from admin_panel.utils import create_admin_log
+from .utils import get_live_gold_price
+
+
+class GoldGuaranteePlansView(APIView):
+    """دریافت لیست طرح‌های تضمین طلا"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        plans = GoldGuaranteePlan.objects.filter(is_active=True)
+        serializer = GoldGuaranteePlanSerializer(plans, many=True)
+        return success_response(
+            message="لیست طرح‌های تضمین طلا",
+            data=serializer.data
+        )
+
+
+class GoldGuaranteeCreateView(APIView):
+    """ایجاد طرح تضمین طلا"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    @transaction.atomic
+    def post(self, request):
+        user = request.user
+        
+        # اعتبارسنجی
+        serializer = GoldGuaranteeCreateSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if not serializer.is_valid():
+            return error_response("اطلاعات نامعتبر است", serializer.errors)
+        
+        plan = serializer.validated_data['plan_id']
+        gold_weight = serializer.validated_data['gold_weight']
+        gold_price = serializer.context['gold_price']
+        service_fee = serializer.context['service_fee']
+        
+        # =============================================
+        # ۱. بلوکه کردن طلا
+        # =============================================
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+        inventory.accessible_balance -= gold_weight
+        inventory.blocked_balance += gold_weight
+        inventory.save()
+        
+        # =============================================
+        # ۲. کسر کارمزد از کیف پول
+        # =============================================
+        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+        wallet.accessible_toman -= service_fee
+        wallet.save()
+        
+        # =============================================
+        # ۳. محاسبه تاریخ انقضا
+        # =============================================
+        end_date = timezone.now() + timezone.timedelta(days=plan.duration_days)
+        
+        # =============================================
+        # ۴. ایجاد رکورد تضمین
+        # =============================================
+        guarantee = GoldGuarantee.objects.create(
+            user=user,
+            plan=plan,
+            gold_weight=gold_weight,
+            guaranteed_price=gold_price,
+            service_fee=service_fee,
+            end_date=end_date,
+            status='ACTIVE'
+        )
+        
+        # =============================================
+        # ۵. ثبت لاگ
+        # =============================================
+        create_admin_log(
+            request=request,
+            user=user,
+            action_type="GOLD_GUARANTEE_CREATED",
+            action="ایجاد طرح تضمین طلا",
+            model_name="GoldGuarantee",
+            object_id=guarantee.id,
+            success=True,
+            description=f"""
+ایجاد طرح تضمین طلا
+
+کاربر: {user.mobile}
+وزن طلا: {gold_weight} گرم
+قیمت تضمین: {gold_price:,} تومان
+کارمزد سرویس: {service_fee:,} تومان
+طرح: {plan.name} ({plan.duration_days} روز)
+تاریخ انقضا: {end_date}
+"""
+        )
+        
+        # =============================================
+        # ۶. پاسخ
+        # =============================================
+        return success_response(
+            message="طرح تضمین طلا با موفقیت ایجاد شد",
+            status_code=201,
+            data=GoldGuaranteeDetailSerializer(guarantee).data
+        )
+
+
+
+
+class GoldGuaranteeListView(APIView):
+    """دریافت لیست تضمین‌های طلای کاربر"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        guarantees = GoldGuarantee.objects.filter(user=user).order_by('-created_at')
+        
+        serializer = GoldGuaranteeListSerializer(guarantees, many=True)
+        return success_response(
+            message="لیست تضمین‌های طلا",
+            data=serializer.data
+        )
+
+
+class GoldGuaranteeDetailView(APIView):
+    """دریافت جزئیات یک تضمین طلا"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get_guarantee(self, guarantee_id, user):
+        try:
+            return GoldGuarantee.objects.get(id=guarantee_id, user=user)
+        except GoldGuarantee.DoesNotExist:
+            return None
+    
+    def get(self, request, guarantee_id):
+        guarantee = self.get_guarantee(guarantee_id, request.user)
+        
+        if not guarantee:
+            return error_response("طرح تضمین یافت نشد", status_code=404)
+        
+        serializer = GoldGuaranteeDetailSerializer(guarantee)
+        return success_response(
+            message="جزئیات طرح تضمین",
+            data=serializer.data
+        )
+
+
+class GoldGuaranteeCancelView(APIView):
+    """لغو طرح تضمین طلا"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    @transaction.atomic
+    def post(self, request, guarantee_id):
+        user = request.user
+        
+        try:
+            guarantee = GoldGuarantee.objects.select_for_update().get(id=guarantee_id, user=user)
+        except GoldGuarantee.DoesNotExist:
+            return error_response("طرح تضمین یافت نشد", status_code=404)
+        
+        # بررسی امکان لغو
+        if guarantee.status != 'ACTIVE':
+            return error_response("فقط طرح‌های فعال قابل لغو هستند")
+        
+        if guarantee.is_expired:
+            return error_response("طرح منقضی شده است و قابل لغو نیست")
+        
+        # =============================================
+        # لغو طرح
+        # =============================================
+        guarantee.status = 'CANCELLED'
+        guarantee.cancelled_at = timezone.now()
+        guarantee.save()
+        
+        # برگرداندن طلای بلوکه شده به موجودی در دسترس
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+        inventory.blocked_balance -= guarantee.gold_weight
+        inventory.accessible_balance += guarantee.gold_weight
+        inventory.save()
+        
+        # کارمزد سرویس برگشت داده نمی‌شود (قابل برگشت نیست)
+        
+        # =============================================
+        # ثبت لاگ
+        # =============================================
+        create_admin_log(
+            request=request,
+            user=user,
+            action_type="GOLD_GUARANTEE_CANCELLED",
+            action="لغو طرح تضمین طلا",
+            model_name="GoldGuarantee",
+            object_id=guarantee.id,
+            success=True,
+            description=f"""
+لغو طرح تضمین طلا
+
+کاربر: {user.mobile}
+وزن طلا: {guarantee.gold_weight} گرم
+طرح: {guarantee.plan.name}
+کارمزد پرداخت شده: {guarantee.service_fee:,} تومان (قابل برگشت نیست)
+"""
+        )
+        
+        return success_response(
+            message="طرح تضمین با موفقیت لغو شد",
+            data=GoldGuaranteeDetailSerializer(guarantee).data
+        )
+
+
+class GoldGuaranteeExecuteView(APIView):
+    """اجرای طرح تضمین طلا (در صورت انقضا و کاهش قیمت)"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    @transaction.atomic
+    def post(self, request, guarantee_id):
+        user = request.user
+        
+        try:
+            guarantee = GoldGuarantee.objects.select_for_update().get(id=guarantee_id, user=user)
+        except GoldGuarantee.DoesNotExist:
+            return error_response("طرح تضمین یافت نشد", status_code=404)
+        
+        # بررسی امکان اجرا
+        if guarantee.status != 'ACTIVE':
+            return error_response("فقط طرح‌های فعال قابل اجرا هستند")
+        
+        if not guarantee.is_expired:
+            return error_response("طرح هنوز منقضی نشده است")
+        
+        # دریافت قیمت لحظه‌ای
+        current_price = get_live_gold_price()
+        if not current_price:
+            return error_response("خطا در دریافت قیمت لحظه‌ای طلا", status_code=500)
+        
+        # =============================================
+        # اجرای طرح
+        # =============================================
+        result = guarantee.execute(current_price)
+        
+        if not result['executed']:
+            return success_response(
+                message=result['message'],
+                data=GoldGuaranteeDetailSerializer(guarantee).data
+            )
+        
+        # =============================================
+        # ثبت لاگ
+        # =============================================
+        create_admin_log(
+            request=request,
+            user=user,
+            action_type="GOLD_GUARANTEE_EXECUTED",
+            action="اجرای طرح تضمین طلا",
+            model_name="GoldGuarantee",
+            object_id=guarantee.id,
+            success=True,
+            description=f"""
+اجرای طرح تضمین طلا
+
+کاربر: {user.mobile}
+وزن طلا: {guarantee.gold_weight} گرم
+قیمت تضمین: {guarantee.guaranteed_price:,} تومان
+قیمت اجرا: {current_price:,} تومان
+سود/ضرر: {result['profit_loss']:,} تومان
+"""
+        )
+        
+        return success_response(
+            message=result['message'],
+            data=GoldGuaranteeDetailSerializer(guarantee).data
+        )
+
+
+class GoldGuaranteeInfoView(APIView):
+    """دریافت اطلاعات مورد نیاز برای ایجاد تضمین"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        
+        # دریافت موجودی طلای در دسترس
+        inventory, _ = GoldInventory.objects.get_or_create(user=user)
+        accessible_gold = inventory.accessible_balance
+        
+        # دریافت قیمت لحظه‌ای طلا
+        gold_price = get_live_gold_price()
+        
+        # دریافت موجودی کیف پول
+        wallet, _ = Wallet.objects.get_or_create(user=user)
+        accessible_toman = wallet.accessible_toman
+        
+        # دریافت طرح‌های فعال
+        plans = GoldGuaranteePlan.objects.filter(is_active=True)
+        plans_data = GoldGuaranteePlanSerializer(plans, many=True).data
+        
+        # محاسبه حداقل و حداکثر کارمزد برای نمایش
+        min_fee_percent = None
+        max_fee_percent = None
+        if plans.exists():
+            min_fee_percent = min(p.service_fee_percent for p in plans)
+            max_fee_percent = max(p.service_fee_percent for p in plans)
+        
+        return success_response(
+            message="اطلاعات مورد نیاز برای ایجاد تضمین",
+            data={
+                'accessible_gold': float(accessible_gold),
+                'gold_price': float(gold_price) if gold_price else 0,
+                'accessible_toman': float(accessible_toman),
+                'plans': plans_data,
+                'min_fee_percent': float(min_fee_percent) if min_fee_percent else 0,
+                'max_fee_percent': float(max_fee_percent) if max_fee_percent else 0,
+            }
+        )
+        
+        
+# gold_app/views.py - اضافه کردن ویوهای سرمایه‌گذاری
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
+from django.utils import timezone
+from decimal import Decimal
+import jdatetime
+
+from .models import (
+    GoldInvestment, GoldInvestmentPlan, 
+    GoldInventory, Wallet, GoldTransaction
+)
+from .serializers import (
+    GoldInvestmentPlanSerializer,
+    GoldInvestmentPreviewSerializer,
+    GoldInvestmentCreateSerializer,
+    GoldInvestmentListSerializer,
+    GoldInvestmentDetailSerializer,
+)
+from .utils import get_live_gold_price, generate_tracking_code
+from accounts.utils import success_response, error_response
+from admin_panel.utils import create_admin_log
+
+
+# =========================================================
+# ۱. دریافت اطلاعات مورد نیاز برای سرمایه‌گذاری
+# =========================================================
+
+class GoldInvestmentInfoView(APIView):
+    """دریافت اطلاعات مورد نیاز برای سرمایه‌گذاری"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        
+        # موجودی طلای در دسترس
+        inventory, _ = GoldInventory.objects.get_or_create(user=user)
+        accessible_gold = inventory.accessible_balance
+        
+        # قیمت لحظه‌ای طلا
+        gold_price = get_live_gold_price()
+        
+        # لیست طرح‌های فعال
+        plans = GoldInvestmentPlan.objects.filter(is_active=True)
+        plans_data = GoldInvestmentPlanSerializer(plans, many=True).data
+        
+        return success_response(
+            message="اطلاعات مورد نیاز برای سرمایه‌گذاری",
+            data={
+                'accessible_gold': float(accessible_gold),
+                'gold_price': float(gold_price) if gold_price else 0,
+                'plans': plans_data
+            }
+        )
+
+
+# =========================================================
+# ۲. دریافت لیست طرح‌های سرمایه‌گذاری
+# =========================================================
+
+class GoldInvestmentPlansView(APIView):
+    """دریافت لیست طرح‌های سرمایه‌گذاری"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        plans = GoldInvestmentPlan.objects.filter(is_active=True)
+        serializer = GoldInvestmentPlanSerializer(plans, many=True)
+        
+        return success_response(
+            message="لیست طرح‌های سرمایه‌گذاری طلا",
+            data=serializer.data
+        )
+
+
+# =========================================================
+# ۳. پیش‌نمایش سرمایه‌گذاری
+# =========================================================
+
+# gold_app/views.py - اصلاح GoldInvestmentPreviewView
+
+# gold_app/views.py - اصلاح GoldInvestmentPreviewView و GoldInvestmentCreateView
+
+class GoldInvestmentPreviewView(APIView):
+    """پیش‌نمایش سرمایه‌گذاری"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        user = request.user
+        
+        serializer = GoldInvestmentPreviewSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if not serializer.is_valid():
+            return error_response("اطلاعات نامعتبر است", serializer.errors)
+        
+        plan = serializer.validated_data['plan_id']
+        gold_weight = serializer.validated_data['gold_weight']
+        
+        gold_price = get_live_gold_price()
+        if not gold_price:
+            return error_response("خطا در دریافت قیمت لحظه‌ای طلا", status_code=500)
+        
+        # =============================================
+        # ✅ محاسبه دقیق تاریخ پایان
+        # =============================================
+        from datetime import datetime, timedelta
+        
+        # تاریخ شروع (همین الان)
+        start_date = timezone.now()
+        
+        # ✅ تاریخ پایان = تاریخ شروع + تعداد روز
+        end_date = start_date + timedelta(days=plan.duration_days)
+        
+        # محاسبه سود
+        daily_profit = (gold_weight * plan.daily_profit_percent / 100).quantize(Decimal('0.001'))
+        total_profit = (gold_weight * plan.total_profit_percent / 100).quantize(Decimal('0.001'))
+        total_return = gold_weight + total_profit
+        
+        # تبدیل به شمسی
+        shamsi_start = jdatetime.date.fromgregorian(date=start_date)
+        shamsi_end = jdatetime.date.fromgregorian(date=end_date)
+        
+        start_date_shamsi = shamsi_start.strftime("%Y/%m/%d")
+        end_date_shamsi = shamsi_end.strftime("%Y/%m/%d")
+        
+        # محاسبه به تومان
+        daily_profit_toman = (daily_profit * gold_price).quantize(Decimal('1'))
+        total_profit_toman = (total_profit * gold_price).quantize(Decimal('1'))
+        total_return_toman = (total_return * gold_price).quantize(Decimal('1'))
+        
+        return success_response(
+            message="پیش‌نمایش سرمایه‌گذاری",
+            data={
+                'plan': {
+                    'id': plan.id,
+                    'name': plan.name,
+                    'duration_days': plan.duration_days,
+                    'daily_profit_percent': float(plan.daily_profit_percent),
+                    'total_profit_percent': float(plan.total_profit_percent)
+                },
+                'gold_weight': float(gold_weight),
+                'investment_price': float(gold_price),
+                'daily_profit': float(daily_profit),
+                'total_profit': float(total_profit),
+                'total_return': float(total_return),
+                'daily_profit_toman': float(daily_profit_toman),
+                'total_profit_toman': float(total_profit_toman),
+                'total_return_toman': float(total_return_toman),
+                'start_date': start_date.isoformat(),
+                'start_date_shamsi': start_date_shamsi,
+                'end_date': end_date.isoformat(),
+                'end_date_shamsi': end_date_shamsi
+            }
+        )
+
+
+class GoldInvestmentCreateView(APIView):
+    """ایجاد سرمایه‌گذاری جدید"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    @transaction.atomic
+    def post(self, request):
+        user = request.user
+        
+        serializer = GoldInvestmentCreateSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if not serializer.is_valid():
+            return error_response("اطلاعات نامعتبر است", serializer.errors)
+        
+        plan = serializer.validated_data['plan_id']
+        gold_weight = serializer.validated_data['gold_weight']
+        
+        gold_price = get_live_gold_price()
+        if not gold_price:
+            return error_response("خطا در دریافت قیمت لحظه‌ای طلا", status_code=500)
+        
+        # =============================================
+        # ۱. بلوکه کردن طلا
+        # =============================================
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+        
+        if inventory.accessible_balance < gold_weight:
+            return error_response(
+                f"موجودی طلای در دسترس شما ({inventory.accessible_balance} گرم) کافی نیست"
+            )
+        
+        inventory.accessible_balance -= gold_weight
+        inventory.blocked_balance += gold_weight
+        inventory.save()
+        
+        # =============================================
+        # ۲. محاسبه تاریخ پایان - ✅ اصلاح شده
+        # =============================================
+        from datetime import timedelta
+        end_date = timezone.now() + timedelta(days=plan.duration_days)
+        
+        # =============================================
+        # ۳. محاسبه سود کل
+        # =============================================
+        total_profit = (gold_weight * plan.total_profit_percent / 100).quantize(Decimal('0.001'))
+        
+        # =============================================
+        # ۴. ایجاد رکورد سرمایه‌گذاری
+        # =============================================
+        investment = GoldInvestment.objects.create(
+            user=user,
+            plan=plan,
+            gold_weight=gold_weight,
+            investment_price=gold_price,
+            end_date=end_date,
+            expected_profit=total_profit,
+            status='ACTIVE'
+        )
+        
+        # =============================================
+        # ۵. ثبت لاگ
+        # =============================================
+        create_admin_log(
+            request=request,
+            user=user,
+            action_type="GOLD_INVESTMENT_CREATED",
+            action="ایجاد سرمایه‌گذاری طلا",
+            model_name="GoldInvestment",
+            object_id=investment.id,
+            success=True,
+            description=f"""
+سرمایه‌گذاری طلا ایجاد شد
+
+کاربر: {user.mobile}
+وزن طلا: {gold_weight} گرم
+طرح: {plan.name} ({plan.duration_days} روز)
+سود کل: {total_profit} گرم
+تاریخ شروع: {timezone.now()}
+تاریخ پایان: {end_date}
+"""
+        )
+        
+        # =============================================
+        # ۶. پاسخ
+        # =============================================
+        return success_response(
+            message="سرمایه‌گذاری با موفقیت ایجاد شد",
+            status_code=201,
+            data=GoldInvestmentDetailSerializer(investment).data
+        )
+
+
+# =========================================================
+# ۴. ایجاد سرمایه‌گذاری جدید
+# =========================================================
+
+# gold_app/views.py - اصلاح GoldInvestmentCreateView
+
+class GoldInvestmentCreateView(APIView):
+    """ایجاد سرمایه‌گذاری جدید"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    @transaction.atomic
+    def post(self, request):
+        user = request.user
+        
+        serializer = GoldInvestmentCreateSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if not serializer.is_valid():
+            return error_response("اطلاعات نامعتبر است", serializer.errors)
+        
+        plan = serializer.validated_data['plan_id']
+        gold_weight = serializer.validated_data['gold_weight']
+        
+        # قیمت لحظه‌ای طلا
+        gold_price = get_live_gold_price()
+        if not gold_price:
+            return error_response("خطا در دریافت قیمت لحظه‌ای طلا", status_code=500)
+        
+        # =============================================
+        # ۱. بلوکه کردن طلا
+        # =============================================
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+        
+        if inventory.accessible_balance < gold_weight:
+            return error_response(
+                f"موجودی طلای در دسترس شما ({inventory.accessible_balance} گرم) کافی نیست"
+            )
+        
+        inventory.accessible_balance -= gold_weight
+        inventory.blocked_balance += gold_weight
+        inventory.save()
+        
+        # =============================================
+        # ۲. محاسبه تاریخ پایان - ✅ اصلاح شده
+        # =============================================
+        from datetime import timedelta
+        end_date = timezone.now() + timedelta(days=plan.duration_days)  # ✅ استفاده از duration_days
+        
+        # =============================================
+        # ۳. محاسبه سود کل
+        # =============================================
+        total_profit = (gold_weight * plan.total_profit_percent / 100).quantize(Decimal('0.001'))
+        
+        # =============================================
+        # ۴. ایجاد رکورد سرمایه‌گذاری
+        # =============================================
+        investment = GoldInvestment.objects.create(
+            user=user,
+            plan=plan,
+            gold_weight=gold_weight,
+            investment_price=gold_price,
+            end_date=end_date,
+            expected_profit=total_profit,
+            status='ACTIVE'
+        )
+        
+        # =============================================
+        # ۵. ثبت لاگ
+        # =============================================
+        create_admin_log(
+            request=request,
+            user=user,
+            action_type="GOLD_INVESTMENT_CREATED",
+            action="ایجاد سرمایه‌گذاری طلا",
+            model_name="GoldInvestment",
+            object_id=investment.id,
+            success=True,
+            description=f"""
+سرمایه‌گذاری طلا ایجاد شد
+
+کاربر: {user.mobile}
+وزن طلا: {gold_weight} گرم
+طرح: {plan.name} ({plan.duration_days} روز)  # ✅ اصلاح شده
+سود کل: {total_profit} گرم
+تاریخ شروع: {timezone.now()}
+تاریخ پایان: {end_date}
+"""
+        )
+        
+        # =============================================
+        # ۶. پاسخ
+        # =============================================
+        return success_response(
+            message="سرمایه‌گذاری با موفقیت ایجاد شد",
+            status_code=201,
+            data=GoldInvestmentDetailSerializer(investment).data
+        )
+# =========================================================
+# ۵. دریافت لیست سرمایه‌گذاری‌های کاربر
+# =========================================================
+
+class GoldInvestmentListView(APIView):
+    """دریافت لیست سرمایه‌گذاری‌های کاربر"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        investments = GoldInvestment.objects.filter(user=user).order_by('-created_at')
+        
+        # فیلتر بر اساس وضعیت
+        status = request.query_params.get('status')
+        if status:
+            investments = investments.filter(status=status)
+        
+        serializer = GoldInvestmentListSerializer(investments, many=True)
+        
+        return success_response(
+            message="لیست سرمایه‌گذاری‌های طلا",
+            data=serializer.data
+        )
+
+
+# =========================================================
+# ۶. دریافت جزئیات سرمایه‌گذاری
+# =========================================================
+
+class GoldInvestmentDetailView(APIView):
+    """دریافت جزئیات سرمایه‌گذاری"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get_investment(self, investment_id, user):
+        try:
+            return GoldInvestment.objects.get(id=investment_id, user=user)
+        except GoldInvestment.DoesNotExist:
+            return None
+    
+    def get(self, request, investment_id):
+        investment = self.get_investment(investment_id, request.user)
+        
+        if not investment:
+            return error_response("سرمایه‌گذاری یافت نشد", status_code=404)
+        
+        serializer = GoldInvestmentDetailSerializer(investment)
+        
+        return success_response(
+            message="جزئیات سرمایه‌گذاری",
+            data=serializer.data
+        )
+
+
+# =========================================================
+# ۷. لغو سرمایه‌گذاری
+# =========================================================
+
+class GoldInvestmentCancelView(APIView):
+    """لغو سرمایه‌گذاری"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    @transaction.atomic
+    def post(self, request, investment_id):
+        user = request.user
+        
+        try:
+            investment = GoldInvestment.objects.select_for_update().get(
+                id=investment_id, 
+                user=user
+            )
+        except GoldInvestment.DoesNotExist:
+            return error_response("سرمایه‌گذاری یافت نشد", status_code=404)
+        
+        # بررسی امکان لغو
+        if investment.status != 'ACTIVE':
+            return error_response("فقط سرمایه‌گذاری‌های فعال قابل لغو هستند")
+        
+        # =============================================
+        # محاسبه سود انصراف
+        # =============================================
+        cancel_profit = investment.cancellation_profit_amount
+        
+        # =============================================
+        # لغو سرمایه‌گذاری
+        # =============================================
+        investment.status = 'CANCELLED'
+        investment.cancelled_at = timezone.now()
+        investment.cancellation_profit = cancel_profit
+        investment.save()
+        
+        # =============================================
+        # برگرداندن طلای بلوکه شده
+        # =============================================
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+        inventory.blocked_balance -= investment.gold_weight
+        inventory.accessible_balance += investment.gold_weight
+        inventory.save()
+        
+        # =============================================
+        # اضافه کردن سود انصراف (اگر وجود داشته باشد)
+        # =============================================
+        if cancel_profit > 0:
+            inventory.accessible_balance += cancel_profit
+            inventory.save()
+        
+        # =============================================
+        # ثبت لاگ
+        # =============================================
+        create_admin_log(
+            request=request,
+            user=user,
+            action_type="GOLD_INVESTMENT_CANCELLED",
+            action="لغو سرمایه‌گذاری طلا",
+            model_name="GoldInvestment",
+            object_id=investment.id,
+            success=True,
+            description=f"""
+لغو سرمایه‌گذاری طلا
+
+کاربر: {user.mobile}
+وزن طلا: {investment.gold_weight} گرم
+طرح: {investment.plan.name}
+سود انصراف: {cancel_profit} گرم
+"""
+        )
+        
+        return success_response(
+            message="سرمایه‌گذاری با موفقیت لغو شد",
+            data={
+                'id': investment.id,
+                'status': investment.status,
+                'status_display': investment.get_status_display(),
+                'cancelled_at': investment.cancelled_at,
+                'cancellation_profit': float(cancel_profit),
+                'message': f'سرمایه‌گذاری لغو شد. سود انصراف: {cancel_profit} گرم'
+            }
+        )
+
+
+# =========================================================
+# ۸. دریافت سود ماهانه
+# =========================================================
+# gold_app/views.py - اصلاح GoldInvestmentCollectProfitView
+
+class GoldInvestmentCollectProfitView(APIView):
+    """دریافت سود ماهانه سرمایه‌گذاری"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    @transaction.atomic
+    def post(self, request, investment_id):
+        user = request.user
+        
+        try:
+            investment = GoldInvestment.objects.select_for_update().get(
+                id=investment_id, 
+                user=user
+            )
+        except GoldInvestment.DoesNotExist:
+            return error_response("سرمایه‌گذاری یافت نشد", status_code=404)
+        
+        # بررسی فعال بودن
+        if investment.status != 'ACTIVE':
+            return error_response("فقط سرمایه‌گذاری‌های فعال قابل دریافت سود هستند")
+        
+        # ✅ بررسی حداقل ۳۰ روز گذشته (۱ ماه)
+        days_passed = investment.days_passed
+        if days_passed < 30:
+            return error_response(
+                f"حداقل ۳۰ روز باید از شروع سرمایه‌گذاری گذشته باشد (تاکنون {days_passed} روز گذشته است)"
+            )
+        
+        # بررسی اینکه سود این ماه قبلاً پرداخت نشده باشد
+        if investment.last_profit_paid_at:
+            days_since_last = (timezone.now() - investment.last_profit_paid_at).days
+            if days_since_last < 30:
+                return error_response("سود این ماه قبلاً پرداخت شده است")
+        
+        # =============================================
+        # محاسبه سود این ماه
+        # =============================================
+        monthly_profit = investment.monthly_profit_amount
+        
+        # =============================================
+        # واریز به کیف پول طلا
+        # =============================================
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+        inventory.accessible_balance += monthly_profit
+        inventory.save()
+        
+        # =============================================
+        # به‌روزرسانی رکورد
+        # =============================================
+        investment.paid_profit += monthly_profit
+        investment.last_profit_paid_at = timezone.now()
+        investment.save()
+        
+        # =============================================
+        # ثبت تراکنش
+        # =============================================
+        GoldTransaction.objects.create(
+            user=user,
+            type='BUY',
+            status='COMPLETED',
+            amount_gr=monthly_profit,
+            price_per_gram=investment.investment_price,
+            fee=0,
+            commission_percent=0,
+            commission_amount=0,
+            total_amount=0,
+            tracking_code=generate_tracking_code('INVESTMENT'),
+            description=f'سود ماهانه سرمایه‌گذاری طلا - طرح {investment.plan.name}'
+        )
+        
+        # =============================================
+        # ثبت لاگ
+        # =============================================
+        create_admin_log(
+            request=request,
+            user=user,
+            action_type="GOLD_INVESTMENT_PROFIT",
+            action="دریافت سود ماهانه سرمایه‌گذاری طلا",
+            model_name="GoldInvestment",
+            object_id=investment.id,
+            success=True,
+            description=f"""
+دریافت سود ماهانه سرمایه‌گذاری طلا
+
+کاربر: {user.mobile}
+طرح: {investment.plan.name}
+سود دریافتی: {monthly_profit} گرم
+کل سود پرداخت شده: {investment.paid_profit} گرم
+"""
+        )
+        
+        return success_response(
+            message="سود ماهانه با موفقیت واریز شد",
+            data={
+                'id': investment.id,
+                'profit_amount': float(monthly_profit),
+                'profit_toman': float(monthly_profit * investment.investment_price),
+                'total_paid_profit': float(investment.paid_profit),
+                'remaining_profit': float(investment.total_expected_profit - investment.paid_profit),
+                'days_passed': investment.days_passed,
+                'remaining_days': investment.remaining_days
+            }
+        )
+        
+        
+        
+# gold_app/views.py - اصلاح GoldInvestmentConfirmView
+# gold_app/views.py - اصلاح GoldInvestmentConfirmView
+
+class GoldInvestmentConfirmView(APIView):
+    """دریافت اطلاعات برای تایید نهایی سرمایه‌گذاری"""
+    
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        user = request.user
+        
+        serializer = GoldInvestmentPreviewSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if not serializer.is_valid():
+            return error_response("اطلاعات نامعتبر است", serializer.errors)
+        
+        plan = serializer.validated_data['plan_id']
+        gold_weight = serializer.validated_data['gold_weight']
+        
+        # قیمت لحظه‌ای طلا
+        gold_price = get_live_gold_price()
+        if not gold_price:
+            return error_response("خطا در دریافت قیمت لحظه‌ای طلا", status_code=500)
+        
+        # =============================================
+        # دریافت موجودی طلای کاربر
+        # =============================================
+        inventory, _ = GoldInventory.objects.get_or_create(user=user)
+        accessible_gold = inventory.accessible_balance
+        
+        # =============================================
+        # سرمایه‌گذاری کارمزد ندارد (رایگان است)
+        # =============================================
+        service_fee = Decimal('0')
+        
+        # بررسی موجودی کافی برای سرمایه‌گذاری
+        enough_balance = accessible_gold >= gold_weight
+        
+        # =============================================
+        # ✅ محاسبات سود - فقط از total_profit_percent استفاده کن
+        # =============================================
+        total_profit = (gold_weight * plan.total_profit_percent / 100).quantize(Decimal('0.001'))
+        total_return = gold_weight + total_profit
+        
+        # تاریخ پایان - محاسبه دقیق بر اساس روز
+        end_date = timezone.now() + timezone.timedelta(days=plan.duration_days)
+        
+        # تبدیل به شمسی
+        shamsi_start = jdatetime.date.fromgregorian(date=timezone.now())
+        shamsi_end = jdatetime.date.fromgregorian(date=end_date)
+        
+        start_date_shamsi = shamsi_start.strftime("%Y/%m/%d")
+        end_date_shamsi = shamsi_end.strftime("%Y/%m/%d")
+        
+        # محاسبه به تومان
+        total_profit_toman = (total_profit * gold_price).quantize(Decimal('1'))
+        total_return_toman = (total_return * gold_price).quantize(Decimal('1'))
+        
+        return success_response(
+            message="اطلاعات تایید سرمایه‌گذاری",
+            data={
+                'plan': {
+                    'id': plan.id,
+                    'name': plan.name,
+                    'duration_days': plan.duration_days,
+                    'total_profit_percent': float(plan.total_profit_percent),  # ✅ فقط total_profit_percent
+                },
+                'gold_weight': float(gold_weight),
+                'investment_price': float(gold_price),
+                'total_profit': float(total_profit),
+                'total_return': float(total_return),
+                'total_profit_toman': float(total_profit_toman),
+                'total_return_toman': float(total_return_toman),
+                'service_fee': 0,
+                'start_date': timezone.now().isoformat(),
+                'start_date_shamsi': start_date_shamsi,
+                'end_date': end_date.isoformat(),
+                'end_date_shamsi': end_date_shamsi,
+                'accessible_gold': float(accessible_gold),
+                'enough_balance': enough_balance,
+                'remaining_gold': float(accessible_gold - gold_weight) if enough_balance else 0
+            }
+        )
+        
+        
+        
+        
+# gold_app/views.py - اضافه کردن VersionControlView
+
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework import status
+from django.views.decorators.cache import never_cache
+from django.utils.decorators import method_decorator
+import logging
+
+from .models import AppVersion
+from accounts.utils import success_response, error_response
+
+logger = logging.getLogger(__name__)
+
+
+@method_decorator(never_cache, name='dispatch')
+class VersionControlView(APIView):
+    """
+    مدیریت نسخه اپلیکیشن
+    
+    این API برای بررسی نسخه جدید، آپدیت اجباری و اختیاری استفاده می‌شود.
+    """
+    
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        try:
+            # دریافت آخرین نسخه فعال
+            version = AppVersion.objects.filter(is_active=True).first()
+            
+            if not version:
+                # مقدار پیش‌فرض اگر نسخه‌ای در دیتابیس نباشد
+                return Response(
+                    {
+                        "latest_version_code": 1,
+                        "min_required_version_code": 1,
+                        "update_message": "به فروشگاه دارینه خوش آمدید!",
+                        "store_url": "bazaar://details?id=shop.darine.gold"
+                    },
+                    status=status.HTTP_200_OK,
+                    headers={
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0',
+                    }
+                )
+            
+            # ساخت پاسخ
+            response_data = {
+                "latest_version_code": version.version_code,
+                "min_required_version_code": version.min_required_version_code,
+                "update_message": version.update_message or "نسخه جدید فروشگاه دارینه با ویژگی‌های جذاب منتشر شد! لطفاً برنامه را بروزرسانی کنید.",
+                "store_url": version.store_url or "bazaar://details?id=shop.darine.gold",
+                # فیلدهای اضافی برای اطلاعات بیشتر (اختیاری)
+                "version_name": version.version_name,
+                "release_notes": version.release_notes,
+                "release_date": version.release_date.isoformat() if version.release_date else None,
+                "is_force_update": version.is_force_update,
+            }
+            
+            # پاسخ با هدرهای Cache-Control
+            return Response(
+                response_data,
+                status=status.HTTP_200_OK,
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"خطا در دریافت نسخه: {e}")
+            return Response(
+                {
+                    "latest_version_code": 1,
+                    "min_required_version_code": 1,
+                    "update_message": "خطا در دریافت اطلاعات نسخه",
+                    "store_url": "bazaar://details?id=shop.darine.gold"
+                },
+                status=status.HTTP_200_OK,
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                }
+            )
