@@ -5255,35 +5255,28 @@ from .serializers import (
 
 
 class AdminLogViewSet(AdminBaseViewSet):
+    """
+    مدیریت لاگ‌های سیستم برای ادمین با Pagination دستی
+    """
 
     permission_classes = [IsAdminRole]
-
     queryset = AdminLog.objects.all()
-
     serializer_class = AdminLogListSerializer
-
     ordering = ["-created_at"]
 
     def get_serializer_class(self):
-
         if self.action == "retrieve":
-
             return AdminLogDetailSerializer
-
         return AdminLogListSerializer
 
     def get_queryset(self):
-
         qs = super().get_queryset()
 
         # ==========================
         # SEARCH
         # ==========================
-
         search = self.request.GET.get("search")
-
         if search:
-
             qs = qs.filter(
                 Q(action__icontains=search)
                 | Q(description__icontains=search)
@@ -5297,103 +5290,314 @@ class AdminLogViewSet(AdminBaseViewSet):
         # ==========================
         # FILTERS
         # ==========================
-
         action_type = self.request.GET.get("action_type")
-
         if action_type:
-
             qs = qs.filter(action_type=action_type)
 
         level = self.request.GET.get("level")
-
         if level:
-
             qs = qs.filter(level=level)
 
         success = self.request.GET.get("success")
-
         if success is not None:
-
             if success.lower() == "true":
-
                 qs = qs.filter(success=True)
-
             elif success.lower() == "false":
-
                 qs = qs.filter(success=False)
 
         method = self.request.GET.get("method")
-
         if method:
-
             qs = qs.filter(method=method.upper())
 
         status = self.request.GET.get("status")
-
         if status:
-
             qs = qs.filter(response_status=status)
 
         user = self.request.GET.get("user")
-
         if user:
-
             qs = qs.filter(user_id=user)
 
         admin = self.request.GET.get("admin")
-
         if admin:
-
             qs = qs.filter(admin_id=admin)
 
         start = self.request.GET.get("start_date")
-
         if start:
-
             qs = qs.filter(created_at__date__gte=start)
 
         end = self.request.GET.get("end_date")
-
         if end:
-
             qs = qs.filter(created_at__date__lte=end)
 
         return qs
 
+    # =============================================
+    # LIST با Pagination دستی
+    # =============================================
     def list(self, request):
-
         queryset = self.filter_queryset(self.get_queryset())
-
-        page = self.paginate_queryset(queryset)
-
-        if page is not None:
-
-            serializer = self.get_serializer(page, many=True)
-
-            return self.get_paginated_response(serializer.data)
-
-        serializer = self.get_serializer(queryset, many=True)
-
+        
+        # =============================================
+        # دریافت پارامترهای Pagination
+        # =============================================
+        try:
+            page = int(request.GET.get("page", 1))
+        except ValueError:
+            page = 1
+        
+        try:
+            page_size = int(request.GET.get("page_size", 10))
+        except ValueError:
+            page_size = 10
+        
+        # محدود کردن page_size به مقادیر مجاز
+        allowed_page_sizes = [10, 25, 50, 100]
+        if page_size not in allowed_page_sizes:
+            page_size = 10
+        
+        # =============================================
+        # محاسبه Offset و Limit
+        # =============================================
+        total_results = queryset.count()
+        offset = (page - 1) * page_size
+        total_pages = (total_results + page_size - 1) // page_size if page_size > 0 else 0
+        
+        # =============================================
+        # گرفتن داده‌های صفحه مورد نظر
+        # =============================================
+        paginated_queryset = queryset[offset:offset + page_size]
+        
+        # =============================================
+        # سریالایز کردن
+        # =============================================
+        serializer = self.get_serializer(paginated_queryset, many=True)
+        
+        # =============================================
+        # ساخت پاسخ با متا
+        # =============================================
+        response_data = {
+            "total_results": total_results,
+            "total_pages": total_pages,
+            "current_page": page,
+            "page_size": page_size,
+            "next": None,
+            "previous": None,
+            "results": serializer.data
+        }
+        
+        # =============================================
+        # ساخت لینک‌های next و previous
+        # =============================================
+        base_url = request.build_absolute_uri(request.path)
+        query_params = request.GET.copy()
+        
+        # Next
+        if page < total_pages:
+            query_params['page'] = page + 1
+            query_params['page_size'] = page_size
+            response_data['next'] = f"{base_url}?{query_params.urlencode()}"
+        
+        # Previous
+        if page > 1:
+            query_params['page'] = page - 1
+            query_params['page_size'] = page_size
+            response_data['previous'] = f"{base_url}?{query_params.urlencode()}"
+        
         return success_response(
             "لیست لاگ ها",
-            {"total_results": queryset.count(), "results": serializer.data},
+            response_data
         )
 
+    # =============================================
+    # RETRIEVE
+    # =============================================
     def retrieve(self, request, pk=None):
-
         obj = self.get_object()
-
         serializer = self.get_serializer(obj)
-
         return success_response("جزئیات لاگ", serializer.data)
 
+    # =============================================
+    # CLEAR - حذف همه لاگ‌ها
+    # =============================================
     @action(detail=False, methods=["delete"], permission_classes=[IsAdminRole])
     def clear(self, request):
-
         deleted = AdminLog.objects.all().delete()
+        return success_response(
+            "تمام لاگ‌ها حذف شدند.", 
+            {"deleted": deleted[0]}
+        )
+class AdminLogViewSet(AdminBaseViewSet):
+    """
+    مدیریت لاگ‌های سیستم برای ادمین با Pagination دستی
+    """
 
-        return success_response("تمام لاگ‌ها حذف شدند.", {"deleted": deleted[0]})
+    permission_classes = [IsAdminRole]
+    queryset = AdminLog.objects.all()
+    serializer_class = AdminLogListSerializer
+    ordering = ["-created_at"]
 
+    def get_serializer_class(self):
+        if self.action == "retrieve":
+            return AdminLogDetailSerializer
+        return AdminLogListSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+
+        # ==========================
+        # SEARCH
+        # ==========================
+        search = self.request.GET.get("search")
+        if search:
+            qs = qs.filter(
+                Q(action__icontains=search)
+                | Q(description__icontains=search)
+                | Q(user__mobile__icontains=search)
+                | Q(admin__mobile__icontains=search)
+                | Q(ip_address__icontains=search)
+                | Q(endpoint__icontains=search)
+                | Q(tracking_code__icontains=search)
+            )
+
+        # ==========================
+        # FILTERS
+        # ==========================
+        action_type = self.request.GET.get("action_type")
+        if action_type:
+            qs = qs.filter(action_type=action_type)
+
+        level = self.request.GET.get("level")
+        if level:
+            qs = qs.filter(level=level)
+
+        success = self.request.GET.get("success")
+        if success is not None:
+            if success.lower() == "true":
+                qs = qs.filter(success=True)
+            elif success.lower() == "false":
+                qs = qs.filter(success=False)
+
+        method = self.request.GET.get("method")
+        if method:
+            qs = qs.filter(method=method.upper())
+
+        status = self.request.GET.get("status")
+        if status:
+            qs = qs.filter(response_status=status)
+
+        user = self.request.GET.get("user")
+        if user:
+            qs = qs.filter(user_id=user)
+
+        admin = self.request.GET.get("admin")
+        if admin:
+            qs = qs.filter(admin_id=admin)
+
+        start = self.request.GET.get("start_date")
+        if start:
+            qs = qs.filter(created_at__date__gte=start)
+
+        end = self.request.GET.get("end_date")
+        if end:
+            qs = qs.filter(created_at__date__lte=end)
+
+        return qs
+
+    # =============================================
+    # LIST با Pagination دستی
+    # =============================================
+    def list(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # =============================================
+        # دریافت پارامترهای Pagination
+        # =============================================
+        try:
+            page = int(request.GET.get("page", 1))
+        except ValueError:
+            page = 1
+        
+        try:
+            page_size = int(request.GET.get("page_size", 10))
+        except ValueError:
+            page_size = 10
+        
+        # محدود کردن page_size به مقادیر مجاز
+        allowed_page_sizes = [10, 25, 50, 100]
+        if page_size not in allowed_page_sizes:
+            page_size = 10
+        
+        # =============================================
+        # محاسبه Offset و Limit
+        # =============================================
+        total_results = queryset.count()
+        offset = (page - 1) * page_size
+        total_pages = (total_results + page_size - 1) // page_size if page_size > 0 else 0
+        
+        # =============================================
+        # گرفتن داده‌های صفحه مورد نظر
+        # =============================================
+        paginated_queryset = queryset[offset:offset + page_size]
+        
+        # =============================================
+        # سریالایز کردن
+        # =============================================
+        serializer = self.get_serializer(paginated_queryset, many=True)
+        
+        # =============================================
+        # ساخت پاسخ با متا
+        # =============================================
+        response_data = {
+            "total_results": total_results,
+            "total_pages": total_pages,
+            "current_page": page,
+            "page_size": page_size,
+            "next": None,
+            "previous": None,
+            "results": serializer.data
+        }
+        
+        # =============================================
+        # ساخت لینک‌های next و previous
+        # =============================================
+        base_url = request.build_absolute_uri(request.path)
+        query_params = request.GET.copy()
+        
+        # Next
+        if page < total_pages:
+            query_params['page'] = page + 1
+            query_params['page_size'] = page_size
+            response_data['next'] = f"{base_url}?{query_params.urlencode()}"
+        
+        # Previous
+        if page > 1:
+            query_params['page'] = page - 1
+            query_params['page_size'] = page_size
+            response_data['previous'] = f"{base_url}?{query_params.urlencode()}"
+        
+        return success_response(
+            "لیست لاگ ها",
+            response_data
+        )
+
+    # =============================================
+    # RETRIEVE
+    # =============================================
+    def retrieve(self, request, pk=None):
+        obj = self.get_object()
+        serializer = self.get_serializer(obj)
+        return success_response("جزئیات لاگ", serializer.data)
+
+    # =============================================
+    # CLEAR - حذف همه لاگ‌ها
+    # =============================================
+    @action(detail=False, methods=["delete"], permission_classes=[IsAdminRole])
+    def clear(self, request):
+        deleted = AdminLog.objects.all().delete()
+        return success_response(
+            "تمام لاگ‌ها حذف شدند.", 
+            {"deleted": deleted[0]}
+        )
 
 class AnalyticsChartAPIView(APIView):
 

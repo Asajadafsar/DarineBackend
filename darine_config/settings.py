@@ -85,9 +85,9 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": "darine_db",
-        "USER": "Arad",
-        "PASSWORD": os.environ.get("DB_PASSWORD", ""),
-        "HOST": os.environ.get("DB_HOST", "localhost"),
+        "USER": "arad",
+        "PASSWORD": "123456789",
+        "HOST": "localhost",
         "PORT": "5432",
     }
 }
