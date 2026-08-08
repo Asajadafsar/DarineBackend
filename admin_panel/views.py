@@ -932,6 +932,722 @@ from silver_app.models import (
 
 )
 from gold_app.models import FinancialTransaction
+from accounts.models import User, UserFee, FeeSetting, OTPRequest, BankCard, CooperationRequest
+logger = logging.getLogger(__name__)
+
+
+# class UserAdminViewSet(AdminBaseViewSet):
+#     """
+#     مدیریت کاربران توسط ادمین
+#     """
+
+#     queryset = User.objects.all().order_by("-id")
+    
+#     def get_queryset(self):
+#         qs = super().get_queryset()
+
+#         mobile = self.request.GET.get("mobile")
+#         search = self.request.GET.get("search")
+#         national_code = self.request.GET.get("national_code")
+#         ordering = self.request.GET.get("ordering")
+
+#         if mobile:
+#             qs = qs.filter(mobile__icontains=mobile)
+
+#         if search:
+#             qs = qs.filter(
+#                 Q(first_name__icontains=search) | Q(last_name__icontains=search)
+#             )
+
+#         if national_code:
+#             qs = qs.filter(national_code__icontains=national_code)
+
+#         ordering_map = {
+#             "id": "id",
+#             "-id": "-id",
+#             "created_at": "date_joined",
+#             "-created_at": "-date_joined",
+#             "first_name": "first_name",
+#             "-first_name": "-first_name",
+#             "last_name": "last_name",
+#             "-last_name": "-last_name",
+#             "mobile": "mobile",
+#             "-mobile": "-mobile",
+#         }
+
+#         if ordering in ordering_map:
+#             qs = qs.order_by(ordering_map[ordering])
+
+#         return qs
+
+#     # ======================
+#     # LIST
+#     # ======================
+#     def list(self, request):
+#         users = self.get_queryset()
+#         results = []
+
+#         for user in users:
+#             fee, _ = UserFee.objects.get_or_create(user=user)
+#             data = AdminUserListSerializer(user).data
+#             data["fees"] = UserFeeSerializer(fee).data
+#             results.append(data)
+
+#         return success_response(
+#             "لیست کاربران", {"total_results": len(results), "results": results}
+#         )
+
+#     # ======================
+#     # RETRIEVE
+#     # ======================
+#     def retrieve(self, request, pk=None):
+#         user = get_object_or_404(User, pk=pk)
+#         fee, _ = UserFee.objects.get_or_create(user=user)
+
+#         data = AdminUserDetailSerializer(user).data
+#         data["fees"] = UserFeeSerializer(fee).data
+
+#         # دریافت درصد رفرال اختصاصی کاربر
+#         cache_key = f"user_referral_percent_{user.id}"
+#         cached_percent = cache.get(cache_key)
+#         if cached_percent is not None:
+#             data["referral_percent"] = float(cached_percent)
+#         else:
+#             from accounts.models import ReferralSetting
+#             setting = ReferralSetting.objects.first()
+#             data["referral_percent"] = float(setting.commission_percent) if setting else 20.0
+
+#         return success_response("جزئیات کاربر", data)
+
+#     # ======================
+#     # UPDATE
+#     # ======================
+#     def update(self, request, pk=None, *args, **kwargs):
+#         user = get_object_or_404(User, pk=pk)
+
+#         # دریافت referral_percent از درخواست
+#         referral_percent = request.data.get('referral_percent')
+
+#         # بروزرسانی اطلاعات کاربر
+#         serializer = AdminUserUpdateSerializer(user, data=request.data, partial=True)
+#         serializer.is_valid(raise_exception=True)
+#         serializer.save()
+
+#         # بروزرسانی کارمزدها
+#         fee, _ = UserFee.objects.get_or_create(user=user)
+#         fee_data = request.data.get("fees")
+
+#         if fee_data is None:
+#             fee_data = {
+#                 key: request.data.get(key)
+#                 for key in [
+#                     "gold_buy_fee",
+#                     "gold_sell_fee",
+#                     "silver_buy_fee",
+#                     "silver_sell_fee",
+#                 ]
+#                 if request.data.get(key) is not None
+#             }
+
+#         if fee_data:
+#             fee_serializer = UserFeeUpdateSerializer(fee, data=fee_data, partial=True)
+#             fee_serializer.is_valid(raise_exception=True)
+#             fee_serializer.save()
+
+#         # بروزرسانی درصد رفرال اختصاصی برای این کاربر
+#         if referral_percent is not None:
+#             try:
+#                 referral_percent = Decimal(str(referral_percent))
+#                 if 0 <= referral_percent <= 100:
+#                     cache_key = f"user_referral_percent_{user.id}"
+#                     cache.set(cache_key, float(referral_percent), timeout=60*60*24*30)
+#                 else:
+#                     return error_response(
+#                         message="درصد سود رفرال باید بین 0 تا 100 باشد."
+#                     )
+#             except Exception:
+#                 return error_response(
+#                     message="درصد سود رفرال نامعتبر است."
+#                 )
+
+#         user.refresh_from_db()
+
+#         # دریافت دیتای نهایی با جزئیات کامل
+#         data = AdminUserDetailSerializer(user).data
+#         fee, _ = UserFee.objects.get_or_create(user=user)
+#         data["fees"] = UserFeeSerializer(fee).data
+
+#         # اضافه کردن referral_percent به خروجی
+#         cache_key = f"user_referral_percent_{user.id}"
+#         cached_percent = cache.get(cache_key)
+#         if cached_percent is not None:
+#             data["referral_percent"] = float(cached_percent)
+#         else:
+#             from accounts.models import ReferralSetting
+#             setting = ReferralSetting.objects.first()
+#             data["referral_percent"] = float(setting.commission_percent) if setting else 20.0
+
+#         return success_response(
+#             "آپدیت انجام شد",
+#             {"results": data}
+#         )
+
+#     # ======================
+#     # TOGGLE ACTIVE
+#     # ======================
+#     @action(detail=True, methods=["post"])
+#     def toggle_active(self, request, pk=None):
+#         user = get_object_or_404(User, pk=pk)
+#         user.is_active = not user.is_active
+#         user.save()
+
+#         create_admin_log(
+#             request=request,
+#             user=user,
+#             action_type="USER_TOGGLE_ACTIVE",
+#             action="تغییر وضعیت فعال/غیرفعال کاربر",
+#             model_name="User",
+#             object_id=user.id,
+#             success=True,
+#             description=f"""
+# تغییر وضعیت کاربر
+
+# کاربر: {user.mobile}
+# وضعیت جدید: {'فعال' if user.is_active else 'غیرفعال'}
+# """
+#         )
+
+#         return success_response("وضعیت تغییر کرد", {"is_active": user.is_active})
+
+#     # ======================
+#     # BULK UPDATE FEES
+#     # ======================
+#     @action(
+#         detail=False,
+#         methods=["post"],
+#         url_path="bulk-update-fees",
+#     )
+#     def bulk_update_fees(self, request):
+
+#         user_ids = request.data.get("user_ids", [])
+
+#         if not user_ids:
+#             return error_response(
+#                 message="حداقل یک کاربر انتخاب کنید."
+#             )
+
+#         fee_data = {
+#             key: request.data.get(key)
+#             for key in [
+#                 "gold_buy_fee",
+#                 "gold_sell_fee",
+#                 "silver_buy_fee",
+#                 "silver_sell_fee",
+#             ]
+#             if request.data.get(key) is not None
+#         }
+
+#         if not fee_data:
+#             return error_response(
+#                 message="هیچ کارمزدی ارسال نشده است."
+#             )
+
+#         users = User.objects.filter(id__in=user_ids)
+
+#         if not users.exists():
+#             return error_response(
+#                 message="کاربری یافت نشد."
+#             )
+
+#         updated_users = 0
+
+#         with transaction.atomic():
+#             for user in users:
+#                 fee, _ = UserFee.objects.get_or_create(user=user)
+#                 serializer = UserFeeUpdateSerializer(fee, data=fee_data, partial=True)
+#                 serializer.is_valid(raise_exception=True)
+#                 serializer.save()
+#                 updated_users += 1
+
+#         return success_response(
+#             message="کارمزد کاربران با موفقیت بروزرسانی شد.",
+#             data={
+#                 "updated_users": updated_users,
+#             },
+#         )
+
+#     # ======================
+#     # BULK UPDATE REFERRAL
+#     # ======================
+#     @action(
+#         detail=False,
+#         methods=["post"],
+#         url_path="bulk-update-referral",
+#     )
+#     def bulk_update_referral(self, request):
+#         user_ids = request.data.get("user_ids", [])
+
+#         if not user_ids:
+#             return error_response(
+#                 message="حداقل یک کاربر انتخاب کنید."
+#             )
+
+#         referral_percent = request.data.get("referral_percent")
+
+#         if referral_percent is None:
+#             return error_response(
+#                 message="درصد سود رفرال ارسال نشده است."
+#             )   
+
+#         try:
+#             referral_percent = Decimal(str(referral_percent))
+#         except Exception:
+#             return error_response(
+#                 message="درصد سود رفرال نامعتبر است."
+#             )
+
+#         if referral_percent < 0 or referral_percent > 100:
+#             return error_response(
+#                 message="درصد سود رفرال باید بین 0 تا 100 باشد."
+#             )
+
+#         users = User.objects.filter(id__in=user_ids)
+
+#         if not users.exists():
+#             return error_response(
+#                 message="کاربری یافت نشد."
+#             )
+
+#         from accounts.models import FeeSetting
+
+#         setting = FeeSetting.objects.first()
+
+#         if not setting:
+#             setting = FeeSetting.objects.create(
+#                 gold_buy_fee=0.01,
+#                 gold_sell_fee=0.01,
+#                 silver_buy_fee=0.01,
+#                 silver_sell_fee=0.01,
+#                 gold_referral_percent=20,
+#                 silver_referral_percent=20,
+#             )
+
+#         setting.gold_referral_percent = referral_percent
+#         setting.silver_referral_percent = referral_percent
+#         setting.save()
+
+#         return success_response(
+#             message="درصد سود رفرال کاربران با موفقیت بروزرسانی شد.",
+#             data={
+#                 "updated_users": users.count(),
+#                 "referral_percent": float(referral_percent),
+#             }
+#         )
+
+#     # ======================
+#     # TRANSACTIONS (لیست تراکنش‌های کاربر)
+#     # ======================
+#     @action(
+#         detail=True,
+#         methods=["get"],
+#         url_path="transactions",
+#     )
+#     def transactions(self, request, pk=None):
+
+#         user = get_object_or_404(User, pk=pk)
+#         results = []
+
+#         # =====================================================
+#         # GOLD WALLET TRANSACTIONS
+#         # =====================================================
+#         for item in FinancialTransaction.objects.filter(user=user):
+#             results.append({
+#                 "source": "GOLD_WALLET",
+#                 "type": item.type,
+#                 "status": item.status,
+#                 "amount": None,
+#                 "toman_amount": item.amount,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": item.tracking_code,
+#                 "description": item.description,
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # GOLD ADMIN DEPOSIT
+#         # =====================================================
+#         for item in GoldBalanceAdjustment.objects.filter(user=user):
+#             results.append({
+#                 "source": "GOLD_WALLET",
+#                 "type": "ADMIN_ADJUSTMENT",
+#                 "status": "COMPLETED",
+#                 "amount": item.gold_amount,
+#                 "toman_amount": item.wallet_amount,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": item.tracking_code,
+#                 "description": item.admin_note or "افزایش موجودی توسط ادمین",
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # GOLD ADMIN WITHDRAW
+#         # =====================================================
+#         for item in GoldBalanceWithdrawal.objects.filter(user=user):
+#             results.append({
+#                 "source": "GOLD_WALLET",
+#                 "type": "ADMIN_WITHDRAWAL",
+#                 "status": "COMPLETED",
+#                 "amount": item.gold_amount,
+#                 "toman_amount": item.wallet_amount,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": item.tracking_code,
+#                 "description": item.admin_note or "برداشت موجودی توسط ادمین",
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # GOLD BUY / SELL
+#         # =====================================================
+#         for item in GoldTransaction.objects.filter(user=user):
+#             results.append({
+#                 "source": "GOLD",
+#                 "type": item.type,
+#                 "status": item.status,
+#                 "amount": item.amount_gr,
+#                 "toman_amount": item.total_amount,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": item.tracking_code,
+#                 "description": item.description,
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # GOLD INVESTMENTS (سرمایه‌گذاری طلا)
+#         # =====================================================
+#         for item in GoldInvestment.objects.filter(user=user):
+#             profit_amount = item.paid_profit or 0
+#             total_return = item.gold_weight + profit_amount
+            
+#             results.append({
+#                 "source": "GOLD_INVESTMENT",
+#                 "type": "سرمایه‌گذاری",
+#                 "status": item.status,
+#                 "amount": item.gold_weight,
+#                 "toman_amount": item.investment_price,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": item.tracking_code,
+#                 "description": (
+#                     f"سرمایه‌گذاری در طرح {item.plan.name} - "
+#                     f"وزن: {item.gold_weight} گرم - "
+#                     f"سود: {item.expected_profit}% - "
+#                     f"بازگشت: {total_return} گرم"
+#                 ),
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # GOLD INVESTMENT PROFIT COLLECT (برداشت سود سرمایه‌گذاری)
+#         # =====================================================
+#         for item in GoldInvestment.objects.filter(user=user, paid_profit__gt=0):
+#             results.append({
+#                 "source": "GOLD_INVESTMENT",
+#                 "type": "برداشت سود",
+#                 "status": "COMPLETED",
+#                 "amount": item.paid_profit,
+#                 "toman_amount": None,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": f"PRF-{item.id:06d}",
+#                 "description": (
+#                     f"برداشت سود سرمایه‌گذاری - طرح {item.plan.name} - "
+#                     f"سود: {item.paid_profit} گرم"
+#                 ),
+#                 "created_at": item.completed_at or item.updated_at,
+#             })
+
+#         # =====================================================
+#         # GOLD GUARANTEES (تضمین طلا)
+#         # =====================================================
+#         for item in GoldGuarantee.objects.filter(user=user):
+#             payout = item.user_payout or 0
+            
+#             description = f"تضمین طلا - طرح {item.plan.name} - "
+            
+#             if item.status == 'ACTIVE':
+#                 description += f"فعال - باقی‌مانده: {item.days_remaining} روز"
+#             elif item.status == 'EXECUTED':
+#                 if payout > 0:
+#                     description += f"اجرا شده - سود: {payout:,} تومان"
+#                 else:
+#                     description += "اجرا شده - بدون سود"
+#             elif item.status == 'CANCELLED':
+#                 description += "لغو شده"
+#             else:
+#                 description += item.get_status_display()
+            
+#             results.append({
+#                 "source": "GOLD_GUARANTEE",
+#                 "type": "تضمین قیمت",
+#                 "status": item.status,
+#                 "amount": item.gold_weight,
+#                 "toman_amount": None,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": item.tracking_code,
+#                 "description": description,
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # GOLD GUARANTEE PAYOUT (پرداخت سود تضمین)
+#         # =====================================================
+#         for item in GoldGuarantee.objects.filter(user=user, user_payout__gt=0):
+#             results.append({
+#                 "source": "GOLD_GUARANTEE",
+#                 "type": "پرداخت سود تضمین",
+#                 "status": "COMPLETED",
+#                 "amount": None,
+#                 "toman_amount": item.user_payout,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": item.tracking_code,
+#                 "description": (
+#                     f"پرداخت سود تضمین طلا - طرح {item.plan.name} - "
+#                     f"مبلغ: {item.user_payout:,} تومان"
+#                 ),
+#                 "created_at": item.executed_at or item.updated_at,
+#             })
+
+#         # =====================================================
+#         # GOLD LIMIT ORDERS (سفارش با قیمت طلا)
+#         # =====================================================
+#         for item in GoldOrder.objects.filter(user=user):
+#             order_type_text = "خرید" if item.order_type == "BUY" else "فروش"
+#             results.append({
+#                 "source": "GOLD_LIMIT_ORDER",
+#                 "type": item.order_type,
+#                 "status": item.status,
+#                 "amount": item.estimated_weight,
+#                 "toman_amount": item.amount_toman,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": f"LMT-{item.id:06d}",
+#                 "description": (
+#                     item.description
+#                     or f"سفارش با قیمت طلا - {order_type_text} - قیمت هدف: {item.target_price:,}"
+#                 ),
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # GOLD ORDERS (فیزیکی)
+#         # =====================================================
+#         for item in Order.objects.filter(user=user):
+#             results.append({
+#                 "source": "GOLD_ORDER",
+#                 "type": item.payment_method,
+#                 "status": item.status,
+#                 "amount": item.total_gold_amount,
+#                 "toman_amount": item.total_toman_amount,
+#                 "payment_method": item.payment_method,
+#                 "delivery_type": item.delivery_type,
+#                 "tracking_code": item.tracking_code,
+#                 "description": (
+#                     item.description
+#                     or f"سفارش فیزیکی طلا ({item.get_delivery_type_display()})"
+#                 ),
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # SILVER WALLET TRANSACTIONS
+#         # =====================================================
+#         for item in SilverFinancialTransaction.objects.filter(user=user):
+#             results.append({
+#                 "source": "SILVER_WALLET",
+#                 "type": item.type,
+#                 "status": item.status,
+#                 "amount": None,
+#                 "toman_amount": item.amount,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": item.tracking_code,
+#                 "description": item.description,
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # SILVER ADMIN DEPOSIT
+#         # =====================================================
+#         for item in SilverBalanceAdjustment.objects.filter(user=user):
+#             results.append({
+#                 "source": "SILVER_WALLET",
+#                 "type": "ADMIN_ADJUSTMENT",
+#                 "status": "COMPLETED",
+#                 "amount": item.silver_amount,
+#                 "toman_amount": item.wallet_amount,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": item.tracking_code,
+#                 "description": item.admin_note or "افزایش موجودی توسط ادمین",
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # SILVER ADMIN WITHDRAW
+#         # =====================================================
+#         for item in SilverBalanceWithdrawal.objects.filter(user=user):
+#             results.append({
+#                 "source": "SILVER_WALLET",
+#                 "type": "ADMIN_WITHDRAWAL",
+#                 "status": "COMPLETED",
+#                 "amount": item.silver_amount,
+#                 "toman_amount": item.wallet_amount,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": item.tracking_code,
+#                 "description": item.admin_note or "برداشت موجودی توسط ادمین",
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # SILVER BUY / SELL
+#         # =====================================================
+#         for item in SilverTransaction.objects.filter(user=user):
+#             results.append({
+#                 "source": "SILVER",
+#                 "type": item.type,
+#                 "status": item.status,
+#                 "amount": item.amount_gr,
+#                 "toman_amount": item.total_amount,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": item.tracking_code,
+#                 "description": item.description,
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # SILVER LIMIT ORDERS (سفارش با قیمت نقره)
+#         # =====================================================
+#         for item in SilverLimitOrder.objects.filter(user=user):
+#             order_type_text = "خرید" if item.order_type == "BUY" else "فروش"
+#             results.append({
+#                 "source": "SILVER_LIMIT_ORDER",
+#                 "type": item.order_type,
+#                 "status": item.status,
+#                 "amount": item.silver_weight or item.estimated_weight,
+#                 "toman_amount": item.amount_toman,
+#                 "payment_method": None,
+#                 "delivery_type": None,
+#                 "tracking_code": f"SLV-{item.id:06d}",
+#                 "description": (
+#                     item.description
+#                     or f"سفارش با قیمت نقره - {order_type_text} - قیمت هدف: {item.target_price:,}"
+#                 ),
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # SILVER ORDERS (فیزیکی)
+#         # =====================================================
+#         for item in SilverOrder.objects.filter(user=user):
+#             results.append({
+#                 "source": "SILVER_ORDER",
+#                 "type": item.payment_method,
+#                 "status": item.status,
+#                 "amount": item.total_silver_amount,
+#                 "toman_amount": item.total_toman_amount,
+#                 "payment_method": item.payment_method,
+#                 "delivery_type": item.delivery_type,
+#                 "tracking_code": item.tracking_code,
+#                 "description": (
+#                     item.description
+#                     or f"سفارش فیزیکی نقره ({item.get_delivery_type_display()})"
+#                 ),
+#                 "created_at": item.created_at,
+#             })
+
+#         # =====================================================
+#         # SORT BY CREATED_AT DESC
+#         # =====================================================
+#         results.sort(key=lambda x: x["created_at"], reverse=True)
+
+#         # =====================================================
+#         # TYPE / STATUS / PAYMENT / DELIVERY MAP
+#         # =====================================================
+#         TYPE_MAP = {
+#             "BUY": "خرید",
+#             "SELL": "فروش",
+#             "DEPOSIT": "واریز",
+#             "WITHDRAW": "برداشت",
+#             "TRANSFER": "انتقال",
+#             "TOMAN": "پرداخت تومانی",
+#             "GOLD": "پرداخت با طلا",
+#             "SILVER": "پرداخت با نقره",
+#             "ADMIN_ADJUSTMENT": "افزایش موجودی توسط ادمین",
+#             "ADMIN_WITHDRAWAL": "برداشت موجودی توسط ادمین",
+#             "ONLINE": "پرداخت آنلاین",
+#             "WALLET": "پرداخت از کیف پول",
+#             "CARD_TO_CARD": "کارت به کارت",
+#             "CASH": "پرداخت نقدی",
+#             "سرمایه‌گذاری": "سرمایه‌گذاری طلا",
+#             "تضمین قیمت": "تضمین طلا",
+#             "برداشت سود": "برداشت سود سرمایه‌گذاری",
+#             "پرداخت سود تضمین": "پرداخت سود تضمین طلا",
+#         }
+
+#         STATUS_MAP = {
+#             "PENDING": "در انتظار",
+#             "PROCESSING": "در حال پردازش",
+#             "COMPLETED": "تکمیل شده",
+#             "SUCCESS": "موفق",
+#             "FAILED": "ناموفق",
+#             "CANCELLED": "لغو شده",
+#             "REQUESTED": "ثبت سفارش",
+#             "PREPARING": "در حال آماده‌سازی",
+#             "DELIVERING": "در حال ارسال",
+#             "DELIVERED": "تحویل داده شد",
+#             "EXECUTED": "اجرا شده",
+#             "ACTIVE": "فعال",
+#             "EXPIRED": "منقضی شده",
+#         }
+
+#         DELIVERY_MAP = {
+#             "POST": "پست",
+#             "TIPAX": "تیپاکس",
+#             "PICKUP": "تحویل حضوری",
+#             "EXPRESS": "ارسال فوری",
+#         }
+
+#         for item in results:
+#             item["type"] = TYPE_MAP.get(item["type"], item["type"])
+#             item["status"] = STATUS_MAP.get(item["status"], item["status"])
+
+#             if item["payment_method"]:
+#                 item["payment_method"] = TYPE_MAP.get(item["payment_method"], item["payment_method"])
+
+#             if item["delivery_type"]:
+#                 item["delivery_type"] = DELIVERY_MAP.get(item["delivery_type"], item["delivery_type"])
+
+#         serializer = UserTransactionSerializer(results, many=True)
+
+#         return success_response(
+#             "لیست تراکنش‌های کاربر",
+#             {
+#                 "total_results": len(serializer.data),
+#                 "results": serializer.data,
+#             },
+#         )
+
+
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -1091,6 +1807,140 @@ class UserAdminViewSet(AdminBaseViewSet):
             "آپدیت انجام شد",
             {"results": data}
         )
+
+    # ======================
+    # ✅ DESTROY - حذف کامل کاربر و تمام اطلاعات مرتبط
+    # ======================
+    def destroy(self, request, pk=None):
+        """
+        حذف کامل کاربر و تمام اطلاعات مرتبط با او
+        """
+        user = get_object_or_404(User, pk=pk)
+        
+        # ذخیره اطلاعات برای لاگ
+        mobile = user.mobile
+        national_code = user.national_code
+        full_name = f"{user.first_name} {user.last_name}".strip() or user.mobile
+        
+        try:
+            # =============================================
+            # ۱. حذف همه اطلاعات مرتبط با کاربر
+            # =============================================
+            
+            # ---- حذف تراکنش‌های طلا ----
+            GoldTransaction.objects.filter(user=user).delete()
+            
+            # ---- حذف سفارشات طلا ----
+            GoldOrder.objects.filter(user=user).delete()
+            Order.objects.filter(user=user).delete()
+            
+            # ---- حذف سرمایه‌گذاری‌ها ----
+            GoldInvestment.objects.filter(user=user).delete()
+            
+            # ---- حذف تضمین‌ها ----
+            GoldGuarantee.objects.filter(user=user).delete()
+            
+            # ---- حذف کیف پول و موجودی طلا ----
+            Wallet.objects.filter(user=user).delete()
+            GoldInventory.objects.filter(user=user).delete()
+            
+            # ---- حذف تراکنش‌های نقره ----
+            SilverTransaction.objects.filter(user=user).delete()
+            
+            # ---- حذف سفارشات نقره ----
+            SilverOrder.objects.filter(user=user).delete()
+            SilverLimitOrder.objects.filter(user=user).delete()
+            
+            # ---- حذف کیف پول و موجودی نقره ----
+            SilverWallet.objects.filter(user=user).delete()
+            SilverInventory.objects.filter(user=user).delete()
+            
+            # ---- حذف کارمزد کاربر ----
+            UserFee.objects.filter(user=user).delete()
+            
+            # ---- حذف OTPهای کاربر ----
+            OTPRequest.objects.filter(mobile=mobile).delete()
+            
+            # ---- حذف کارت‌های بانکی ----
+            BankCard.objects.filter(user=user).delete()
+            
+            # ---- حذف درخواست‌های همکاری ----
+            CooperationRequest.objects.filter(mobile=mobile).delete()
+
+            
+            # ---- حذف فاکتورهای آب شده ----
+            Invoice.objects.filter(transaction__user=user).delete()
+            
+            # ---- حذف فاکتورهای سفارش فیزیکی ----
+            PhysicalOrderInvoice.objects.filter(order__user=user).delete()
+            
+            # ---- حذف تنظیمات موجودی (ادمین) ----
+            GoldBalanceAdjustment.objects.filter(user=user).delete()
+            GoldBalanceWithdrawal.objects.filter(user=user).delete()
+            SilverBalanceAdjustment.objects.filter(user=user).delete()
+            SilverBalanceWithdrawal.objects.filter(user=user).delete()
+            
+            # ---- حذف تراکنش‌های مالی ----
+            FinancialTransaction.objects.filter(user=user).delete()
+            SilverFinancialTransaction.objects.filter(user=user).delete()
+            
+            # ---- حذف نهایی کاربر ----
+            user.delete()
+            
+            # =============================================
+            # ۲. ثبت لاگ
+            # =============================================
+            create_admin_log(
+                request=request,
+                user=request.user,
+                action_type="USER_DELETED",
+                action="حذف کامل کاربر و اطلاعات مرتبط",
+                model_name="User",
+                object_id=pk,
+                success=True,
+                description=f"""
+حذف کامل کاربر
+
+موبایل: {mobile}
+کد ملی: {national_code}
+نام: {full_name}
+تمام اطلاعات مرتبط با این کاربر حذف شد.
+"""
+            )
+            
+            return success_response(
+                message=f"کاربر {mobile} با موفقیت حذف شد.",
+                data={
+                    "deleted_user": {
+                        "mobile": mobile,
+                        "national_code": national_code,
+                        "full_name": full_name
+                    }
+                }
+            )
+            
+        except Exception as e:
+            create_admin_log(
+                request=request,
+                user=request.user,
+                action_type="USER_DELETE_ERROR",
+                action="خطا در حذف کاربر",
+                model_name="User",
+                object_id=pk,
+                success=False,
+                error_message=str(e),
+                description=f"""
+خطا در حذف کاربر
+
+موبایل: {mobile}
+کد ملی: {national_code}
+خطا: {str(e)}
+"""
+            )
+            return error_response(
+                message=f"خطا در حذف کاربر: {str(e)}",
+                status_code=500
+            )
 
     # ======================
     # TOGGLE ACTIVE
@@ -1344,7 +2194,7 @@ class UserAdminViewSet(AdminBaseViewSet):
                 "description": (
                     f"سرمایه‌گذاری در طرح {item.plan.name} - "
                     f"وزن: {item.gold_weight} گرم - "
-                    f"سود: {item.expected_profit}% - "
+                    f"سود: {item.expected_profit} گرم - "
                     f"بازگشت: {total_return} گرم"
                 ),
                 "created_at": item.created_at,
@@ -1644,8 +2494,6 @@ class UserAdminViewSet(AdminBaseViewSet):
                 "results": serializer.data,
             },
         )
-
-
 class AdminGoldShortOrderViewSet(AdminBaseViewSet):
     """
     پنل ادمین - مدیریت سفارشات فروش تعهدی طلا

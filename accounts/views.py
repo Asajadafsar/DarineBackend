@@ -346,14 +346,14 @@ class RegisterStepOne(APIView):
 # ==========================================
 
 
-class RegisterStepTwo(APIView):
+# accounts/views.py - اصلاح RegisterStepTwo
 
+class RegisterStepTwo(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
 
-        # مدیریت خطاهای اعتبارسنجی سریالایزر (طول کد، خالی بودن و...)
         if not serializer.is_valid():
             error_msg = "اطلاعات نامعتبر است"
             if "code" in serializer.errors:
@@ -370,27 +370,67 @@ class RegisterStepTwo(APIView):
         mobile = serializer.validated_data["mobile"]
         code = serializer.validated_data["code"]
 
-        # پیدا کردن آخرین کد بدون در نظر گرفتن فیلتر is_used برای فهمیدن اشتباه بودن
-        otp = OTPRequest.objects.filter(mobile=mobile, code=code).last()
+        # ✅ پیدا کردن آخرین کد تایید نشده
+        otp = OTPRequest.objects.filter(
+            mobile=mobile,
+            code=code,
+            is_used=False
+        ).last()
 
-        if not otp or otp.is_used:
+        if not otp:
+            # بررسی اینکه آیا کد قبلاً استفاده شده است
+            used_otp = OTPRequest.objects.filter(
+                mobile=mobile,
+                code=code,
+                is_used=True
+            ).last()
+            
+            if used_otp:
+                return error_response(
+                    message="این کد تایید قبلاً استفاده شده است. لطفاً کد جدید دریافت کنید.",
+                    status_code=400
+                )
+            
             return error_response(
-                message="کد تایید وارد شده اشتباه است", status_code=400
+                message="کد تایید وارد شده اشتباه است",
+                status_code=400
             )
 
+        # ✅ بررسی انقضا
         if otp.is_expired():
             return error_response(
-                message="کد تایید منقضی شده است. لطفا مجدداً درخواست کنید",
+                message="کد تایید منقضی شده است. لطفاً مجدداً درخواست کنید",
                 status_code=400,
             )
 
-        # تایید موفقیت‌آمیز کد
+        # ✅ تایید موفقیت‌آمیز
         otp.is_used = True
         otp.save()
 
-        return success_response(message="کد با موفقیت تایید شد")
+        # ✅ لاگ موفقیت
+        create_admin_log(
+            request=request,
+            action_type="OTP_VERIFIED",
+            action="تایید کد OTP",
+            model_name="OTPRequest",
+            object_id=otp.id,
+            user=None,
+            success=True,
+            description=f"""
+تایید کد OTP
 
+موبایل: {mobile}
+کد: {code}
+"""
+        )
 
+        return success_response(
+            message="کد با موفقیت تایید شد",
+            data={
+                "verified": True,
+                "mobile": mobile
+            }
+        )
 # ==========================================
 # REGISTER STEP 3
 # ==========================================
@@ -552,29 +592,27 @@ from .jibit import shahkar_match  # ✅ اضافه کردن ایمپورت
 # REGISTER STEP 3 (با احراز هویت Jibit)
 # ==========================================
 
-class RegisterStepThree(APIView):
+# accounts/views.py - اصلاح RegisterStepThree
 
+# accounts/views.py - RegisterStepThree اصلاح شده
+
+# accounts/views.py - اصلاح RegisterStepThree
+
+class RegisterStepThree(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-
         serializer = RegisterSerializer(data=request.data)
 
-        # =============================================
-        # ۱. اعتبارسنجی سریالایزر
-        # =============================================
         if not serializer.is_valid():
-            # خطاهای اعتبارسنجی را به صورت دقیق برگردان
             errors = serializer.errors
-            
-            # استخراج پیام‌های خطا
             error_messages = []
             for field, field_errors in errors.items():
                 for error in field_errors:
                     error_messages.append(f"{error}")
             
             return error_response(
-                message=" | ".join(error_messages),  # همه خطاها را با | جدا کن
+                message=" | ".join(error_messages),
                 errors=errors,
                 status_code=400
             )
@@ -590,32 +628,47 @@ class RegisterStepThree(APIView):
         referral_code = data.get("referral_code")
 
         # =============================================
-        # ۲. بررسی تکراری بودن کد ملی
+        # ✅ ۱. بررسی کاربر با شماره موبایل (فقط فعال‌ها)
         # =============================================
-        if User.objects.filter(national_code=national_code).exists():
-            create_admin_log(
-                request=request,
-                action_type="REGISTER_ERROR",
-                action="کد ملی تکراری",
-                model_name="User",
-                success=False,
-                description=f"""
-کد ملی تکراری در ثبت نام
-
-کد ملی: {national_code}
-شماره موبایل: {mobile}
-"""
+        existing_user_by_mobile = User.objects.filter(
+            mobile=mobile,
+            is_active=True
+        ).first()
+        
+        if existing_user_by_mobile:
+            return error_response(
+                message="این شماره قبلاً ثبت شده است",
+                status_code=400
             )
-            return error_response("مالکیت کد ملی و شماره موبایل وارد شده مطابقت ندارد")
 
         # =============================================
-        # ۳. بررسی تکراری بودن شماره موبایل
+        # ✅ ۲. بررسی کد ملی (فقط فعال‌ها)
         # =============================================
-        if User.objects.filter(mobile=mobile).exists():
-            return error_response("این شماره قبلاً ثبت شده است")
+        existing_user_by_national = User.objects.filter(
+            national_code=national_code,
+            is_active=True
+        ).first()
+        
+        if existing_user_by_national:
+            if existing_user_by_national.mobile == mobile:
+                return error_response(
+                    message="این شماره قبلاً ثبت شده است",
+                    status_code=400
+                )
+            else:
+                return error_response(
+                    message="مالکیت کد ملی و شماره موبایل وارد شده مطابقت ندارد",
+                    status_code=400
+                )
 
         # =============================================
-        # ۴. چک کردن وجود تاییدیه OTP
+        # ✅ ۳ و ۴. حذف کاربران غیرفعال قبلی
+        # =============================================
+        User.objects.filter(mobile=mobile, is_active=False).delete()
+        User.objects.filter(national_code=national_code, is_active=False).delete()
+
+        # =============================================
+        # ✅ ۵. بررسی OTP (بدون فیلتر زمانی)
         # =============================================
         has_verified_otp = OTPRequest.objects.filter(
             mobile=mobile,
@@ -624,111 +677,52 @@ class RegisterStepThree(APIView):
 
         if not has_verified_otp:
             return error_response(
-                "ابتدا شماره موبایل را تایید کنید",
-                status_code=403
+                message="لطفاً ابتدا شماره موبایل خود را با کد تایید فعال کنید.",
+                status_code=403,
+                errors={
+                    "step": "verify_otp",
+                    "redirect_to": "/auth/register/step2/"
+                }
             )
 
         # =============================================
-        # ۵. احراز هویت با Jibit (Shahkar Match)
+        # ۶. احراز هویت با Jibit (Shahkar Match)
         # =============================================
         try:
             is_matched = shahkar_match(national_code, mobile)
             
             if not is_matched:
-                # این حالت دیگر رخ نمی‌دهد چون تابع خطا raise می‌کند
-                pass
+                return error_response(
+                    message="مالکیت کد ملی و شماره موبایل وارد شده مطابقت ندارد",
+                    status_code=400
+                )
 
         except Exception as e:
             error_message = str(e)
             
-            # =============================================
-            # تشخیص نوع خطا بر اساس پیام
-            # =============================================
-            
-            # ۱. کد ملی در ثبت احوال وجود ندارد
             if "در ثبت احوال موجود نیست" in error_message:
-                create_admin_log(
-                    request=request,
-                    action_type="REGISTER_ERROR",
-                    action="کد ملی در ثبت احوال موجود نیست",
-                    model_name="User",
-                    success=False,
-                    description=f"""
-کد ملی در ثبت احوال موجود نیست
-
-کد ملی: {national_code}
-شماره موبایل: {mobile}
-"""
-                )
                 return error_response(
-                    "کد ملی وارد شده در ثبت احوال موجود نیست",
+                    message="کد ملی وارد شده در ثبت احوال موجود نیست",
                     status_code=400
                 )
-            
-            # ۲. عدم تطابق کد ملی و شماره موبایل
             elif "مالکیت" in error_message and "مطابقت ندارد" in error_message:
-                create_admin_log(
-                    request=request,
-                    action_type="REGISTER_ERROR",
-                    action="عدم تطابق کد ملی و شماره موبایل",
-                    model_name="User",
-                    success=False,
-                    description=f"""
-عدم تطابق کد ملی و شماره موبایل
-
-کد ملی: {national_code}
-شماره موبایل: {mobile}
-"""
-                )
                 return error_response(
-                    "مالکیت کد ملی و شماره موبایل وارد شده مطابقت ندارد",
+                    message="مالکیت کد ملی و شماره موبایل وارد شده مطابقت ندارد",
                     status_code=400
                 )
-            
-            # ۳. شماره موبایل نامعتبر
             elif "شماره موبایل" in error_message and "نامعتبر" in error_message:
-                create_admin_log(
-                    request=request,
-                    action_type="REGISTER_ERROR",
-                    action="شماره موبایل نامعتبر",
-                    model_name="User",
-                    success=False,
-                    description=f"""
-شماره موبایل نامعتبر
-
-کد ملی: {national_code}
-شماره موبایل: {mobile}
-"""
-                )
                 return error_response(
-                    "شماره موبایل وارد شده نامعتبر است",
+                    message="شماره موبایل وارد شده نامعتبر است",
                     status_code=400
                 )
-            
-            # ۴. سایر خطاها (ارتباط با سرویس و ...)
             else:
-                create_admin_log(
-                    request=request,
-                    action_type="REGISTER_ERROR",
-                    action="خطا در سرویس احراز هویت Jibit",
-                    model_name="User",
-                    success=False,
-                    error_message=str(e),
-                    description=f"""
-خطا در ارتباط با Jibit
-
-کد ملی: {national_code}
-شماره موبایل: {mobile}
-خطا: {str(e)}
-"""
-                )
                 return error_response(
-                    "خطا در سرویس احراز هویت. لطفاً مجدداً تلاش کنید",
+                    message="خطا در سرویس احراز هویت. لطفاً مجدداً تلاش کنید",
                     status_code=503
                 )
 
         # =============================================
-        # ۶. تبدیل تاریخ تولد
+        # ۷. تبدیل تاریخ تولد
         # =============================================
         birth_date_gregorian = None
         try:
@@ -738,10 +732,13 @@ class RegisterStepThree(APIView):
             else:
                 birth_date_gregorian = datetime.strptime(birth_date_input, "%Y-%m-%d").date()
         except Exception:
-            return error_response("فرمت تاریخ نامعتبر است")
+            return error_response(
+                message="فرمت تاریخ نامعتبر است",
+                status_code=400
+            )
 
         # =============================================
-        # ۷. بررسی سن (حداقل ۱۸ سال)
+        # ۸. بررسی سن (حداقل ۱۸ سال)
         # =============================================
         today = timezone.now().date()
         age = (
@@ -759,39 +756,23 @@ class RegisterStepThree(APIView):
         if age < 18:
             return error_response(
                 message="برای استفاده از خدمات سامانه، باید حداقل ۱۸ سال سن داشته باشید.",
-                errors={
-                    "birth_date": [
-                        "کاربران زیر ۱۸ سال امکان ثبت‌نام در سامانه را ندارند."
-                    ]
-                },
                 status_code=400
             )
 
         # =============================================
-        # ۸. ساخت کاربر
+        # ۹. بررسی کد معرف
+        # =============================================
+        referred_by = None
+        if referral_code:
+            try:
+                referred_by = User.objects.get(referral_code=referral_code)
+            except User.DoesNotExist:
+                pass
+
+        # =============================================
+        # ۱۰. ساخت کاربر
         # =============================================
         try:
-            # بررسی کد معرف
-            referred_by = None
-            if referral_code:
-                try:
-                    referred_by = User.objects.get(referral_code=referral_code)
-                except User.DoesNotExist:
-                    create_admin_log(
-                        request=request,
-                        action_type="INVALID_REFERRAL",
-                        action="کد معرف نامعتبر",
-                        model_name="User",
-                        success=False,
-                        description=f"""
-کد معرف نامعتبر در ثبت نام
-
-موبایل کاربر: {mobile}
-کد معرف وارد شده: {referral_code}
-"""
-                    )
-
-            # ایجاد کاربر
             user = User.objects.create(
                 mobile=mobile,
                 username=mobile,
@@ -807,10 +788,8 @@ class RegisterStepThree(APIView):
             user.set_password(password)
             user.save()
 
-            # پاک کردن OTPهای استفاده شده
             OTPRequest.objects.filter(mobile=mobile).delete()
 
-            # ثبت لاگ موفق
             create_admin_log(
                 request=request,
                 user=user,
@@ -825,12 +804,9 @@ class RegisterStepThree(APIView):
 موبایل: {user.mobile}
 نام: {user.first_name} {user.last_name}
 کد ملی: {user.national_code}
-وضعیت احراز: تایید شده (Jibit)
-معرف: {user.referred_by.mobile if user.referred_by else 'ندارد'}
 """
             )
 
-            # صدور توکن
             refresh = RefreshToken.for_user(user)
             access = refresh.access_token
 
@@ -844,7 +820,6 @@ class RegisterStepThree(APIView):
                         "full_name": f"{user.first_name} {user.last_name}",
                         "role": user.role,
                         "auth_status": user.auth_status,
-                        "referred_by": user.referred_by.mobile if user.referred_by else None,
                     }
                 },
             )
@@ -853,7 +828,11 @@ class RegisterStepThree(APIView):
             return response
 
         except Exception as e:
-            return error_response(str(e))
+            return error_response(
+                message=f"خطا در ثبت نام: {str(e)}",
+                status_code=500
+            )
+
 # ==========================================
 # LOGIN PASSWORD
 # ==========================================

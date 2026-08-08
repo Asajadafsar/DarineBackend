@@ -3095,6 +3095,7 @@ from .services.pdf_service import InvoicePDFService
 from accounts.utils import success_response, error_response
 
 
+
 class ReportsAPIView(APIView):
     """گزارشات کامل کاربر شامل واریز، برداشت، معاملات طلا، سفارشات و فاکتورها"""
 
@@ -3221,10 +3222,24 @@ class ReportsAPIView(APIView):
             )
 
         # =====================================================
-        # 2. GOLD (معاملات طلا)
+        # 2. GOLD (معاملات طلا) - فقط BUY و SELL واقعی
         # =====================================================
         if report_type == "gold":
-            queryset = GoldTransaction.objects.filter(user=request.user)
+            # ✅ فیلتر کردن: فقط تراکنش‌های واقعی BUY و SELL
+            # حذف تراکنش‌های سرمایه‌گذاری، تضمین و سایر موارد
+            queryset = GoldTransaction.objects.filter(
+                user=request.user
+            ).exclude(
+                tracking_code__startswith="INVESTMENT"
+            ).exclude(
+                tracking_code__startswith="GUARANTEE"
+            ).exclude(
+                description__icontains="سود سرمایه‌گذاری"
+            ).exclude(
+                description__icontains="سرمایه‌گذاری"
+            ).exclude(
+                description__icontains="تضمین"
+            )
 
             if method_filter:
                 queryset = queryset.filter(type__iexact=method_filter)
@@ -3339,7 +3354,7 @@ class ReportsAPIView(APIView):
             # ✅ ساختار صحیح: data مستقیماً آرایه است
             return success_response(
                 message="گزارش سفارشات فیزیکی",
-                data=results  # ✅ فقط آرایه، نه {results: [], total: 0}
+                data=results
             )
 
         # =====================================================
@@ -3348,6 +3363,7 @@ class ReportsAPIView(APIView):
         return error_response(
             message="نوع گزارش نامعتبر است. گزینه‌های مجاز: deposit, withdraw, gold, orders"
         )
+
 # =========================================================
 # INVOICE LIST
 # =========================================================
