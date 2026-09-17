@@ -1,26 +1,71 @@
 # accounts/fcm_service.py
 
 import logging
+import os
 import requests
 
+import firebase_admin
+from firebase_admin import credentials, messaging
+
 from django.conf import settings
+
 
 logger = logging.getLogger(__name__)
 
 
 class FCMService:
-    """
-    FCM Service
-
-    تمام ارتباطات ارسال Notification با Firebase
-    از طریق Cloudflare Worker انجام می‌شود.
-
-    Django مستقیماً Firebase Admin SDK را استفاده نمی‌کند.
-    """
 
     TOPICS = {
         "ALL_USERS": "all_users",
     }
+
+    # =========================================================
+    # FIREBASE INITIALIZE
+    # =========================================================
+
+    @staticmethod
+    def initialize_firebase():
+
+        # اگر قبلاً Firebase initialize شده
+        if firebase_admin._apps:
+            return firebase_admin.get_app()
+
+        credentials_path = getattr(
+            settings,
+            "FIREBASE_CREDENTIALS",
+            None
+        )
+
+        if not credentials_path:
+            raise RuntimeError(
+                "FIREBASE_CREDENTIALS در settings تعریف نشده است."
+            )
+
+        if not os.path.exists(credentials_path):
+            raise FileNotFoundError(
+                f"Firebase credentials پیدا نشد: {credentials_path}"
+            )
+
+        cred = credentials.Certificate(
+            credentials_path
+        )
+
+        app = firebase_admin.initialize_app(
+            cred,
+            {
+                "projectId": getattr(
+                    settings,
+                    "FIREBASE_PROJECT_ID",
+                    None
+                )
+            }
+        )
+
+        logger.info(
+            "Firebase Admin initialized successfully"
+        )
+
+        return app
 
     # =========================================================
     # WORKER URL
@@ -28,6 +73,7 @@ class FCMService:
 
     @staticmethod
     def get_worker_url():
+
         worker_url = getattr(
             settings,
             "FCM_WORKER_URL",
@@ -47,9 +93,6 @@ class FCMService:
 
     @staticmethod
     def clean_data(data=None):
-        """
-        FCM Data Payload باید فقط string باشد.
-        """
 
         if not data:
             return {}
@@ -66,7 +109,249 @@ class FCMService:
         return clean_data
 
     # =========================================================
-    # SEND REQUEST TO CLOUDFLARE WORKER
+    # SUBSCRIBE TOKEN TO TOPIC
+    # =========================================================
+
+    @classmethod
+    def subscribe_token_to_topic(
+        cls,
+        token,
+        topic=None
+    ):
+
+        topic = topic or cls.TOPICS["ALL_USERS"]
+
+        if not token:
+
+            return {
+                "success": False,
+                "message": "FCM Token الزامی است.",
+                "topic": topic,
+            }
+
+        try:
+
+            # ---------------------------------------------
+            # Initialize Firebase
+            # ---------------------------------------------
+
+            cls.initialize_firebase()
+
+            # ---------------------------------------------
+            # Subscribe
+            # ---------------------------------------------
+
+            response = messaging.subscribe_to_topic(
+                [token],
+                topic
+            )
+
+            logger.info(
+                "FCM SUBSCRIBE | topic=%s | success=%s | failed=%s",
+                topic,
+                response.success_count,
+                response.failure_count,
+            )
+
+            # ---------------------------------------------
+            # Failed
+            # ---------------------------------------------
+
+            if response.failure_count > 0:
+
+                errors = []
+
+                for error in response.errors:
+
+                    errors.append({
+                        "index": error.index,
+                        "reason": str(error.reason),
+                    })
+
+                logger.error(
+                    "FCM SUBSCRIBE FAILED | topic=%s | errors=%s",
+                    topic,
+                    errors,
+                )
+
+                return {
+                    "success": False,
+                    "message": "Token subscribe failed.",
+                    "topic": topic,
+                    "success_count": response.success_count,
+                    "failure_count": response.failure_count,
+                    "errors": errors,
+                }
+
+            # ---------------------------------------------
+            # Success
+            # ---------------------------------------------
+
+            logger.info(
+                "FCM TOKEN SUBSCRIBED SUCCESSFULLY | topic=%s",
+                topic,
+            )
+
+            return {
+                "success": True,
+                "message": "Token subscribed successfully.",
+                "topic": topic,
+                "success_count": response.success_count,
+                "failure_count": response.failure_count,
+            }
+
+        except Exception as e:
+
+            logger.exception(
+                "FCM subscribe topic error: %s",
+                str(e)
+            )
+
+            return {
+                "success": False,
+                "message": str(e),
+                "topic": topic,
+            }
+
+    # =========================================================
+    # UNSUBSCRIBE TOKEN FROM TOPIC
+    # =========================================================
+
+    @classmethod
+    def unsubscribe_token_from_topic(
+        cls,
+        token,
+        topic=None
+    ):
+
+        topic = topic or cls.TOPICS["ALL_USERS"]
+
+        if not token:
+
+            return {
+                "success": False,
+                "message": "FCM Token الزامی است.",
+                "topic": topic,
+            }
+
+        try:
+
+            # ---------------------------------------------
+            # Initialize Firebase
+            # ---------------------------------------------
+
+            cls.initialize_firebase()
+
+            # ---------------------------------------------
+            # Unsubscribe
+            # ---------------------------------------------
+
+            response = messaging.unsubscribe_from_topic(
+                [token],
+                topic
+            )
+
+            logger.info(
+                "FCM UNSUBSCRIBE | topic=%s | success=%s | failed=%s",
+                topic,
+                response.success_count,
+                response.failure_count,
+            )
+
+            # ---------------------------------------------
+            # Failed
+            # ---------------------------------------------
+
+            if response.failure_count > 0:
+
+                errors = []
+
+                for error in response.errors:
+
+                    errors.append({
+                        "index": error.index,
+                        "reason": str(error.reason),
+                    })
+
+                logger.error(
+                    "FCM UNSUBSCRIBE FAILED | topic=%s | errors=%s",
+                    topic,
+                    errors,
+                )
+
+                return {
+                    "success": False,
+                    "message": "Token unsubscribe failed.",
+                    "topic": topic,
+                    "success_count": response.success_count,
+                    "failure_count": response.failure_count,
+                    "errors": errors,
+                }
+
+            # ---------------------------------------------
+            # Success
+            # ---------------------------------------------
+
+            logger.info(
+                "FCM TOKEN UNSUBSCRIBED SUCCESSFULLY | topic=%s",
+                topic,
+            )
+
+            return {
+                "success": True,
+                "message": "Token unsubscribed successfully.",
+                "topic": topic,
+                "success_count": response.success_count,
+                "failure_count": response.failure_count,
+            }
+
+        except Exception as e:
+
+            logger.exception(
+                "FCM unsubscribe topic error: %s",
+                str(e)
+            )
+
+            return {
+                "success": False,
+                "message": str(e),
+                "topic": topic,
+            }
+
+    # =========================================================
+    # REGISTER TOPIC
+    # =========================================================
+
+    @classmethod
+    def register_topic(
+        cls,
+        token,
+        topic=None
+    ):
+
+        return cls.subscribe_token_to_topic(
+            token=token,
+            topic=topic or cls.TOPICS["ALL_USERS"]
+        )
+
+    # =========================================================
+    # UNREGISTER TOPIC
+    # =========================================================
+
+    @classmethod
+    def unregister_topic(
+        cls,
+        token,
+        topic=None
+    ):
+
+        return cls.unsubscribe_token_from_topic(
+            token=token,
+            topic=topic or cls.TOPICS["ALL_USERS"]
+        )
+
+    # =========================================================
+    # SEND TO CLOUDFLARE WORKER
     # =========================================================
 
     @classmethod
@@ -88,11 +373,23 @@ class FCMService:
             "priority": str(priority),
         }
 
+        # ---------------------------------------------
+        # Topic
+        # ---------------------------------------------
+
         if topic:
             payload["topic"] = str(topic)
 
+        # ---------------------------------------------
+        # Token
+        # ---------------------------------------------
+
         if token:
             payload["token"] = str(token)
+
+        # ---------------------------------------------
+        # Image
+        # ---------------------------------------------
 
         if image_url:
             payload["image_url"] = str(image_url)
@@ -102,7 +399,9 @@ class FCMService:
         try:
 
             logger.info(
-                "Sending FCM notification through Cloudflare Worker"
+                "FCM WORKER REQUEST | topic=%s | token=%s",
+                topic,
+                bool(token),
             )
 
             response = requests.post(
@@ -114,12 +413,14 @@ class FCMService:
                 timeout=20,
             )
 
-            # -------------------------------------------------
-            # تلاش برای JSON
-            # -------------------------------------------------
+            # ---------------------------------------------
+            # Parse JSON
+            # ---------------------------------------------
 
             try:
+
                 result = response.json()
+
             except ValueError:
 
                 result = {
@@ -127,15 +428,16 @@ class FCMService:
                     "error": response.text,
                 }
 
-            # -------------------------------------------------
-            # HTTP ERROR
-            # -------------------------------------------------
+            # ---------------------------------------------
+            # HTTP Error
+            # ---------------------------------------------
 
             if not response.ok:
 
                 logger.error(
-                    "FCM Worker HTTP Error: %s",
-                    result
+                    "FCM WORKER HTTP ERROR | status=%s | response=%s",
+                    response.status_code,
+                    result,
                 )
 
                 return {
@@ -148,15 +450,15 @@ class FCMService:
                     "response": result,
                 }
 
-            # -------------------------------------------------
-            # WORKER ERROR
-            # -------------------------------------------------
+            # ---------------------------------------------
+            # Worker Error
+            # ---------------------------------------------
 
             if not result.get("success"):
 
                 logger.error(
-                    "FCM Worker returned error: %s",
-                    result
+                    "FCM WORKER ERROR | response=%s",
+                    result,
                 )
 
                 return {
@@ -168,21 +470,27 @@ class FCMService:
                     "response": result,
                 }
 
-            # -------------------------------------------------
-            # SUCCESS
-            # -------------------------------------------------
+            # ---------------------------------------------
+            # Success
+            # ---------------------------------------------
 
             logger.info(
-                "FCM notification sent successfully through Worker: %s",
-                result.get("message_id")
+                "FCM NOTIFICATION SENT | message_id=%s",
+                result.get("message_id"),
             )
 
             return {
                 "success": True,
                 "message": "Notification sent successfully",
-                "message_id": result.get("message_id"),
+                "message_id": result.get(
+                    "message_id"
+                ),
                 "response": result,
             }
+
+        # ---------------------------------------------
+        # Timeout
+        # ---------------------------------------------
 
         except requests.Timeout:
 
@@ -195,6 +503,10 @@ class FCMService:
                 "message": "FCM Worker timeout",
             }
 
+        # ---------------------------------------------
+        # Connection Error
+        # ---------------------------------------------
+
         except requests.RequestException as e:
 
             logger.exception(
@@ -205,6 +517,10 @@ class FCMService:
                 "success": False,
                 "message": str(e),
             }
+
+        # ---------------------------------------------
+        # Unexpected Error
+        # ---------------------------------------------
 
         except Exception as e:
 
@@ -233,18 +549,21 @@ class FCMService:
     ):
 
         if not topic:
+
             return {
                 "success": False,
                 "message": "Topic الزامی است.",
             }
 
         if not title:
+
             return {
                 "success": False,
                 "message": "Title الزامی است.",
             }
 
         if not body:
+
             return {
                 "success": False,
                 "message": "Body الزامی است.",
@@ -260,7 +579,7 @@ class FCMService:
         )
 
     # =========================================================
-    # SEND TO SINGLE TOKEN
+    # SEND TO TOKEN
     # =========================================================
 
     @classmethod
@@ -275,18 +594,21 @@ class FCMService:
     ):
 
         if not token:
+
             return {
                 "success": False,
                 "message": "FCM Token الزامی است.",
             }
 
         if not title:
+
             return {
                 "success": False,
                 "message": "Title الزامی است.",
             }
 
         if not body:
+
             return {
                 "success": False,
                 "message": "Body الزامی است.",
@@ -300,53 +622,3 @@ class FCMService:
             image_url=image_url,
             priority=priority,
         )
-
-    # =========================================================
-    # REGISTER TOKEN
-    # =========================================================
-
-    @classmethod
-    def register_topic(cls, token, topic=None):
-        """
-        توجه:
-        Subscribe شدن به Topic از سمت Android انجام می‌شود.
-
-        Django در این معماری Firebase Admin SDK ندارد.
-        """
-
-        topic = topic or cls.TOPICS["ALL_USERS"]
-
-        logger.info(
-            "FCM topic registration requested: %s",
-            topic
-        )
-
-        return {
-            "success": True,
-            "message": (
-                "Topic subscription باید از سمت Android انجام شود."
-            ),
-            "topic": topic,
-        }
-
-    # =========================================================
-    # UNSUBSCRIBE TOKEN
-    # =========================================================
-
-    @classmethod
-    def unregister_topic(cls, token, topic=None):
-
-        topic = topic or cls.TOPICS["ALL_USERS"]
-
-        logger.info(
-            "FCM topic unregister requested: %s",
-            topic
-        )
-
-        return {
-            "success": True,
-            "message": (
-                "Topic unsubscribe باید از سمت Android انجام شود."
-            ),
-            "topic": topic,
-        }

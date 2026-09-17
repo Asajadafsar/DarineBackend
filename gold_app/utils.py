@@ -101,44 +101,7 @@ def get_world_prices():
         return None
 
 
-# =========================================================
-# GOLD PRICE
-# =========================================================
 
-
-# def get_live_gold_price():
-#     url = "https://api.wallgold.ir/api/v1/" "price?side=buy&symbol=GLD_18C_750TMN"
-
-#     try:
-#         response = requests.get(url, timeout=10)
-
-#         if response.status_code != 200:
-#             logger.error(f"Gold API Error: {response.status_code}")
-#             return None
-
-#         data = response.json()
-
-#         if not data.get("success"):
-#             logger.error("Gold API success=False")
-#             return None
-
-#         price = Decimal(str(data["result"]["price"]))
-
-#     except Exception as e:
-#         logger.error(f"Gold Price Error: {str(e)}")
-#         return None
-
-#     # offset
-#     try:
-#         from admin_panel.models import GoldPriceOffset
-
-#         offset = GoldPriceOffset.objects.filter(is_active=True).first()
-#         if offset:
-#             price = price + offset.offset_amount
-#     except Exception:
-#         pass
-
-#     return price
 
 
 # gold_app/utils.py
@@ -199,10 +162,18 @@ def write_cache(file_path, data):
 # GOLD PRICE WITH FILE CACHE (30 SECONDS)
 # =========================================================
 
+# gold_app/utils.py - فقط بخش GOLD PRICE را تغییر دهید
+
+# =========================================================
+# GOLD PRICE WITH FILE CACHE (30 SECONDS)
+# =========================================================
+
+# gold_app/utils.py
+
 def get_live_gold_price():
     """
-    دریافت قیمت لحظه‌ای طلا با کش ۳۰ ثانیه‌ای (ذخیره در فایل)
-    هر ۳۰ ثانیه یک بار از API دریافت می‌شود
+    دریافت قیمت لحظه‌ای طلا از API طلاسی (Talasea)
+    با کش ۳۰ ثانیه‌ای (ذخیره در فایل)
     """
     # ✅ خواندن از کش فایل
     cached_price = read_cache(GOLD_CACHE_FILE)
@@ -216,35 +187,39 @@ def get_live_gold_price():
         if elapsed < 30:
             return Decimal(str(cached_price))
     
-    # ✅ دریافت از API
-    url = "https://api.wallgold.ir/api/v1/price?side=buy&symbol=GLD_18C_750TMN"
+    # ✅ دریافت از API طلاسی (Talasea)
+    url = "https://api.talasea.ir/api/partners/price"
 
     try:
         response = requests.get(url, timeout=10)
 
         if response.status_code != 200:
-            logger.error(f"Gold API Error: {response.status_code}")
+            logger.error(f"Talasea API Error: {response.status_code}")
             if cached_price is not None:
                 return Decimal(str(cached_price))
             return None
 
         data = response.json()
-
-        if not data.get("success"):
-            logger.error("Gold API success=False")
+        
+        # ✅ دریافت goldPrice از پاسخ طلاسی
+        price = data.get("goldPrice")
+        
+        if price is None:
+            logger.error("goldPrice در پاسخ Talasea وجود ندارد")
             if cached_price is not None:
                 return Decimal(str(cached_price))
             return None
 
-        price = Decimal(str(data["result"]["price"]))
+        # ✅ قیمت را به تومان کامل تبدیل کن (ضرب در ۱۰۰۰)
+        price = Decimal(str(price)) * Decimal("1000")  # ← تغییر مهم!
 
     except Exception as e:
-        logger.error(f"Gold Price Error: {str(e)}")
+        logger.error(f"Talasea Gold Price Error: {str(e)}")
         if cached_price is not None:
             return Decimal(str(cached_price))
         return None
 
-    # ✅ اعمال آفست
+    # ✅ اعمال آفست (اختیاری)
     try:
         from admin_panel.models import GoldPriceOffset
         offset = GoldPriceOffset.objects.filter(is_active=True).first()
@@ -258,7 +233,6 @@ def get_live_gold_price():
     write_cache(GOLD_CACHE_TIME_FILE, now)
 
     return price
-
 
 def force_refresh_gold_price():
     """دریافت قیمت طلا بدون استفاده از کش"""
@@ -668,18 +642,40 @@ def calculate_sell_gold(
 # MONEY FORMAT
 # =========================================================
 
+# gold_app/utils.py
 
-def format_money(amount):
+# gold_app/utils.py
 
+def format_money(amount, is_gold_price=False, show_toman=True):
+    """
+    فرمت کردن مبلغ به صورت خوانا با جداکننده هزارتایی
+    
+    Args:
+        amount: مبلغ به تومان
+        is_gold_price: اگر True باشد، قیمت هر گرم به میلیون تبدیل می‌شود
+        show_toman: اگر False باشد، "تومان" نمایش داده نمی‌شود
+    
+    مثال:
+    500000 → "500,000 تومان"
+    500000, show_toman=False → "500,000"
+    23598, is_gold_price=True, show_toman=False → "23,598,000"
+    """
     try:
-
-        return "{:,}".format(int(amount))
-
+        amount = int(amount)
+        
+        # اگر is_gold_price=True باشد، قیمت را به تومان کامل تبدیل کن
+        if is_gold_price:
+            # قیمت هر گرم را به تومان کامل تبدیل کن (ضرب در ۱۰۰۰)
+            result = f"{amount:,}"
+        else:
+            result = f"{amount:,}"
+        
+        if show_toman:
+            return f"{result} تومان"
+        return result
+            
     except Exception:
-
-        return "0"
-
-
+        return "0" if not show_toman else "0 تومان"
 
 
 

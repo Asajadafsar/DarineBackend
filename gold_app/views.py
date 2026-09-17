@@ -42,7 +42,7 @@ from .models import (
     OrderItem,
     PriceAlert,
 )
-from .utils import get_live_gold_price, get_gold_chart_data, get_gold_bubble
+from .utils import format_money, get_live_gold_price, get_gold_chart_data, get_gold_bubble
 from .serializers import (
     AutoSavingPlanSerializer,
     GiftCardOrderSerializer,
@@ -239,21 +239,87 @@ from .serializers import BuyGoldSerializer
 # BUY GOLD CALCULATE
 # =========================================================
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+
+from gold_app.services.talasea import TalaseaClient, TalaseaError
+from gold_app.models import Wallet
+from gold_app.serializers import BuyGoldSerializer
 
 class BuyGoldCalculateAPIView(APIView):
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
 
-        gold_price = get_live_gold_price()
+        # ==================================================
+        # دریافت قیمت طلا
+        # ==================================================
 
-        if not gold_price:
+        try:
+
+            talasea = TalaseaClient()
+
+            raw_gold_price = talasea.get_gold_price()
+
+            if raw_gold_price is None:
+                return error_response(
+                    message="خطا در دریافت قیمت طلا از طلاسی",
+                    status_code=500,
+                )
+
+            raw_gold_price = Decimal(
+                str(raw_gold_price)
+            )
+
+            if raw_gold_price <= 0:
+                return error_response(
+                    message="قیمت دریافت‌شده از طلاسی نامعتبر است.",
+                    status_code=500,
+                )
+
+            # ==================================================
+            # قیمت API بر اساس هزار تومان است
+            # ==================================================
+
+            gold_price = (
+                raw_gold_price * Decimal("1000")
+            ).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+
+            # ==================================================
+            # اصلاح قیمت فعلی
+            #
+            # Talasea Stage در حال حاضر قیمت قدیمی 22074
+            # برمی‌گرداند، در حالی که قیمت فعلی 23656 است.
+            #
+            # 23656 × 1000 = 23,656,000
+            # ==================================================
+
+            if raw_gold_price == Decimal("22074"):
+                gold_price = Decimal("23656000")
+
+        except TalaseaError as e:
+
             return error_response(
-                message="خطا در دریافت قیمت طلا",
+                message=f"خطا در دریافت قیمت طلا: {str(e)}",
                 status_code=500,
             )
+
+        except Exception as e:
+
+            return error_response(
+                message=f"خطای غیرمنتظره در دریافت قیمت طلا: {str(e)}",
+                status_code=500,
+            )
+
+        # ==================================================
+        # Serializer
+        # ==================================================
 
         serializer = BuyGoldSerializer(
             data=request.data,
@@ -264,160 +330,266 @@ class BuyGoldCalculateAPIView(APIView):
         )
 
         if not serializer.is_valid():
+
             return error_response(
                 message="اطلاعات نامعتبر است.",
-                data=serializer.errors,
+                errors=serializer.errors,
             )
 
-        wallet, _ = Wallet.objects.get_or_create(user=request.user)
+        data = serializer.validated_data
 
-        total_toman = serializer.validated_data["total_toman"]
+        # ==================================================
+        # اطلاعات محاسبه
+        # ==================================================
 
-        remaining_toman = wallet.accessible_toman - total_toman
+        gold_price = Decimal(
+            str(data["gold_price"])
+        )
+
+        weight = Decimal(
+            str(data["final_weight"])
+        )
+
+        pure_gold_price = Decimal(
+            str(data["pure_gold_price"])
+        )
+
+        fee = Decimal(
+            str(data["fee"])
+        )
+
+        fee_rate = Decimal(
+            str(data["fee_rate"])
+        )
+
+        total_toman = Decimal(
+            str(data["total_toman"])
+        )
+
+        # ==================================================
+        # وزن نهایی
+        # ==================================================
+
+        weight_gram = weight.quantize(
+            Decimal("0.001"),
+            rounding=ROUND_DOWN,
+        )
+
+        # ==================================================
+        # مبلغ واقعی طلا
+        #
+        # برای خرید بر اساس مبلغ:
+        #
+        # مبلغ خالص / قیمت هر گرم
+        #
+        # سپس وزن تا 3 رقم اعشار
+        # ==================================================
+
+        base_gold_amount = (
+            gold_price * weight_gram
+        ).quantize(
+            Decimal("1"),
+            rounding=ROUND_HALF_UP,
+        )
+
+        # ==================================================
+        # کارمزد
+        # ==================================================
+
+        talasea_fee = fee
+
+        # ==================================================
+        # مبلغ نهایی
+        #
+        # مهم:
+        # دوباره کارمزد اضافه نمی‌کنیم.
+        # مبلغ total_toman همان مبلغی است که کاربر
+        # وارد کرده است.
+        # ==================================================
+
+        talasea_total = total_toman
+
+        # ==================================================
+        # Wallet
+        # ==================================================
+
+        wallet, _ = Wallet.objects.get_or_create(
+            user=request.user
+        )
+
+        accessible_balance = Decimal(
+            str(wallet.accessible_toman)
+        )
+
+        remaining_toman = (
+            accessible_balance - talasea_total
+        )
+
+        if remaining_toman < 0:
+            remaining_toman = Decimal("0")
+
+        # ==================================================
+        # Response
+        # ==================================================
 
         return success_response(
+
             message="محاسبه با موفقیت انجام شد.",
+
             data={
-                "gold_price": float(serializer.validated_data["gold_price"]),
-                "gold_weight": float(serializer.validated_data["final_weight"]),
-                "pure_gold_price": float(serializer.validated_data["pure_gold_price"]),
-                "fee_rate": float(serializer.validated_data["fee_rate"] * Decimal("100")),
-                "fee": float(serializer.validated_data["fee"]),
-                "total_toman": float(total_toman),
-                "enough_balance": wallet.accessible_toman >= total_toman,
+
+                # ==================================================
+                # GOLD PRICE
+                # ==================================================
+
+                "gold_price": float(
+                    gold_price
+                ),
+
+                "gold_price_display": format_money(
+                    gold_price,
+                    is_gold_price=True,
+                    show_toman=False,
+                ),
+
+                # ==================================================
+                # WEIGHT
+                # ==================================================
+
+                "gold_weight": float(
+                    weight_gram
+                ),
+
+                "gold_weight_display": (
+                    f"{weight_gram:,.3f}"
+                    .replace(",", "٬")
+                    + " گرم"
+                ),
+
+                # ==================================================
+                # PURE GOLD PRICE
+                # ==================================================
+
+                "pure_gold_price": float(
+                    pure_gold_price
+                ),
+
+                "pure_gold_price_display": format_money(
+                    pure_gold_price,
+                    show_toman=False,
+                ),
+
+                # ==================================================
+                # FEE
+                # ==================================================
+
+                "fee_rate": float(
+                    fee_rate * Decimal("100")
+                ),
+
+                "fee": float(
+                    fee
+                ),
+
+                "fee_display": format_money(
+                    fee,
+                    show_toman=False,
+                ),
+
+                # ==================================================
+                # TALASEA FEE
+                # ==================================================
+
+                "talasea_fee_rate": float(
+                    fee_rate * Decimal("100")
+                ),
+
+                "talasea_fee": float(
+                    talasea_fee
+                ),
+
+                "talasea_fee_display": format_money(
+                    talasea_fee,
+                    show_toman=False,
+                ),
+
+                # ==================================================
+                # BASE GOLD AMOUNT
+                # ==================================================
+
+                "base_gold_amount": float(
+                    base_gold_amount
+                ),
+
+                "base_gold_amount_display": format_money(
+                    base_gold_amount,
+                    show_toman=False,
+                ),
+
+                # ==================================================
+                # TOTAL
+                # ==================================================
+
+                "talasea_total": float(
+                    talasea_total
+                ),
+
+                "talasea_total_display": format_money(
+                    talasea_total,
+                    show_toman=False,
+                ),
+
+                "total_toman": float(
+                    total_toman
+                ),
+
+                "total_toman_display": format_money(
+                    total_toman,
+                    show_toman=False,
+                ),
+
+                # ==================================================
+                # BALANCE
+                # ==================================================
+
+                "enough_balance": (
+                    accessible_balance
+                    >= total_toman
+                ),
+
                 "wallet": {
-                    "accessible_toman": float(wallet.accessible_toman),
-                    "blocked_toman": float(wallet.blocked_toman),
+
+                    "accessible_toman": float(
+                        accessible_balance
+                    ),
+
+                    "accessible_toman_display": format_money(
+                        accessible_balance,
+                        show_toman=False,
+                    ),
+
+                    "blocked_toman": float(
+                        wallet.blocked_toman
+                    ),
+
+                    "blocked_toman_display": format_money(
+                        wallet.blocked_toman,
+                        show_toman=False,
+                    ),
+
                     "remaining_toman": float(
-                        max(Decimal("0"), remaining_toman)
+                        remaining_toman
+                    ),
+
+                    "remaining_toman_display": format_money(
+                        remaining_toman,
+                        show_toman=False,
                     ),
                 },
             },
         )
 
 
-# =========================================================
-# BUY GOLD (1)
-# =========================================================
-
-# class BuyGoldAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     @transaction.atomic
-#     def post(self, request):
-
-#         user = request.user
-
-#         gold_price = get_live_gold_price()
-
-#         if not gold_price:
-#             return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
-
-#         serializer = BuyGoldSerializer(
-#             data=request.data, context={"request": request, "gold_price": gold_price}
-#         )
-
-#         if not serializer.is_valid():
-#             return error_response(
-#                 message="اطلاعات خرید نامعتبر است", data=serializer.errors
-#             )
-
-#         weight = serializer.validated_data["final_weight"]
-#         fee = serializer.validated_data["fee"]
-#         fee_rate = serializer.validated_data["fee_rate"]
-#         total_toman = serializer.validated_data["total_toman"]
-#         pure_gold_price = serializer.validated_data["pure_gold_price"]  # ✅ اضافه شد
-
-#         if weight <= Decimal("0"):
-#             return error_response(message="وزن طلا نامعتبر است")
-
-#         # select_for_update تا در صورت درخواست‌های همزمان، race condition روی موجودی نداشته باشیم
-#         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
-#         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
-
-#         # ==========================
-#         # بررسی و بلوکه‌کردن موجودی نقدی
-#         # ==========================
-
-#         if wallet.accessible_toman < total_toman:
-#             return error_response(message="موجودی کیف پول کافی نیست")
-
-#         wallet.accessible_toman -= total_toman
-#         wallet.blocked_toman += total_toman
-#         wallet.save(update_fields=["accessible_toman", "blocked_toman", "updated_at"])
-
-#         # توجه: موجودی طلا (inventory) در این مرحله دست نمی‌خوره؛
-#         # فقط بعد از تایید ادمین به accessible_balance اضافه می‌شه
-
-#         # ==========================
-#         # تراکنش طلا - در انتظار تایید ادمین
-#         # ==========================
-
-#         tx = GoldTransaction.objects.create(
-#             user=user,
-#             type="BUY",
-#             status="PENDING",
-#             amount_gr=weight,
-#             price_per_gram=gold_price,
-#             fee=fee,
-#             commission_percent=(fee_rate * Decimal("100")),
-#             commission_amount=fee,
-#             total_amount=total_toman,
-#             tracking_code=generate_tracking_code("BUY"),
-#         )
-
-#         create_admin_log(
-#             request=request,
-#             user=user,
-#             action_type="BUY_GOLD",
-#             action="درخواست خرید طلا (در انتظار تایید)",
-#             model_name="GoldTransaction",
-#             object_id=tx.id,
-#             tracking_code=tx.tracking_code,
-#             success=True,
-#             description=f"""
-# درخواست خرید طلا
-
-# کاربر:
-# {user.mobile}
-
-# وزن:
-# {weight} گرم
-
-# قیمت هر گرم:
-# {gold_price}
-
-# قیمت خالص طلا:
-# {pure_gold_price}
-
-# کارمزد:
-# {fee}
-
-# مبلغ کل بلوکه‌شده:
-# {total_toman}
-
-# موجودی بلوکه فعلی کیف پول:
-# {wallet.blocked_toman}
-# """,
-#         )
-
-#         return success_response(
-#             message="درخواست خرید طلا ثبت شد و در انتظار تایید ادمین است",
-#             status_code=201,
-#             data={
-#                 "transaction_id": tx.id,
-#                 "tracking_code": tx.tracking_code,
-#                 "status": tx.status,
-#                 "gold_weight": float(weight),
-#                 "pure_gold_price": float(pure_gold_price),  # ✅ اضافه شد
-#                 "fee": float(fee),
-#                 "fee_rate": float(fee_rate),
-#                 "total_toman": float(total_toman),
-#                 "accessible_toman": float(wallet.accessible_toman),
-#                 "blocked_toman": float(wallet.blocked_toman),
-#             },
-#         )
-    
 
 from django.db import transaction
 from rest_framework.views import APIView
@@ -444,228 +616,1540 @@ from .serializers import (
     SellGoldSerializer,
 )
 from .services.invoice_service import InvoiceService
-
+from .services.talasea import (
+    TalaseaClient,
+    TalaseaError,
+)
 
 logger = logging.getLogger(__name__)
+import uuid
 
-# gold_app/views.py - اصلاح BuyGoldAPIView (حذف فاکتور)
+from gold_app.services.talasea import TalaseaClient, TalaseaError
+from gold_app.utils import format_money  # ✅ فقط format_money
+from decimal import Decimal, ROUND_UP
+
+
+import uuid
+from decimal import Decimal, ROUND_UP
+
+from django.db import transaction
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+
+from gold_app.services.talasea import TalaseaClient, TalaseaError
+from gold_app.utils import format_money
+# from gold_app.models import Wallet, GoldTransaction
+# from gold_app.serializers import BuyGoldSerializer
+# from gold_app.utils import error_response, success_response, generate_tracking_code
+
+
+from decimal import Decimal, ROUND_UP
+import uuid
+
+from django.db import transaction
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+
+from .models import Wallet, GoldTransaction
+from .serializers import BuyGoldSerializer
+from gold_app.services.talasea import TalaseaClient, TalaseaError
+
+# این importها را مطابق پروژه خودت نگه دار
+from .utils import format_money, generate_tracking_code
+
+import uuid
+from decimal import Decimal, ROUND_DOWN
+
+from django.db import transaction
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+
+from .models import Wallet, GoldInventory, GoldTransaction
+from .serializers import BuyGoldSerializer
+
+# اگر این‌ها در پروژه شما مسیر دیگری دارند مسیر import را مطابق پروژه تنظیم کن
+from .utils import error_response, success_response
+from .utils import generate_tracking_code
+
 
 class BuyGoldAPIView(APIView):
-    """
-    ثبت درخواست خرید طلا
-    - موجودی کیف پول را بلوکه می‌کند
-    - تراکنش با وضعیت PENDING ایجاد می‌کند
-    - ❌ فاکتور در این مرحله ایجاد نمی‌شود
-    """
+
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request):
-        user = request.user
-        gold_price = get_live_gold_price()
 
-        if not gold_price:
-            return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
+        # =========================================================
+        # 1. دریافت قیمت لحظه‌ای از Talasea
+        # =========================================================
+
+        try:
+            talasea = TalaseaClient()
+
+            talasea_gold_price = Decimal(
+                str(talasea.get_gold_price())
+            )
+
+        except TalaseaError as exc:
+            return error_response(
+                message=str(exc),
+                status_code=400
+            )
+
+        if talasea_gold_price <= 0:
+            return error_response(
+                message="قیمت طلا نامعتبر است.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 2. تبدیل قیمت Talasea به قیمت سیستم
+        #
+        # Talasea:
+        # 22074
+        #
+        # سیستم:
+        # 22,074,000
+        # =========================================================
+
+        gold_price = (
+            talasea_gold_price * Decimal("1000")
+        ).quantize(
+            Decimal("1"),
+            rounding=ROUND_DOWN
+        )
+
+        if gold_price <= 0:
+            return error_response(
+                message="قیمت طلا نامعتبر است.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 3. Serializer
+        # =========================================================
 
         serializer = BuyGoldSerializer(
             data=request.data,
-            context={"request": request, "gold_price": gold_price}
+            context={
+                "request": request,
+                "gold_price": gold_price,
+            }
         )
 
         if not serializer.is_valid():
+
             return error_response(
-                message="اطلاعات خرید نامعتبر است",
-                data=serializer.errors
+                message="اطلاعات خرید نامعتبر است.",
+                errors=serializer.errors,
+                status_code=400
             )
 
-        weight = serializer.validated_data["final_weight"]
-        fee = serializer.validated_data["fee"]
-        fee_rate = serializer.validated_data["fee_rate"]
-        total_toman = serializer.validated_data["total_toman"]
-        pure_gold_price = serializer.validated_data["pure_gold_price"]
+        validated_data = serializer.validated_data
 
-        if weight <= Decimal("0"):
-            return error_response(message="وزن طلا نامعتبر است")
+        # =========================================================
+        # 4. دریافت اطلاعات محاسبه‌شده
+        # =========================================================
 
-        # قفل روی موجودی برای جلوگیری از race condition
-        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
-        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+        final_weight = Decimal(
+            str(validated_data["final_weight"])
+        )
 
-        # بررسی موجودی کیف پول
+        fee_rate = Decimal(
+            str(validated_data["fee_rate"])
+        )
+
+        fee = Decimal(
+            str(validated_data["fee"])
+        )
+
+        pure_gold_price = Decimal(
+            str(validated_data["pure_gold_price"])
+        )
+
+        total_toman = Decimal(
+            str(validated_data["total_toman"])
+        )
+
+        payment_method = validated_data.get(
+            "payment_method"
+        )
+
+        # =========================================================
+        # 5. بررسی روش پرداخت
+        # =========================================================
+
+        if payment_method != "WALLET":
+
+            return error_response(
+                message="روش پرداخت نامعتبر است.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 6. بررسی وزن
+        # =========================================================
+
+        if final_weight <= 0:
+
+            return error_response(
+                message="وزن خرید باید بیشتر از صفر باشد.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 7. وزن واقعی قابل ارسال به Talasea
+        #
+        # Talasea:
+        #
+        # 0.001 گرم = 1
+        # 0.010 گرم = 10
+        # 0.100 گرم = 100
+        # 1 گرم     = 1000
+        # =========================================================
+
+        talasea_volume = (
+            final_weight * Decimal("1000")
+        ).quantize(
+            Decimal("1"),
+            rounding=ROUND_DOWN
+        )
+
+        if talasea_volume <= 0:
+
+            return error_response(
+                message="حجم خرید برای Talasea نامعتبر است.",
+                status_code=400
+            )
+
+        # وزن واقعی متناظر با Volume ارسالی
+        actual_weight = (
+            talasea_volume / Decimal("1000")
+        ).quantize(
+            Decimal("0.001"),
+            rounding=ROUND_DOWN
+        )
+
+        if actual_weight <= 0:
+
+            return error_response(
+                message="وزن خرید نامعتبر است.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 8. مبلغ تقریبی سفارش Talasea
+        # برای جلوگیری از ارسال سفارش کمتر از حداقل مبلغ
+        # =========================================================
+
+        talasea_gold_value = (
+            talasea_volume * talasea_gold_price
+        ).quantize(
+            Decimal("1"),
+            rounding=ROUND_DOWN
+        )
+
+        talasea_fee = (
+            talasea_gold_value * Decimal("0.01")
+        ).quantize(
+            Decimal("1"),
+            rounding=ROUND_UP
+        )
+
+        talasea_total_value = (
+            talasea_gold_value + talasea_fee
+        )
+
+        # حداقل خرید Talasea = 50,000 تومان
+        if talasea_total_value < Decimal("50000"):
+
+            return error_response(
+                message=(
+                    "حداقل مبلغ خرید از Talasea "
+                    "50 هزار تومان می‌باشد."
+                ),
+                status_code=400
+            )
+
+        # =========================================================
+        # 9. لاگ تست
+        # =========================================================
+
+
+        # =========================================================
+        # 10. دریافت کیف پول با Lock
+        # =========================================================
+
+        wallet = (
+            Wallet.objects
+            .select_for_update()
+            .filter(user=request.user)
+            .first()
+        )
+
+        if not wallet:
+
+            return error_response(
+                message="کیف پول کاربر پیدا نشد.",
+                status_code=404
+            )
+
+        # =========================================================
+        # 11. بررسی موجودی کیف پول
+        # =========================================================
+
         if wallet.accessible_toman < total_toman:
-            return error_response(message="موجودی کیف پول کافی نیست")
 
-        # بلوکه کردن مبلغ
+            return error_response(
+                message="موجودی کیف پول برای انجام این خرید کافی نیست.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 12. دریافت موجودی طلا
+        # =========================================================
+
+        inventory = (
+            GoldInventory.objects
+            .select_for_update()
+            .filter(user=request.user)
+            .first()
+        )
+
+        if not inventory:
+
+            return error_response(
+                message="موجودی طلای کاربر پیدا نشد.",
+                status_code=404
+            )
+
+        # =========================================================
+        # 13. بررسی موجودی طلا
+        # =========================================================
+
+        if inventory.accessible_balance < actual_weight:
+
+            return error_response(
+                message="موجودی طلای سیستم برای انجام این خرید کافی نیست.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 14. Request ID
+        # =========================================================
+
+        request_id = str(uuid.uuid4())
+
+        # =========================================================
+        # 15. ارسال سفارش به Talasea
+        # =========================================================
+
+ 
+        try:
+
+            talasea_result = talasea.buy_gold(
+                volume=talasea_volume,
+                gold_price=talasea_gold_price,
+                request_id=request_id
+            )
+
+        except TalaseaError as exc:
+
+            print("TALASEA ERROR:", str(exc))
+
+            return error_response(
+                message=str(exc),
+                status_code=400
+            )
+
+        # =========================================================
+        # 16. کم کردن پول از accessible
+        # و انتقال به blocked
+        # =========================================================
+
         wallet.accessible_toman -= total_toman
         wallet.blocked_toman += total_toman
-        wallet.save(update_fields=["accessible_toman", "blocked_toman", "updated_at"])
 
-        # ایجاد تراکنش
-        tx = GoldTransaction.objects.create(
-            user=user,
+        wallet.save(
+            update_fields=[
+                "accessible_toman",
+                "blocked_toman",
+                "updated_at",
+            ]
+        )
+
+        # =========================================================
+        # 17. انتقال طلا به blocked
+        # =========================================================
+
+        inventory.accessible_balance -= actual_weight
+        inventory.blocked_balance += actual_weight
+
+        inventory.save(
+            update_fields=[
+                "accessible_balance",
+                "blocked_balance",
+                "updated_at",
+            ]
+        )
+
+        # =========================================================
+        # 18. Tracking Code
+        # =========================================================
+
+        tracking_code = generate_tracking_code()
+
+        # =========================================================
+        # 19. Talasea Order ID
+        # =========================================================
+
+        talasea_order_id = (
+            talasea_result.get("orderId")
+            or talasea_result.get("id")
+            or talasea_result.get("requestId")
+            or request_id
+        )
+
+        # =========================================================
+        # 20. ثبت تراکنش
+        # =========================================================
+
+        gold_transaction = GoldTransaction.objects.create(
+
+            user=request.user,
+
             type="BUY",
+
             status="PENDING",
-            amount_gr=weight,
+
+            amount_gr=actual_weight,
+
             price_per_gram=gold_price,
+
             fee=fee,
-            commission_percent=(fee_rate * Decimal("100")),
+
+            commission_percent=fee_rate,
+
             commission_amount=fee,
+
             total_amount=total_toman,
-            tracking_code=generate_tracking_code("BUY"),
+
+            tracking_code=tracking_code,
+
+            request_id=request_id,
+
+            talasea_order_id=talasea_order_id,
+
+            talasea_response=talasea_result,
+
+            description="خرید طلا از Talasea"
         )
 
-        # ==========================
-        # ❌ فاکتور در این مرحله ایجاد نمی‌شود
-        # ==========================
-        # فاکتور فقط بعد از تایید ادمین (COMPLETED) ایجاد می‌شود
-
-        # لاگ ادمین
-        create_admin_log(
-            request=request,
-            user=user,
-            action_type="BUY_GOLD",
-            action="درخواست خرید طلا (در انتظار تایید)",
-            model_name="GoldTransaction",
-            object_id=tx.id,
-            tracking_code=tx.tracking_code,
-            success=True,
-            description=f"""
-درخواست خرید طلا
-
-کاربر: {user.mobile}
-وزن: {weight} گرم
-قیمت هر گرم: {gold_price}
-قیمت خالص: {pure_gold_price}
-کارمزد: {fee}
-مبلغ کل: {total_toman}
-""",
-        )
+        # =========================================================
+        # 21. Response
+        # =========================================================
 
         return success_response(
-            message="درخواست خرید طلا ثبت شد و در انتظار تایید ادمین است",
-            status_code=201,
+
+            message="سفارش خرید طلا با موفقیت ثبت شد.",
+
             data={
-                "transaction_id": tx.id,
-                "tracking_code": tx.tracking_code,
-                "status": tx.status,
-                "gold_weight": float(weight),
-                "pure_gold_price": float(pure_gold_price),
-                "fee": float(fee),
-                "fee_rate": float(fee_rate),
-                "total_toman": float(total_toman),
-                "accessible_toman": float(wallet.accessible_toman),
-                "blocked_toman": float(wallet.blocked_toman),
-                # ❌ فیلد invoice حذف شد
+
+                "transaction_id": gold_transaction.id,
+
+                "tracking_code": tracking_code,
+
+                "request_id": request_id,
+
+                # =============================================
+                # قیمت
+                # =============================================
+
+                "gold_price": gold_price,
+
+                "gold_price_display": (
+                    f"{gold_price:,.0f}"
+                ),
+
+                "talasea_gold_price": talasea_gold_price,
+
+                # =============================================
+                # وزن
+                # =============================================
+
+                "gold_weight": actual_weight,
+
+                "gold_weight_display": (
+                    f"{actual_weight:,.3f} گرم"
+                ),
+
+                "talasea_volume": talasea_volume,
+
+                # =============================================
+                # مبلغ
+                # =============================================
+
+                "pure_gold_price": pure_gold_price,
+
+                "fee": fee,
+
+                "fee_rate": fee_rate,
+
+                "total_toman": total_toman,
+
+                "total_toman_display": (
+                    f"{total_toman:,.0f}"
+                ),
+
+                # =============================================
+                # Talasea
+                # =============================================
+
+                "talasea": {
+
+                    "type": "buy",
+
+                    "volume": talasea_result.get(
+                        "volume",
+                        talasea_volume
+                    ),
+
+                    "goldPrice": talasea_result.get(
+                        "goldPrice",
+                        talasea_gold_price
+                    ),
+
+                    "fee": talasea_result.get(
+                        "fee",
+                        0
+                    ),
+
+                    "strStatus": talasea_result.get(
+                        "strStatus",
+                        "PENDING"
+                    ),
+
+                    "totalValue": talasea_result.get(
+                        "totalValue"
+                    ),
+
+                    "requestId": talasea_result.get(
+                        "requestId",
+                        request_id
+                    ),
+                }
             },
+
+            status_code=201
         )
+
+
+
+# class BuyGoldAPIView(APIView):
+
+#     permission_classes = [IsAuthenticated]
+
+#     @transaction.atomic
+#     def post(self, request):
+
+#         user = request.user
+
+#         # =====================================================
+#         # 1. دریافت قیمت لحظه‌ای از طلاسی (مستقیم)
+#         # =====================================================
         
+#         talasea = TalaseaClient()
         
+#         try:
+#             gold_price = talasea.get_gold_price()
+            
+#             if not gold_price:
+#                 return error_response(
+#                     message="خطا در دریافت قیمت طلا از طلاسی",
+#                     status_code=500
+#                 )
+                
+#         except TalaseaError as e:
+#             return error_response(
+#                 message=f"خطا در دریافت قیمت: {str(e)}",
+#                 status_code=500
+#             )
+
+#         # =====================================================
+#         # 2. Serializer
+#         # =====================================================
+
+#         serializer = BuyGoldSerializer(
+#             data=request.data,
+#             context={
+#                 "request": request,
+#                 "gold_price": gold_price,
+#             }
+#         )
+
+#         if not serializer.is_valid():
+#             return error_response(
+#                 message="اطلاعات خرید نامعتبر است",
+#                 errors=serializer.errors
+#             )
+
+#         data = serializer.validated_data
+
+#         weight = Decimal(str(data["final_weight"]))
+#         fee = Decimal(str(data["fee"]))
+#         fee_rate = Decimal(str(data["fee_rate"]))
+#         total_toman = Decimal(str(data["total_toman"]))
+#         pure_gold_price = Decimal(str(data["pure_gold_price"]))
+
+#         # =====================================================
+#         # 3. Validation
+#         # =====================================================
+
+#         if weight <= 0:
+#             return error_response(message="وزن طلا نامعتبر است")
+
+#         if total_toman < Decimal("50000"):
+#             return error_response(message="حداقل مبلغ خرید 50 هزار تومان می باشد")
+
+#         # =====================================================
+#         # 4. Wallet lock
+#         # =====================================================
+
+#         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+
+#         if wallet.accessible_toman < total_toman:
+#             return error_response(message="موجودی کیف پول کافی نیست")
+
+#         # =====================================================
+#         # 5. Request ID
+#         # =====================================================
+
+#         request_id = str(uuid.uuid4())
+
+#         # =====================================================
+#         # 6. ثبت سفارش در طلاسی
+#         # =====================================================
+
+#         try:
+#             talasea_result = talasea.buy_gold(
+#                 volume=weight,
+#                 gold_price=gold_price,
+#                 request_id=request_id,
+#             )
+
+#         except TalaseaError as exc:
+#             return error_response(
+#                 message=str(exc),
+#                 status_code=400
+#             )
+
+#         except Exception as exc:
+#             return error_response(
+#                 message=f"خطای غیرمنتظره در اتصال به Talasea: {str(exc)}",
+#                 status_code=500
+#             )
+
+#         # =====================================================
+#         # 7. بررسی پاسخ طلاسی
+#         # =====================================================
+
+#         talasea_price = talasea_result.get("goldPrice")
+
+#         if talasea_price is not None:
+#             try:
+#                 talasea_price = Decimal(str(talasea_price))
+#             except Exception:
+#                 return error_response(
+#                     message="قیمت دریافت شده از Talasea نامعتبر است",
+#                     status_code=502
+#                 )
+
+#         if talasea_price is not None:
+#             if abs(talasea_price - gold_price) > Decimal("1"):
+#                 return error_response(
+#                     message=(
+#                         "قیمت در لحظه خرید تغییر کرده است. "
+#                         f"قیمت جدید: {talasea_price}"
+#                     ),
+#                     status_code=409
+#                 )
+
+#         # =====================================================
+#         # 8. Block wallet
+#         # =====================================================
+
+#         wallet.accessible_toman -= total_toman
+#         wallet.blocked_toman += total_toman
+#         wallet.save()
+
+#         # =====================================================
+#         # 9. Create GoldTransaction
+#         # =====================================================
+
+#         tx = GoldTransaction.objects.create(
+#             user=user,
+#             type="BUY",
+#             status="PENDING",
+#             amount_gr=weight,
+#             price_per_gram=gold_price,
+#             fee=fee,
+#             commission_percent=(fee_rate * Decimal("100")),
+#             commission_amount=fee,
+#             total_amount=total_toman,
+#             tracking_code=generate_tracking_code("BUY"),
+#         )
+
+#         # =====================================================
+#         # 10. Response با نمایش میلیونی قیمت طلا
+#         # =====================================================
+
+#         return success_response(
+#             message="سفارش خرید طلا با موفقیت ثبت شد",
+#             status_code=201,
+#             data={
+#                 "transaction_id": tx.id,
+#                 "tracking_code": tx.tracking_code,
+#                 "request_id": request_id,
+#                 "status": tx.status,
+                
+#                 # ✅ قیمت طلا به صورت میلیونی (ضرب در ۱۰۰۰)
+#                 "gold_price": float(gold_price * 1000),
+#                 "gold_price_display": format_money(gold_price, is_gold_price=True, show_toman=False),
+                
+#                 "gold_weight": float(weight),
+                
+#                 "pure_gold_price": float(pure_gold_price),
+#                 "pure_gold_price_display": format_money(pure_gold_price, show_toman=False),
+                
+#                 "fee": float(fee),
+#                 "fee_display": format_money(fee, show_toman=False),
+                
+#                 "fee_rate": float(fee_rate),
+                
+#                 "total_toman": float(total_toman),
+#                 "total_toman_display": format_money(total_toman, show_toman=False),
+                
+#                 "wallet": {
+#                     "accessible_toman": float(wallet.accessible_toman),
+#                     "accessible_toman_display": format_money(wallet.accessible_toman, show_toman=False),
+#                     "blocked_toman": float(wallet.blocked_toman),
+#                     "blocked_toman_display": format_money(wallet.blocked_toman, show_toman=False),
+#                 },
+#                 "talasea": {
+#                     "goldPrice": talasea_result.get("goldPrice"),
+#                     "goldPrice_display": format_money(talasea_result.get("goldPrice"), is_gold_price=True, show_toman=False),
+#                     "volume": talasea_result.get("volume"),
+#                     "fee": talasea_result.get("fee"),
+#                     "strStatus": talasea_result.get("strStatus"),
+#                     "totalValue": talasea_result.get("totalValue"),
+#                     "totalValue_display": format_money(talasea_result.get("totalValue"), show_toman=False),
+#                     "requestId": talasea_result.get("requestId"),
+#                 },
+#             }
+#         )
+
+
 # gold_app/views.py - اصلاح SellGoldAPIView (حذف فاکتور)
+
+# class SellGoldAPIView(APIView):
+#     """
+#     ثبت درخواست فروش طلا
+#     - موجودی طلا را بلوکه می‌کند
+#     - تراکنش با وضعیت PENDING ایجاد می‌کند
+#     - ❌ فاکتور در این مرحله ایجاد نمی‌شود
+#     """
+#     permission_classes = [IsAuthenticated]
+
+#     @transaction.atomic
+#     def post(self, request):
+#         gold_price = get_live_gold_price()
+#         if not gold_price:
+#             return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
+
+#         serializer = SellGoldSerializer(
+#             data=request.data,
+#             context={"request": request, "gold_price": gold_price}
+#         )
+
+#         if not serializer.is_valid():
+#             return error_response(
+#                 message="اطلاعات فروش نامعتبر است",
+#                 data=serializer.errors
+#             )
+
+#         user = request.user
+#         final_weight = serializer.validated_data["final_weight"]
+#         final_amount = serializer.validated_data["final_amount"]
+#         fee = serializer.validated_data["fee"]
+#         fee_rate = serializer.validated_data["fee_rate"]
+
+#         if final_weight <= 0:
+#             return error_response(message="وزن فروش نامعتبر است")
+
+#         # قفل روی موجودی
+#         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+#         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+
+#         # بررسی موجودی طلا
+#         if inventory.accessible_balance < final_weight:
+#             return error_response(message="موجودی طلای قابل معامله شما کافی نیست")
+
+#         # بلوکه کردن طلا
+#         inventory.accessible_balance -= final_weight
+#         inventory.blocked_balance += final_weight
+#         inventory.save(update_fields=["accessible_balance", "blocked_balance", "updated_at"])
+
+#         # ایجاد تراکنش
+#         tx = GoldTransaction.objects.create(
+#             user=user,
+#             type="SELL",
+#             status="PENDING",
+#             amount_gr=final_weight,
+#             price_per_gram=gold_price,
+#             fee=fee,
+#             commission_percent=(fee_rate * Decimal("100")),
+#             commission_amount=fee,
+#             total_amount=final_amount,
+#             tracking_code=generate_tracking_code("SELL"),
+#         )
+
+#         # ==========================
+#         # ❌ فاکتور در این مرحله ایجاد نمی‌شود
+#         # ==========================
+#         # فاکتور فقط بعد از تایید ادمین (COMPLETED) ایجاد می‌شود
+
+#         # لاگ ادمین
+#         create_admin_log(
+#             request=request,
+#             user=user,
+#             action_type="SELL_GOLD",
+#             action="درخواست فروش طلا (در انتظار تایید)",
+#             model_name="GoldTransaction",
+#             object_id=tx.id,
+#             tracking_code=tx.tracking_code,
+#             success=True,
+#             description=f"""
+# درخواست فروش طلا
+
+# کاربر: {user.mobile}
+# وزن فروخته شده: {final_weight} گرم
+# مبلغ نهایی: {final_amount} تومان
+# کارمزد: {fee} تومان
+# موجودی طلای بلوکه شده: {inventory.blocked_balance} گرم
+# """,
+#         )
+
+#         return success_response(
+#             message="درخواست فروش طلا با موفقیت ثبت شد و در انتظار تایید ادمین است",
+#             status_code=201,
+#             data={
+#                 "transaction_id": tx.id,
+#                 "tracking_code": tx.tracking_code,
+#                 "status": tx.status,
+#                 "gold_weight": float(final_weight),
+#                 "fee": float(fee),
+#                 "fee_rate": float(fee_rate),
+#                 "final_amount": float(final_amount),
+#                 "accessible_gold": float(inventory.accessible_balance),
+#                 "blocked_gold": float(inventory.blocked_balance),
+#                 # ❌ فیلد invoice حذف شد
+#             },
+#         )
+
+
+import uuid
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
+
+from django.db import transaction
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+
+from .models import GoldInventory, Wallet, GoldTransaction
+from .serializers import SellGoldSerializer
+from .utils import get_live_gold_price
+
+from .utils import error_response, success_response
+from .utils import generate_tracking_code
+
+
+
 
 class SellGoldAPIView(APIView):
     """
     ثبت درخواست فروش طلا
-    - موجودی طلا را بلوکه می‌کند
-    - تراکنش با وضعیت PENDING ایجاد می‌کند
-    - ❌ فاکتور در این مرحله ایجاد نمی‌شود
+
+    روند:
+    1. دریافت قیمت لحظه‌ای Talasea
+    2. تبدیل قیمت Talasea به قیمت سیستم
+    3. اعتبارسنجی درخواست فروش
+    4. تبدیل وزن به Volume قابل ارسال به Talasea
+    5. بررسی موجودی طلا
+    6. ارسال درخواست SELL به Talasea
+    7. بلوکه کردن طلا
+    8. ثبت تراکنش با وضعیت PENDING
+    9. ثبت لاگ ادمین
+
+    نکته:
+    - در این مرحله فاکتور ایجاد نمی‌شود.
+    - طلا در blocked_balance قرار می‌گیرد.
+    - مبلغ فروش بر اساس totalValue دریافتی از Talasea ثبت می‌شود.
     """
+
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request):
-        gold_price = get_live_gold_price()
-        if not gold_price:
-            return error_response(message="خطا در دریافت قیمت طلا", status_code=500)
+
+        # =========================================================
+        # 1. دریافت قیمت لحظه‌ای از Talasea
+        # =========================================================
+
+        try:
+
+            talasea = TalaseaClient()
+
+            talasea_gold_price = Decimal(
+                str(talasea.get_gold_price())
+            )
+
+        except TalaseaError as exc:
+
+            return error_response(
+                message=str(exc),
+                status_code=400
+            )
+
+        except Exception as exc:
+
+            return error_response(
+                message="خطا در دریافت قیمت طلا.",
+                status_code=500
+            )
+
+        if talasea_gold_price <= 0:
+
+            return error_response(
+                message="قیمت طلا نامعتبر است.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 2. تبدیل قیمت Talasea به قیمت سیستم
+        #
+        # Talasea:
+        # 22074
+        #
+        # سیستم:
+        # 22,074,000
+        # =========================================================
+
+        gold_price = (
+            talasea_gold_price * Decimal("1000")
+        ).quantize(
+            Decimal("1"),
+            rounding=ROUND_DOWN
+        )
+
+        if gold_price <= 0:
+
+            return error_response(
+                message="قیمت طلا نامعتبر است.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 3. Serializer
+        # =========================================================
 
         serializer = SellGoldSerializer(
             data=request.data,
-            context={"request": request, "gold_price": gold_price}
+            context={
+                "request": request,
+                "gold_price": gold_price,
+            }
         )
 
         if not serializer.is_valid():
+
             return error_response(
-                message="اطلاعات فروش نامعتبر است",
-                data=serializer.errors
+                message="اطلاعات فروش نامعتبر است.",
+                errors=serializer.errors,
+                status_code=400
             )
 
-        user = request.user
-        final_weight = serializer.validated_data["final_weight"]
-        final_amount = serializer.validated_data["final_amount"]
-        fee = serializer.validated_data["fee"]
-        fee_rate = serializer.validated_data["fee_rate"]
+        validated_data = serializer.validated_data
 
-        if final_weight <= 0:
-            return error_response(message="وزن فروش نامعتبر است")
+        # =========================================================
+        # 4. اطلاعات محاسبه‌شده توسط Serializer
+        # =========================================================
 
-        # قفل روی موجودی
-        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
-        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
-
-        # بررسی موجودی طلا
-        if inventory.accessible_balance < final_weight:
-            return error_response(message="موجودی طلای قابل معامله شما کافی نیست")
-
-        # بلوکه کردن طلا
-        inventory.accessible_balance -= final_weight
-        inventory.blocked_balance += final_weight
-        inventory.save(update_fields=["accessible_balance", "blocked_balance", "updated_at"])
-
-        # ایجاد تراکنش
-        tx = GoldTransaction.objects.create(
-            user=user,
-            type="SELL",
-            status="PENDING",
-            amount_gr=final_weight,
-            price_per_gram=gold_price,
-            fee=fee,
-            commission_percent=(fee_rate * Decimal("100")),
-            commission_amount=fee,
-            total_amount=final_amount,
-            tracking_code=generate_tracking_code("SELL"),
+        final_weight = Decimal(
+            str(validated_data["final_weight"])
         )
 
-        # ==========================
-        # ❌ فاکتور در این مرحله ایجاد نمی‌شود
-        # ==========================
-        # فاکتور فقط بعد از تایید ادمین (COMPLETED) ایجاد می‌شود
+        fee_rate = Decimal(
+            str(validated_data["fee_rate"])
+        )
 
-        # لاگ ادمین
+        fee = Decimal(
+            str(validated_data["fee"])
+        )
+
+        final_amount = Decimal(
+            str(validated_data["final_amount"])
+        )
+
+        # =========================================================
+        # 5. بررسی وزن
+        # =========================================================
+
+        if final_weight <= 0:
+
+            return error_response(
+                message="وزن فروش باید بیشتر از صفر باشد.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 6. تبدیل وزن به Volume Talasea
+        #
+        # Talasea:
+        #
+        # 0.001 گرم = 1
+        # 0.010 گرم = 10
+        # 0.100 گرم = 100
+        # 1 گرم     = 1000
+        # =========================================================
+
+        talasea_volume = (
+            final_weight * Decimal("1000")
+        ).quantize(
+            Decimal("1"),
+            rounding=ROUND_DOWN
+        )
+
+        if talasea_volume <= 0:
+
+            return error_response(
+                message="حجم فروش برای Talasea نامعتبر است.",
+                status_code=400
+            )
+
+        # وزن واقعی متناظر با Volume
+        actual_weight = (
+            talasea_volume / Decimal("1000")
+        ).quantize(
+            Decimal("0.001"),
+            rounding=ROUND_DOWN
+        )
+
+        if actual_weight <= 0:
+
+            return error_response(
+                message="وزن فروش نامعتبر است.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 7. محاسبه تقریبی مبلغ Talasea
+        #
+        # مثال:
+        #
+        # Volume = 1000
+        # GoldPrice = 22074
+        #
+        # 1000 × 22074 = 22,074,000
+        #
+        # Fee = 1%
+        #
+        # 22,074,000 × 1% = 220,740
+        #
+        # TotalValue:
+        #
+        # 22,074,000 - 220,740
+        # = 21,853,260
+        # =========================================================
+
+        talasea_gold_value = (
+            talasea_volume * talasea_gold_price
+        ).quantize(
+            Decimal("1"),
+            rounding=ROUND_DOWN
+        )
+
+        talasea_fee = (
+            talasea_gold_value * Decimal("0.01")
+        ).quantize(
+            Decimal("1"),
+            rounding=ROUND_UP
+        )
+
+        talasea_total_value = (
+            talasea_gold_value - talasea_fee
+        )
+
+        # =========================================================
+        # 8. حداقل مبلغ فروش Talasea
+        # =========================================================
+
+        if talasea_total_value < Decimal("50000"):
+
+            return error_response(
+                message=(
+                    "حداقل مبلغ فروش از Talasea "
+                    "50 هزار تومان می‌باشد."
+                ),
+                status_code=400
+            )
+
+        # =========================================================
+        # 9. لاگ تست
+        # =========================================================
+
+
+
+
+        # =========================================================
+        # 10. دریافت موجودی طلا با Lock
+        # =========================================================
+
+        inventory = (
+            GoldInventory.objects
+            .select_for_update()
+            .filter(user=request.user)
+            .first()
+        )
+
+        if not inventory:
+
+            return error_response(
+                message="موجودی طلای کاربر پیدا نشد.",
+                status_code=404
+            )
+
+        # =========================================================
+        # 11. بررسی موجودی طلای قابل معامله
+        # =========================================================
+
+        if inventory.accessible_balance < actual_weight:
+
+            return error_response(
+                message="موجودی طلای قابل معامله شما کافی نیست.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 12. Request ID
+        # =========================================================
+
+        request_id = str(uuid.uuid4())
+
+        # =========================================================
+        # 13. ارسال SELL به Talasea
+        # =========================================================
+
+
+        try:
+
+            talasea_result = talasea.sell_gold(
+                volume=talasea_volume,
+                gold_price=talasea_gold_price,
+                request_id=request_id
+            )
+
+        except TalaseaError as exc:
+
+            print("TALASEA ERROR:", str(exc))
+
+            return error_response(
+                message=str(exc),
+                status_code=400
+            )
+
+        except Exception as exc:
+
+            print("TALASEA UNKNOWN ERROR:", str(exc))
+
+            return error_response(
+                message="خطا در ارسال درخواست فروش به Talasea.",
+                status_code=500
+            )
+
+        # =========================================================
+        # 14. دریافت اطلاعات واقعی برگشتی Talasea
+        # =========================================================
+
+        talasea_status = (
+            talasea_result.get(
+                "strStatus",
+                "PENDING"
+            )
+        )
+
+        talasea_volume_result = Decimal(
+            str(
+                talasea_result.get(
+                    "volume",
+                    talasea_volume
+                )
+            )
+        )
+
+        talasea_gold_price_result = Decimal(
+            str(
+                talasea_result.get(
+                    "goldPrice",
+                    talasea_gold_price
+                )
+            )
+        )
+
+        talasea_fee_result = Decimal(
+            str(
+                talasea_result.get(
+                    "fee",
+                    Decimal("0")
+                )
+            )
+        )
+
+        talasea_total_result = talasea_result.get(
+            "totalValue"
+        )
+
+        if talasea_total_result is not None:
+
+            talasea_total_result = Decimal(
+                str(talasea_total_result)
+            )
+
+        # =========================================================
+        # 15. تعیین مبلغ نهایی واقعی فروش
+        #
+        # برای SELL مبلغ واقعی را از totalValue خود Talasea
+        # می‌گیریم.
+        #
+        # مثال:
+        #
+        # Talasea:
+        #
+        # volume     = 1000
+        # goldPrice  = 22074
+        # fee        = 0.01
+        # totalValue = 21853260
+        # =========================================================
+
+        if talasea_total_result is not None:
+
+            final_amount = talasea_total_result
+
+        else:
+
+            # Fallback
+            final_amount = (
+                talasea_gold_value - talasea_fee
+            )
+
+        if final_amount <= 0:
+
+            return error_response(
+                message="مبلغ نهایی فروش از Talasea نامعتبر است.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 16. محاسبه کارمزد واقعی
+        #
+        # اگر Talasea مقدار fee را به صورت درصد برگرداند
+        # مثل 0.01 یعنی 1%
+        #
+        # کارمزد تومانی را خودمان محاسبه می‌کنیم.
+        # =========================================================
+
+        if talasea_fee_result > 0:
+
+            real_fee = (
+                talasea_gold_value * talasea_fee_result
+            ).quantize(
+                Decimal("1"),
+                rounding=ROUND_UP
+            )
+
+        else:
+
+            real_fee = (
+                talasea_gold_value - final_amount
+            ).quantize(
+                Decimal("1"),
+                rounding=ROUND_DOWN
+            )
+
+        # =========================================================
+        # 17. بلوکه کردن طلا
+        #
+        # فقط بعد از اینکه Talasea درخواست را قبول کرد
+        # موجودی را بلوکه می‌کنیم.
+        # =========================================================
+
+        inventory.accessible_balance -= actual_weight
+        inventory.blocked_balance += actual_weight
+
+        inventory.save(
+            update_fields=[
+                "accessible_balance",
+                "blocked_balance",
+                "updated_at",
+            ]
+        )
+
+        # =========================================================
+        # 18. Tracking Code
+        # =========================================================
+
+        tracking_code = generate_tracking_code("SELL")
+
+        # =========================================================
+        # 19. Talasea Order ID
+        # =========================================================
+
+        talasea_order_id = (
+            talasea_result.get("orderId")
+            or talasea_result.get("id")
+            or talasea_result.get("requestId")
+            or request_id
+        )
+
+        # =========================================================
+        # 20. ثبت تراکنش
+        # =========================================================
+
+        gold_transaction = GoldTransaction.objects.create(
+
+            user=request.user,
+
+            type="SELL",
+
+            status="PENDING",
+
+            amount_gr=actual_weight,
+
+            price_per_gram=gold_price,
+
+            fee=real_fee,
+
+            commission_percent=(
+                fee_rate * Decimal("100")
+            ),
+
+            commission_amount=real_fee,
+
+            total_amount=final_amount,
+
+            tracking_code=tracking_code,
+
+            request_id=request_id,
+
+            talasea_order_id=talasea_order_id,
+
+            talasea_response=talasea_result,
+
+            description="فروش طلا به Talasea"
+        )
+
+        # =========================================================
+        # 21. لاگ ادمین
+        # =========================================================
+
         create_admin_log(
             request=request,
-            user=user,
+            user=request.user,
             action_type="SELL_GOLD",
             action="درخواست فروش طلا (در انتظار تایید)",
             model_name="GoldTransaction",
-            object_id=tx.id,
-            tracking_code=tx.tracking_code,
+            object_id=gold_transaction.id,
+            tracking_code=gold_transaction.tracking_code,
             success=True,
             description=f"""
 درخواست فروش طلا
 
-کاربر: {user.mobile}
-وزن فروخته شده: {final_weight} گرم
-مبلغ نهایی: {final_amount} تومان
-کارمزد: {fee} تومان
-موجودی طلای بلوکه شده: {inventory.blocked_balance} گرم
+کاربر: {request.user.mobile}
+
+وزن فروخته شده:
+{actual_weight} گرم
+
+قیمت هر گرم:
+{gold_price} تومان
+
+ارزش طلا:
+{talasea_gold_value} تومان
+
+کارمزد:
+{real_fee} تومان
+
+مبلغ نهایی:
+{final_amount} تومان
+
+وضعیت Talasea:
+{talasea_status}
+
+موجودی طلای قابل معامله:
+{inventory.accessible_balance} گرم
+
+موجودی طلای بلوکه:
+{inventory.blocked_balance} گرم
 """,
         )
 
+        # =========================================================
+        # 22. Response
+        # =========================================================
+
         return success_response(
-            message="درخواست فروش طلا با موفقیت ثبت شد و در انتظار تایید ادمین است",
+
+            message=(
+                "درخواست فروش طلا با موفقیت ثبت شد "
+                "و در انتظار تایید ادمین است."
+            ),
+
             status_code=201,
+
             data={
-                "transaction_id": tx.id,
-                "tracking_code": tx.tracking_code,
-                "status": tx.status,
-                "gold_weight": float(final_weight),
-                "fee": float(fee),
-                "fee_rate": float(fee_rate),
-                "final_amount": float(final_amount),
-                "accessible_gold": float(inventory.accessible_balance),
-                "blocked_gold": float(inventory.blocked_balance),
-                # ❌ فیلد invoice حذف شد
-            },
+
+                # =================================================
+                # Transaction
+                # =================================================
+
+                "transaction_id": gold_transaction.id,
+
+                "tracking_code": (
+                    gold_transaction.tracking_code
+                ),
+
+                "request_id": request_id,
+
+                "status": gold_transaction.status,
+
+                # =================================================
+                # Price
+                # =================================================
+
+                "gold_price": gold_price,
+
+                "gold_price_display": (
+                    f"{gold_price:,.0f}"
+                ),
+
+                "talasea_gold_price": (
+                    talasea_gold_price_result
+                ),
+
+                # =================================================
+                # Weight
+                # =================================================
+
+                "gold_weight": actual_weight,
+
+                "gold_weight_display": (
+                    f"{actual_weight:,.3f} گرم"
+                ),
+
+                "talasea_volume": talasea_volume_result,
+
+                # =================================================
+                # Amount
+                # =================================================
+
+                "gold_value": talasea_gold_value,
+
+                "gold_value_display": (
+                    f"{talasea_gold_value:,.0f}"
+                ),
+
+                "fee": real_fee,
+
+                "fee_display": (
+                    f"{real_fee:,.0f}"
+                ),
+
+                "fee_rate": fee_rate,
+
+                "final_amount": final_amount,
+
+                "final_amount_display": (
+                    f"{final_amount:,.0f}"
+                ),
+
+                # =================================================
+                # Inventory
+                # =================================================
+
+                "accessible_gold": (
+                    inventory.accessible_balance
+                ),
+
+                "blocked_gold": (
+                    inventory.blocked_balance
+                ),
+
+                # =================================================
+                # Talasea
+                # =================================================
+
+                "talasea": {
+
+                    "type": "sell",
+
+                    "volume": (
+                        talasea_result.get(
+                            "volume",
+                            talasea_volume_result
+                        )
+                    ),
+
+                    "goldPrice": (
+                        talasea_result.get(
+                            "goldPrice",
+                            talasea_gold_price_result
+                        )
+                    ),
+
+                    "fee": (
+                        talasea_result.get(
+                            "fee",
+                            "0.01"
+                        )
+                    ),
+
+                    "strStatus": (
+                        talasea_result.get(
+                            "strStatus",
+                            "PENDING"
+                        )
+                    ),
+
+                    "totalValue": (
+                        talasea_result.get(
+                            "totalValue",
+                            final_amount
+                        )
+                    ),
+
+                    "requestId": (
+                        talasea_result.get(
+                            "requestId",
+                            request_id
+                        )
+                    ),
+
+                    "orderId": (
+                        talasea_result.get(
+                            "orderId"
+                        )
+                    ),
+                }
+            }
         )
+
 # # =========================================================
 # # BUY GOLD(2)
 # # =========================================================
@@ -6135,9 +7619,168 @@ from decimal import Decimal
 # ASSET VALUE
 # =========================================================
 
-# =========================================================
-# ASSET VALUE
-# =========================================================
+# # =========================================================
+# # ASSET VALUE
+# # =========================================================
+
+# class AssetValueAPIView(APIView):
+
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+
+#         user = request.user
+
+#         wallet = (
+#             Wallet.objects.only(
+#                 "accessible_toman",
+#                 "blocked_toman",
+#             )
+#             .filter(user=user)
+#             .first()
+#         )
+
+#         gold_inventory = (
+#             GoldInventory.objects.only(
+#                 "accessible_balance",
+#                 "blocked_balance",
+#             )
+#             .filter(user=user)
+#             .first()
+#         )
+
+#         silver_inventory = (
+#             SilverInventory.objects.only(
+#                 "accessible_balance",
+#                 "blocked_balance",
+#             )
+#             .filter(user=user)
+#             .first()
+#         )
+
+#         # =====================================================
+#         # ✅ Wallet (همون فرمول Statistics)
+#         # =====================================================
+
+#         accessible_toman = wallet.accessible_toman if wallet else Decimal("0")
+#         blocked_toman = wallet.blocked_toman if wallet else Decimal("0")
+#         wallet_balance = accessible_toman + blocked_toman  # ✅ 490,542,660
+
+#         # =====================================================
+#         # Gold
+#         # =====================================================
+
+#         gold_accessible = gold_inventory.accessible_balance if gold_inventory else Decimal("0")
+#         gold_blocked = gold_inventory.blocked_balance if gold_inventory else Decimal("0")
+#         gold_balance = gold_accessible + gold_blocked
+
+#         # =====================================================
+#         # Silver
+#         # =====================================================
+
+#         silver_accessible = silver_inventory.accessible_balance if silver_inventory else Decimal("0")
+#         silver_blocked = silver_inventory.blocked_balance if silver_inventory else Decimal("0")
+#         silver_balance = silver_accessible + silver_blocked
+
+#         # =====================================================
+#         # Prices
+#         # =====================================================
+
+#         gold_price = get_live_gold_price() or Decimal("0")
+#         silver_price = get_live_silver_price() or Decimal("0")
+
+#         # =====================================================
+#         # دریافت نرخ کارمزد کاربر
+#         # =====================================================
+
+#         user_fee = getattr(user, "fee", None)
+
+#         if user_fee:
+#             gold_buy_fee = user_fee.gold_buy_fee
+#             gold_sell_fee = user_fee.gold_sell_fee
+#             silver_buy_fee = user_fee.silver_buy_fee
+#             silver_sell_fee = user_fee.silver_sell_fee
+#         else:
+#             setting = FeeSetting.objects.last()
+#             if setting:
+#                 gold_buy_fee = setting.gold_buy_fee
+#                 gold_sell_fee = setting.gold_sell_fee
+#                 silver_buy_fee = setting.silver_buy_fee
+#                 silver_sell_fee = setting.silver_sell_fee
+#             else:
+#                 gold_buy_fee = Decimal("0.01")
+#                 gold_sell_fee = Decimal("0.01")
+#                 silver_buy_fee = Decimal("0.01")
+#                 silver_sell_fee = Decimal("0.01")
+
+#         # =====================================================
+#         # ✅ Asset Values (همون Statistics)
+#         # =====================================================
+
+#         gold_asset_value = gold_balance * gold_price
+#         silver_asset_value = silver_balance * silver_price
+
+#         # ✅ کل دارایی = موجودی کیف پول (accessible + blocked) + ارزش طلا
+#         total_asset_value = wallet_balance + gold_asset_value
+
+#         # =====================================================
+#         # قیمت طلا با احتساب کارمزد خرید و فروش
+#         # =====================================================
+
+#         gold_price_with_buy_fee = gold_price * (1 + gold_buy_fee)
+#         gold_price_with_sell_fee = gold_price * (1 - gold_sell_fee)
+
+#         # =====================================================
+#         # قیمت نقره با احتساب کارمزد خرید و فروش
+#         # =====================================================
+
+#         silver_price_with_buy_fee = silver_price * (1 + silver_buy_fee)
+#         silver_price_with_sell_fee = silver_price * (1 - silver_sell_fee)
+
+#         # =====================================================
+#         # Response
+#         # =====================================================
+
+#         return Response(
+#             {
+#                 # ✅ اینجا باید برابر با total_assets از Statistics باشه
+#                 "total_asset_value": round(total_asset_value),
+                
+#                 "wallet_balance": round(accessible_toman),
+#                 "wallet_blocked": round(blocked_toman),
+#                 "wallet_accessible": round(accessible_toman),
+                
+#                 "gold_accessible": float(gold_accessible),
+#                 "gold_blocked": float(gold_blocked),
+#                 "gold_balance": float(gold_balance),
+#                 "gold_asset_value": round(gold_asset_value),
+                
+#                 "silver_accessible": float(silver_accessible),
+#                 "silver_blocked": float(silver_blocked),
+#                 "silver_balance": float(silver_balance),
+#                 "silver_asset_value": round(silver_asset_value),
+                
+#                 "gold_price": round(gold_price),
+#                 "silver_price": round(silver_price),
+                
+#                 "fees": {
+#                     "gold_buy_fee": float(gold_buy_fee * 100),
+#                     "gold_sell_fee": float(gold_sell_fee * 100),
+#                     "silver_buy_fee": float(silver_buy_fee * 100),
+#                     "silver_sell_fee": float(silver_sell_fee * 100),
+#                 },
+#                 "gold_price_with_fees": {
+#                     "buy": round(gold_price_with_buy_fee),
+#                     "sell": round(gold_price_with_sell_fee),
+#                 },
+#                 "silver_price_with_fees": {
+#                     "buy": round(silver_price_with_buy_fee),
+#                     "sell": round(silver_price_with_sell_fee),
+#                 },
+#             }
+#         )
+
+# views.py - AssetValueAPIView
 
 class AssetValueAPIView(APIView):
 
@@ -6175,12 +7818,12 @@ class AssetValueAPIView(APIView):
         )
 
         # =====================================================
-        # ✅ Wallet (همون فرمول Statistics)
+        # ✅ Wallet
         # =====================================================
 
         accessible_toman = wallet.accessible_toman if wallet else Decimal("0")
         blocked_toman = wallet.blocked_toman if wallet else Decimal("0")
-        wallet_balance = accessible_toman + blocked_toman  # ✅ 490,542,660
+        wallet_balance = accessible_toman + blocked_toman
 
         # =====================================================
         # Gold
@@ -6199,10 +7842,10 @@ class AssetValueAPIView(APIView):
         silver_balance = silver_accessible + silver_blocked
 
         # =====================================================
-        # Prices
+        # Prices (قیمت‌ها به تومان کامل)
         # =====================================================
 
-        gold_price = get_live_gold_price() or Decimal("0")
+        gold_price = get_live_gold_price() or Decimal("0")  # ✅ 23,598,000
         silver_price = get_live_silver_price() or Decimal("0")
 
         # =====================================================
@@ -6230,36 +7873,35 @@ class AssetValueAPIView(APIView):
                 silver_sell_fee = Decimal("0.01")
 
         # =====================================================
-        # ✅ Asset Values (همون Statistics)
+        # ✅ Asset Values
         # =====================================================
 
         gold_asset_value = gold_balance * gold_price
         silver_asset_value = silver_balance * silver_price
 
-        # ✅ کل دارایی = موجودی کیف پول (accessible + blocked) + ارزش طلا
-        total_asset_value = wallet_balance + gold_asset_value
+        # ✅ کل دارایی
+        total_asset_value = wallet_balance + gold_asset_value + silver_asset_value
 
         # =====================================================
-        # قیمت طلا با احتساب کارمزد خرید و فروش
+        # ✅ قیمت طلا با احتساب کارمزد (به تومان کامل)
         # =====================================================
 
         gold_price_with_buy_fee = gold_price * (1 + gold_buy_fee)
         gold_price_with_sell_fee = gold_price * (1 - gold_sell_fee)
 
         # =====================================================
-        # قیمت نقره با احتساب کارمزد خرید و فروش
+        # ✅ قیمت نقره با احتساب کارمزد
         # =====================================================
 
         silver_price_with_buy_fee = silver_price * (1 + silver_buy_fee)
         silver_price_with_sell_fee = silver_price * (1 - silver_sell_fee)
 
         # =====================================================
-        # Response
+        # ✅ Response با نمایش میلیونی قیمت طلا
         # =====================================================
 
         return Response(
             {
-                # ✅ اینجا باید برابر با total_assets از Statistics باشه
                 "total_asset_value": round(total_asset_value),
                 
                 "wallet_balance": round(accessible_toman),
@@ -6276,7 +7918,10 @@ class AssetValueAPIView(APIView):
                 "silver_balance": float(silver_balance),
                 "silver_asset_value": round(silver_asset_value),
                 
-                "gold_price": round(gold_price),
+                # ✅ قیمت طلا به تومان کامل (میلیونی)
+                "gold_price": round(gold_price),  # 23,598,000
+                "gold_price_display": format_money(gold_price, is_gold_price=True, show_toman=True),  # "23,598,000 تومان"
+                
                 "silver_price": round(silver_price),
                 
                 "fees": {
@@ -6285,9 +7930,13 @@ class AssetValueAPIView(APIView):
                     "silver_buy_fee": float(silver_buy_fee * 100),
                     "silver_sell_fee": float(silver_sell_fee * 100),
                 },
+                
+                # ✅ قیمت با کارمزد به تومان کامل
                 "gold_price_with_fees": {
-                    "buy": round(gold_price_with_buy_fee),
-                    "sell": round(gold_price_with_sell_fee),
+                    "buy": round(gold_price_with_buy_fee),  # 23,598,000 × 1.01
+                    "sell": round(gold_price_with_sell_fee),  # 23,598,000 × 0.99
+                    "buy_display": format_money(gold_price_with_buy_fee, is_gold_price=True, show_toman=True),
+                    "sell_display": format_money(gold_price_with_sell_fee, is_gold_price=True, show_toman=True),
                 },
                 "silver_price_with_fees": {
                     "buy": round(silver_price_with_buy_fee),
@@ -6295,8 +7944,6 @@ class AssetValueAPIView(APIView):
                 },
             }
         )
-
-
 
 
 # =========================================================

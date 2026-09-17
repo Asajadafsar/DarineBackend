@@ -1,7 +1,7 @@
-
 from datetime import datetime
 import time
 import uuid
+import threading
 
 import jdatetime
 import requests
@@ -16,203 +16,135 @@ BALE_BOT_ID = 91195008
 
 
 # ==========================================
-# BALE OTP
+# BALE OTP (اجرای غیرهمزمان)
 # ==========================================
 
-def send_bale_otp(mobile, code):
+def send_bale_otp_async(mobile, code):
     """
-    ارسال OTP داخل بازوی بله
+    ارسال OTP داخل بازوی بله به صورت غیرهمزمان
     """
+    def _send():
+        phone = str(mobile).strip()
 
-    phone = str(mobile).strip()
+        if phone.startswith("09"):
+            phone = "98" + phone[1:]
+        elif phone.startswith("+98"):
+            phone = phone.replace("+", "")
+        elif phone.startswith("98"):
+            pass
+        else:
+            phone = "98" + phone
 
-    if phone.startswith("09"):
-        phone = "98" + phone[1:]
-    elif phone.startswith("+98"):
-        phone = phone.replace("+", "")
-    elif phone.startswith("98"):
-        pass
-    else:
-        phone = "98" + phone
+        url = "https://safir.bale.ai/api/v3/send_message"
 
-    url = "https://safir.bale.ai/api/v3/send_message"
+        headers = {
+            "api-access-key": BALE_API_KEY,
+            "Content-Type": "application/json",
+        }
 
-    headers = {
-        "api-access-key": BALE_API_KEY,
-        "Content-Type": "application/json",
-    }
-
-    payload = {
-        "request_id": str(uuid.uuid4()),
-        "bot_id": BALE_BOT_ID,
-        "phone_number": phone,
-        "message_data": {
-            "otp_message": {
-                "otp": str(code)
+        payload = {
+            "request_id": str(uuid.uuid4()),
+            "bot_id": BALE_BOT_ID,
+            "phone_number": phone,
+            "message_data": {
+                "otp_message": {
+                    "otp": str(code)
+                }
             }
         }
-    }
 
-    try:
-        response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=15
-        )
+        try:
+            response = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            print("========== BALE ==========")
+            print("STATUS:", response.status_code)
+            print("BODY:", response.text)
+        except Exception as e:
+            print("BALE ERROR:", e)
 
-        print("========== BALE ==========")
-        print("STATUS:", response.status_code)
-        print("BODY:", response.text)
-
-        return response.status_code == 200
-
-    except Exception as e:
-        print("BALE ERROR:", e)
-        return False
+    # اجرا در یک ترد جداگانه
+    thread = threading.Thread(target=_send)
+    thread.daemon = True
+    thread.start()
 
 
 # ==========================================
-# OTP SMS + BALE
+# OTP SMS (با متد SendTokenSingle)
 # ==========================================
-
-# def send_otp_sms(mobile, code, client_type="gold"):
-#     url = "https://api.sms-webservice.com/api/V3/SendTokenSingle"
-#     api_key = "276941-6FB7E264C3C440E09148F711F94913C6"
-
-#     client_type = (client_type or "gold").lower().strip()
-
-#     if client_type == "silver":
-#         template_key = "darinetem2"
-#     else:
-#         template_key = "darinetem"
-
-#     params = {
-#         "ApiKey": api_key,
-#         "TemplateKey": template_key,
-#         "Destination": mobile,
-#         "p1": code,
-#         "p2": code,
-#         "p3": "SbBVMIJwADu",
-#     }
-
-#     try:
-#         response = requests.get(url, params=params, timeout=30)
-
-#         sms_success = (
-#             response.status_code == 200
-#             and '"id"' in response.text.lower()
-#         )
-
-#         if not sms_success:
-#             print("SMS FAIL RESPONSE:", response.text)
-
-#         # ----------------------------
-#         # ارسال همزمان در بله
-#         # ----------------------------
-#         try:
-#             send_bale_otp(mobile, code)
-#         except Exception as e:
-#             print("BALE SEND ERROR:", e)
-
-#         return sms_success
-
-#     except requests.exceptions.Timeout:
-#         print("SMS TIMEOUT - assuming success for stability")
-
-#         try:
-#             send_bale_otp(mobile, code)
-#         except Exception as e:
-#             print("BALE SEND ERROR:", e)
-
-#         return True
-
-#     except Exception as e:
-#         print(f"SMS Connection Error: {e}")
-
-#         try:
-#             send_bale_otp(mobile, code)
-#         except Exception as ex:
-#             print("BALE SEND ERROR:", ex)
-
-#         return False
 
 def send_otp_sms(mobile, code, client_type="gold"):
-    url = "https://api.sms-webservice.com/api/V3/SendBulk"
+    """
+    ارسال پیامک حاوی کد تایید با استفاده از متد SendTokenSingle
+    """
+    url = "https://api.sms-webservice.com/api/V3/SendTokenSingle"
     api_key = "276941-6FB7E264C3C440E09148F711F94913C6"
-    sender = 50004075002699
 
     client_type = (client_type or "gold").lower().strip()
 
-    text = f"""<#>
-*پلتفرم دارینه*
-کد ورود شما : {code}
+    if client_type == "silver":
+        template_key = "darinetem2"
+        p3 = ""
+    else:
+        template_key = "darinetem"
+        p3 = "SbBVMIJwADu"
 
-@gold.darine.shop #{code}
-SbBVMIJwADu""".strip()
-
-    payload = {
+    # ساخت URL با پارامترها
+    params = {
         "ApiKey": api_key,
-        "Text": text,
-        "Sender": sender,
-        "Recipients": [
-            {
-                "Destination": mobile,
-                "UserTraceId": int(time.time())
-            }
-        ],
+        "TemplateKey": template_key,
+        "Destination": mobile,
+        "p1": code,
+        "p2": code,
+        "p3": p3
     }
 
     try:
-        response = requests.post(
-            url,
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=30,
+        # استفاده از params به جای ساخت URL دستی (سریعتر)
+        response = requests.get(
+            url, 
+            params=params, 
+            timeout=10  # کاهش تایم‌اوت برای سرعت بیشتر
         )
 
-        print("SMS STATUS:", response.status_code)
-        print("SMS RESPONSE:", response.text)
+        sms_success = False
+        
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                if data.get("Success") is True or data.get("id"):
+                    sms_success = True
+            except:
+                if '"id"' in response.text or '"Success":true' in response.text.lower():
+                    sms_success = True
 
-        data = response.json()
-
-        sms_success = data.get("Success") is True
-
-        if not sms_success:
-            print("SMS FAIL RESPONSE:", response.text)
-
-        # ارسال همزمان در بله
-        try:
-            send_bale_otp(mobile, code)
-        except Exception as e:
-            print("BALE SEND ERROR:", e)
+        # ارسال همزمان در بله (غیرهمزمان)
+        send_bale_otp_async(mobile, code)
 
         return sms_success
 
     except requests.exceptions.Timeout:
-        print("SMS TIMEOUT - assuming success for stability")
-
-        try:
-            send_bale_otp(mobile, code)
-        except Exception as e:
-            print("BALE SEND ERROR:", e)
-
-        return True
+        # در صورت تایم‌اوت، بله رو ارسال کن
+        send_bale_otp_async(mobile, code)
+        return True  # فرض موفقیت برای پایداری
 
     except Exception as e:
-        print(f"SMS Connection Error: {e}")
-
-        try:
-            send_bale_otp(mobile, code)
-        except Exception as ex:
-            print("BALE SEND ERROR:", ex)
-
+        print(f"SMS Error: {e}")
+        send_bale_otp_async(mobile, code)
         return False
+
+
 # ==========================================
 # LOGIN SUCCESS SMS
 # ==========================================
 
 def send_login_sms(mobile):
+    """
+    ارسال پیامک لاگین موفق با استفاده از متد SendTokenSingle
+    """
     url = "https://api.sms-webservice.com/api/V3/SendTokenSingle"
     api_key = "276941-6FB7E264C3C440E09148F711F94913C6"
 
@@ -225,22 +157,20 @@ def send_login_sms(mobile):
         "Destination": mobile,
         "p1": j_now.strftime("%Y/%m/%d"),
         "p2": j_now.strftime("%H:%M"),
-        "p3": "",
+        "p3": ""
     }
 
     try:
-        response = requests.get(url, params=params, timeout=30)
+        response = requests.get(url, params=params, timeout=10)
 
-        print("LOGIN STATUS:", response.status_code)
-        print("LOGIN RESPONSE:", response.text)
-
-        if response.status_code == 200 and '"id"' in response.text.lower():
-            return True
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("Success") is True or data.get("id"):
+                return True
 
         return False
 
     except requests.exceptions.Timeout:
-        print("LOGIN TIMEOUT")
         return True
 
     except Exception as e:

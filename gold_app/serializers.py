@@ -1417,38 +1417,22 @@ from decimal import Decimal, ROUND_DOWN
 from rest_framework import serializers
 from accounts.models import FeeSetting
 
-
-from accounts.models import FeeSetting
-from rest_framework import serializers
-from decimal import Decimal, ROUND_DOWN
-
-
 class BuyGoldSerializer(serializers.Serializer):
-    """
-    خرید طلا
-    
-    اگر weight ارسال شود:
-        قیمت خالص = قیمت طلا × وزن
-        کارمزد = قیمت خالص × نرخ کارمزد
-        مبلغ کل = قیمت خالص + کارمزد
-    
-    اگر toman ارسال شود (مبلغ کل شامل کارمزد):
-        قیمت خالص = مبلغ کل ÷ (۱ + نرخ کارمزد)
-        کارمزد = مبلغ کل - قیمت خالص
-        وزن = قیمت خالص ÷ قیمت طلا
-        مبلغ کل = مبلغ وارد شده (همون toman)  ✅ اینجا مهمه
-    """
-    
+
     payment_method = serializers.ChoiceField(
-        choices=[("WALLET", "کیف پول")],
-        required=True
+        choices=[
+            ("WALLET", "کیف پول"),
+        ],
+        required=True,
     )
+
     toman = serializers.DecimalField(
         max_digits=25,
         decimal_places=2,
         required=False,
         allow_null=True,
     )
+
     weight = serializers.DecimalField(
         max_digits=20,
         decimal_places=3,
@@ -1457,96 +1441,257 @@ class BuyGoldSerializer(serializers.Serializer):
     )
 
     def validate(self, attrs):
+
         toman = attrs.get("toman")
         weight = attrs.get("weight")
 
-        # اعتبارسنجی: حداقل یکی باید وارد شده باشد
+        # ==================================================
+        # مبلغ یا وزن الزامی است
+        # ==================================================
+
         if toman is None and weight is None:
             raise serializers.ValidationError(
-                {"non_field_errors": ["وارد کردن مبلغ یا وزن الزامی است."]}
+                {
+                    "non_field_errors": [
+                        "وارد کردن مبلغ یا وزن الزامی است."
+                    ]
+                }
             )
 
-        # اگر هر دو ارسال شدند، وزن ملاک است
+        # ==================================================
+        # اگر هر دو ارسال شدند، وزن اولویت دارد
+        # ==================================================
+
         if toman is not None and weight is not None:
-            weight = Decimal(str(weight)).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+
+            weight = Decimal(
+                str(weight)
+            ).quantize(
+                Decimal("0.001"),
+                rounding=ROUND_DOWN,
+            )
+
             if weight <= 0:
                 raise serializers.ValidationError(
-                    {"weight": ["وزن وارد شده باید بزرگتر از صفر باشد."]}
+                    {
+                        "weight": [
+                            "وزن وارد شده باید بزرگتر از صفر باشد."
+                        ]
+                    }
                 )
+
             toman = None
             attrs["toman"] = None
 
-        # دریافت قیمت طلا از context
-        gold_price = Decimal(str(self.context["gold_price"]))
+        # ==================================================
+        # قیمت طلا
+        # ==================================================
+
+        gold_price = Decimal(
+            str(self.context["gold_price"])
+        ).quantize(
+            Decimal("1"),
+            rounding=ROUND_HALF_UP,
+        )
+
         if gold_price <= 0:
             raise serializers.ValidationError(
-                {"non_field_errors": ["قیمت طلا نامعتبر است."]}
+                {
+                    "non_field_errors": [
+                        "قیمت طلا نامعتبر است."
+                    ]
+                }
             )
 
-        # دریافت نرخ کارمزد
+        # ==================================================
+        # دریافت کارمزد
+        # ==================================================
+
         user = self.context["request"].user
-        user_fee = getattr(user, "fee", None)
+
+        user_fee = getattr(
+            user,
+            "fee",
+            None,
+        )
 
         if user_fee:
-            fee_rate = user_fee.gold_buy_fee
-        else:
-            setting = FeeSetting.objects.last()
-            fee_rate = setting.gold_buy_fee if setting else Decimal("0.01")
 
-        fee_rate = Decimal(str(fee_rate))
-        if fee_rate < 0:
-            raise serializers.ValidationError(
-                {"non_field_errors": ["کارمزد نامعتبر است."]}
+            fee_rate = Decimal(
+                str(user_fee.gold_buy_fee)
             )
 
-        # ===========================
-        # خرید بر اساس وزن
-        # ===========================
-        if weight is not None:
-            final_weight = weight
-            pure_gold_price = (gold_price * final_weight).quantize(Decimal("1"))
-            fee = (pure_gold_price * fee_rate).quantize(Decimal("1"))
-            total_toman = (pure_gold_price + fee).quantize(Decimal("1"))
-
-        # ===========================
-        # خرید بر اساس مبلغ کل (کارمزد از مبلغ کم میشه)  ✅ درسته
-        # ===========================
         else:
-            toman = Decimal(str(toman)).quantize(Decimal("1"))
-            if toman <= 0:
-                raise serializers.ValidationError(
-                    {"toman": ["مبلغ وارد شده باید بزرگتر از صفر باشد."]}
+
+            setting = FeeSetting.objects.last()
+
+            if setting:
+
+                fee_rate = Decimal(
+                    str(setting.gold_buy_fee)
                 )
 
-            # ✅ قیمت خالص = مبلغ کل ÷ (۱ + نرخ کارمزد)
-            pure_gold_price = (toman / (Decimal("1") + fee_rate)).quantize(Decimal("1"))
-            
-            # ✅ کارمزد = مبلغ کل - قیمت خالص
-            fee = (toman - pure_gold_price).quantize(Decimal("1"))
-            
-            # ✅ وزن = قیمت خالص ÷ قیمت هر گرم
-            final_weight = (pure_gold_price / gold_price).quantize(
+            else:
+
+                fee_rate = Decimal("0.01")
+
+        # ==================================================
+        # اعتبارسنجی کارمزد
+        # ==================================================
+
+        if fee_rate < 0:
+            raise serializers.ValidationError(
+                {
+                    "non_field_errors": [
+                        "کارمزد نامعتبر است."
+                    ]
+                }
+            )
+
+        # ==================================================
+        # خرید بر اساس وزن
+        # ==================================================
+
+        if weight is not None:
+
+            final_weight = Decimal(
+                str(weight)
+            ).quantize(
                 Decimal("0.001"),
                 rounding=ROUND_DOWN,
             )
 
             if final_weight <= 0:
                 raise serializers.ValidationError(
-                    {"non_field_errors": ["مبلغ وارد شده برای خرید حتی یک هزارم گرم طلا کافی نیست."]}
+                    {
+                        "weight": [
+                            "وزن وارد شده باید بزرگتر از صفر باشد."
+                        ]
+                    }
                 )
 
-            # ✅ مبلغ کل = همون مبلغ ورودی (۱۰ میلیون)
-            total_toman = toman  # ← اینجا مهمه! همون ۱۰ میلیون میمونه
+            # مبلغ اصل طلا
+            gold_amount = (
+                gold_price * final_weight
+            ).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
 
-        # ذخیره در attrs
+            # کارمزد
+            fee = (
+                gold_amount * fee_rate
+            ).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+
+            # مبلغ کل
+            total_toman = (
+                gold_amount + fee
+            ).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+
+            # برای حفظ نام فیلد قبلی
+            pure_gold_price = gold_amount
+
+        # ==================================================
+        # خرید بر اساس مبلغ
+        # ==================================================
+
+        else:
+
+            toman = Decimal(
+                str(toman)
+            ).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+
+            if toman <= 0:
+                raise serializers.ValidationError(
+                    {
+                        "toman": [
+                            "مبلغ وارد شده باید بزرگتر از صفر باشد."
+                        ]
+                    }
+                )
+
+            # ==================================================
+            # مبلغ اصل طلا
+            #
+            # total = gold + fee
+            # fee = gold × fee_rate
+            #
+            # total = gold × (1 + fee_rate)
+            # ==================================================
+
+            gold_amount = (
+                toman / (
+                    Decimal("1") + fee_rate
+                )
+            ).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+
+            # ==================================================
+            # کارمزد
+            # ==================================================
+
+            fee = (
+                toman - gold_amount
+            ).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+
+            # ==================================================
+            # وزن دقیق
+            # ==================================================
+
+            exact_weight = (
+                gold_amount / gold_price
+            )
+
+            # ==================================================
+            # وزن نهایی تا 3 رقم اعشار
+            # ==================================================
+
+            final_weight = exact_weight.quantize(
+                Decimal("0.001"),
+                rounding=ROUND_HALF_UP,
+            )
+
+            if final_weight <= 0:
+                raise serializers.ValidationError(
+                    {
+                        "non_field_errors": [
+                            "مبلغ وارد شده برای خرید حتی یک هزارم گرم طلا کافی نیست."
+                        ]
+                    }
+                )
+
+            total_toman = toman
+
+            # برای حفظ نام فیلد قبلی
+            pure_gold_price = gold_amount
+
+        # ==================================================
+        # خروجی
+        # ==================================================
+
+        attrs["gold_price"] = gold_price
         attrs["fee_rate"] = fee_rate
         attrs["fee"] = fee
-        attrs["gold_price"] = gold_price
         attrs["pure_gold_price"] = pure_gold_price
-        attrs["total_toman"] = total_toman  # ✅ اینجا ۱۰ میلیون هست
         attrs["final_weight"] = final_weight
+        attrs["total_toman"] = total_toman
 
         return attrs
+
 
 
 from decimal import Decimal, ROUND_DOWN

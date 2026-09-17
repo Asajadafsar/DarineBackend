@@ -199,6 +199,14 @@ CORS_ALLOW_METHODS = [
     "POST",
     "PUT",
 ]
+TALASEA_API_KEY = "Op7X3CBWAp0fwHl1QnEcnoSk"
+HANZAEI_VALKEY = {
+    "HOST": "vkey.hanzaeigold.com",
+    "PORT": 6379,
+    "USERNAME": "api:755",
+    "PASSWORD": "13741375",
+    "CHANNEL": "prices:pubsub:group:1",
+}
 
 # =========================================================
 # COOKIE SETTINGS

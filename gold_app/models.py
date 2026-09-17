@@ -106,9 +106,6 @@ class GoldInventory(models.Model):
     # GOLD TRANSACTION
     # =========================================================
 
-
-
-
 class GoldTransaction(models.Model):
 
     TYPE_CHOICES = (
@@ -124,7 +121,8 @@ class GoldTransaction(models.Model):
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE
+        on_delete=models.CASCADE,
+        related_name='gold_transactions'
     )
 
     type = models.CharField(
@@ -140,71 +138,121 @@ class GoldTransaction(models.Model):
 
     amount_gr = models.DecimalField(
         max_digits=20,
-        decimal_places=3
+        decimal_places=3,
+        verbose_name="مقدار طلا (گرم)"
     )
 
     price_per_gram = models.DecimalField(
         max_digits=20,
-        decimal_places=0
+        decimal_places=0,
+        verbose_name="قیمت هر گرم (تومان)"
     )
 
     # مبلغ کارمزد
     fee = models.DecimalField(
         max_digits=20,
         decimal_places=0,
-        default=0
+        default=0,
+        verbose_name="مبلغ کارمزد"
     )
 
     # درصد کارمزد همان لحظه
     commission_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
-        default=0
+        default=0,
+        verbose_name="درصد کارمزد"
     )
 
     # مبلغ کارمزد همان لحظه
     commission_amount = models.DecimalField(
         max_digits=20,
         decimal_places=0,
-        default=0
+        default=0,
+        verbose_name="مبلغ کارمزد"
     )
 
     # درصد سود معرف همان لحظه
     marketer_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
-        default=0
+        default=0,
+        verbose_name="درصد سود معرف"
     )
 
     # مبلغ سود معرف همان لحظه
     profit = models.DecimalField(
         max_digits=20,
         decimal_places=0,
-        default=0
+        default=0,
+        verbose_name="مبلغ سود معرف"
     )
 
     total_amount = models.DecimalField(
         max_digits=20,
-        decimal_places=0
+        decimal_places=0,
+        verbose_name="مبلغ کل (تومان)"
     )
 
     tracking_code = models.CharField(
         max_length=100,
-        unique=True
+        unique=True,
+        verbose_name="کد رهگیری"
+    )
+
+    # فیلدهای جدید برای اتصال به طلاسی
+    request_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name="شناسه درخواست"
+    )
+
+    talasea_order_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name="شناسه سفارش در طلاسی"
+    )
+
+    talasea_response = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="پاسخ کامل طلاسی"
     )
 
     description = models.TextField(
         blank=True,
-        null=True
+        null=True,
+        verbose_name="توضیحات"
     )
 
     created_at = models.DateTimeField(
-        auto_now_add=True
+        auto_now_add=True,
+        verbose_name="تاریخ ایجاد"
     )
 
     updated_at = models.DateTimeField(
-        auto_now=True
+        auto_now=True,
+        verbose_name="تاریخ بروزرسانی"
     )
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "تراکنش طلا"
+        verbose_name_plural = "تراکنش‌های طلا"
+
+    def __str__(self):
+        return f"{self.get_type_display()} - {self.tracking_code} - {self.user.username}"
+
+    def is_pending(self):
+        return self.status == 'PENDING'
+
+    def is_completed(self):
+        return self.status == 'COMPLETED'
+
+    def is_failed(self):
+        return self.status == 'FAILED'
 
 
 # =========================================================
