@@ -1,15 +1,27 @@
 from rest_framework.views import exception_handler
-from rest_framework.response import Response
+
+from .cookies import clear_auth_cookies
 
 
 def custom_exception_handler(exc, context):
 
     response = exception_handler(exc, context)
 
-    if response is not None:
-        return Response(
-            {"success": False, "message": str(exc), "data": response.data},
-            status=response.status_code,
-        )
+    if response is None:
+        return response
 
-    return Response({"success": False, "message": str(exc), "data": {}}, status=500)
+    print("🔥 CUSTOM EXCEPTION HANDLER CALLED")
+    print("🔥 EXCEPTION:", repr(exc))
+    print("🔥 RESPONSE:", response.data)
+
+    data = response.data
+
+    if isinstance(data, dict):
+
+        if data.get("code") == "token_not_valid":
+
+            print("🔥 TOKEN INVALID → CLEARING COOKIES")
+
+            clear_auth_cookies(response)
+
+    return response

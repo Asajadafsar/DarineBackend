@@ -85,6 +85,13 @@ from .views import (
     RedeemGiftCardAPIView,
     GiftCardListAPIView,
     AutoSavingPlanAPIView,
+    TalaseaImageProxyView,
+    # ✅ اضافه شد - فیچر تحویل فیزیکی طلاسی
+    PhysicalOrderCancelAPIView,
+    TalaseaCityListAPIView,
+    TalaseaCommodityListAPIView,
+    TalaseaReceiveTimeAPIView,
+    TalaseaCalculateShipmentAPIView,
 )
 
 urlpatterns = [
@@ -92,12 +99,15 @@ urlpatterns = [
     path("dashboard/", GoldDashboardAPIView.as_view()),
     path("balance/", UserBalanceAPIView.as_view()),
     path("orders/<int:pk>/", OrderDetailAPIView.as_view()),
+
     # GOLD
     path("buy/", BuyGoldAPIView.as_view()),
     path("sell/", SellGoldAPIView.as_view()),
+
     # WALLET
     path("deposit/", DepositAPIView.as_view()),
     path("withdraw/", WithdrawAPIView.as_view()),
+
     # PRODUCTS
     path("products/", ProductListAPIView.as_view()),
     path(
@@ -109,18 +119,23 @@ urlpatterns = [
     path("prices/", LatestPriceAPIView.as_view()),
     path("product/categories/", ProductCategoryListAPIView.as_view()),
     path("address/<int:address_id>/", UserAddressAPIView.as_view()),
+
     # ORDERS
     path("orders/", OrderHistoryAPIView.as_view()),
+
     # GIFT CARD
     path("gift-card/order/", GiftCardOrderAPIView.as_view()),
     path("gift-card/orders/", GiftCardOrderListAPIView.as_view()),
     path("gift-card/redeem/", RedeemGiftCardAPIView.as_view()),
     path("gift-card/list/", GiftCardListAPIView.as_view()),
+
     # AUTO SAVING
     path("auto-saving/", AutoSavingPlanAPIView.as_view()),
+
     # USER ADDRESSES
     path("addresses/", UserAddressListAPIView.as_view()),
     path("address/", UserAddressCreateAPIView.as_view()),
+
     # REPORTS
     path("reports/", ReportsAPIView.as_view()),
     path("recent-transactions/", RecentTransactionsAPIView.as_view()),
@@ -131,6 +146,7 @@ urlpatterns = [
     path("deposit/info/", GoldDepositInfoAPIView.as_view()),
     path("price-alert/", PriceAlertAPIView.as_view(), name="price-alert"),
     path("price-alerts/<int:pk>/", DeletePriceAlertAPIView.as_view()),
+
     # REFERRAL
     path('investment/info/', GoldInvestmentInfoView.as_view(), name='gold-investment-info'),
     path('investment/plans/', GoldInvestmentPlansView.as_view(), name='gold-investment-plans'),
@@ -141,10 +157,65 @@ urlpatterns = [
     path('investment/<int:investment_id>/cancel/', GoldInvestmentCancelView.as_view(), name='gold-investment-cancel'),
     path('investment/<int:investment_id>/collect-profit/', GoldInvestmentCollectProfitView.as_view(), name='gold-investment-collect-profit'),
     path("referral-dashboard/", GoldReferralInfoAPIView.as_view()),
-    path("physical-order/", PhysicalOrderNoAddressAPIView.as_view()),
+    path(
+        "talasea/image/<path:image_path>",
+        TalaseaImageProxyView.as_view(),
+        name="talasea-image-proxy",
+    ),
+    # =========================================================
+    # ✅ PHYSICAL ORDER (Talasea)
+    # =========================================================
+    # ثبت سفارش فیزیکی با آدرس + اتصال به طلاسی
+    path(
+        "physical-order/",
+        PhysicalOrderAPIView.as_view(),
+        name="physical-order",
+    ),
+    # پیش‌نمایش سفارش (بدون آدرس)
+    path(
+        "physical-order/preview/",
+        PhysicalOrderNoAddressAPIView.as_view(),
+        name="physical-order-preview",
+    ),
+    # لغو سفارش
+    path(
+        "physical-order/<int:order_id>/cancel/",
+        PhysicalOrderCancelAPIView.as_view(),
+        name="physical-order-cancel",
+    ),
+
+    # =========================================================
+    # ✅ TALASEA HELPERS
+    # =========================================================
+    # لیست استان‌ها و شهرها
+    path(
+        "talasea/cities/",
+        TalaseaCityListAPIView.as_view(),
+        name="talasea-cities",
+    ),
+    # لیست کالاهای قابل تحویل فیزیکی
+    path(
+        "talasea/commodities/",
+        TalaseaCommodityListAPIView.as_view(),
+        name="talasea-commodities",
+    ),
+    # زمان‌های مراجعه حضوری
+    path(
+        "talasea/receive-times/",
+        TalaseaReceiveTimeAPIView.as_view(),
+        name="talasea-receive-times",
+    ),
+    # محاسبه هزینه ارسال
+    path(
+        "talasea/calculate-shipment/",
+        TalaseaCalculateShipmentAPIView.as_view(),
+        name="talasea-calculate-shipment",
+    ),
+
     path("asset-value/", AssetValueAPIView.as_view(), name="asset-value"),
     path("statistics/", GoldStatisticsAPIView.as_view(), name="gold-statistics"),
-    # gold_app/urls.py
+
+    # BANNERS / ANNOUNCEMENTS
     path("banners/", GoldBannerListAPIView.as_view(), name="gold-banners"),
     path(
         "announcements/", GoldAnnouncementAPIView.as_view(), name="gold-announcements"
@@ -155,30 +226,39 @@ urlpatterns = [
     # path(
     #     "announcements/mark-read/", GoldAnnouncementMarkReadAPIView.as_view(), name="gold-announcements"
     # ),
+
+    # CALCULATE
     path(
-    "sell/calculate/",
-    SellGoldCalculateAPIView.as_view(),
-    name="sell-gold-calculate",
-),
+        "sell/calculate/",
+        SellGoldCalculateAPIView.as_view(),
+        name="sell-gold-calculate",
+    ),
     path(
-    "buy/calculate/",
-    BuyGoldCalculateAPIView.as_view(),
-    name="buy-gold-calculate",
-),
+        "buy/calculate/",
+        BuyGoldCalculateAPIView.as_view(),
+        name="buy-gold-calculate",
+    ),
+
+    # LIMIT ORDER CONFIRM
     path('limit-order/buy/confirm/', GoldLimitOrderBuyConfirmAPIView.as_view(), name='gold-limit-order-buy-confirm'),
-    
-    # ✅ باکس تایید فروش سفارش با قیمت طلا
     path('limit-order/sell/confirm/', GoldLimitOrderSellConfirmAPIView.as_view(), name='gold-limit-order-sell-confirm'),
+
+    # CHART
     path("chart/", GoldChartAPIView.as_view(), name="gold-chart"),
+
+    # PRICE ALERTS
     path("price-alert/", PriceAlertAPIView.as_view()),
     path("price-alert/<int:pk>/", DeletePriceAlertAPIView.as_view()),
     path("price-alert/<int:pk>/toggle/", TogglePriceAlertAPIView.as_view()),
     path("price-alert/report/", PriceAlertReportAPIView.as_view()),
     path("price-alert/logs/", PriceAlertLogAPIView.as_view()),
-    # gold_app/urls.py
+
+    # LIMIT ORDER UPDATE
     path('limit-orders/<int:pk>/update/', GoldLimitOrderUpdateAPIView.as_view(), name='gold-limit-order-update'),
     path('investment/confirm/', GoldInvestmentConfirmView.as_view(), name='gold-investment-confirm'),
     path('limit-orders/<int:pk>/partial-update/', GoldLimitOrderPartialUpdateAPIView.as_view(), name='gold-limit-order-partial-update'),
+
+    # GUARANTEE
     path('guarantee/plans/', GoldGuaranteePlansView.as_view(), name='gold-guarantee-plans'),
     path('guarantee/info/', GoldGuaranteeInfoView.as_view(), name='gold-guarantee-info'),
     path('guarantee/create/', GoldGuaranteeCreateView.as_view(), name='gold-guarantee-create'),
@@ -186,23 +266,30 @@ urlpatterns = [
     path('guarantee/<int:guarantee_id>/', GoldGuaranteeDetailView.as_view(), name='gold-guarantee-detail'),
     path('guarantee/<int:guarantee_id>/cancel/', GoldGuaranteeCancelView.as_view(), name='gold-guarantee-cancel'),
     path('guarantee/<int:guarantee_id>/execute/', GoldGuaranteeExecuteView.as_view(), name='gold-guarantee-execute'),
+
+    # SHORT ORDER
     path('short/create/', GoldShortOrderCreateAPIView.as_view(), name='gold-short-create'),
     path('short/', GoldShortOrderListAPIView.as_view(), name='gold-short-list'),
     path('short/<int:pk>/', GoldShortOrderDetailAPIView.as_view(), name='gold-short-detail'),
     path('short/<int:pk>/close/', GoldShortOrderCloseAPIView.as_view(), name='gold-short-close'),
     path('short/<int:pk>/liquidate/', GoldShortOrderLiquidateAPIView.as_view(), name='gold-short-liquidate'),
     path('short/<int:pk>/history/', GoldShortOrderHistoryAPIView.as_view(), name='gold-short-history'),
+
+    # LIMIT ORDERS
     path('limit-orders/create/', GoldLimitOrderCreateAPIView.as_view(), name='gold-limit-order-create'),
-    path('invoices/', InvoiceListAPIView.as_view(), name='invoice_list'),
-    path('version/', VersionControlView.as_view(), name='version-control'),
-    path('invoices/<int:invoice_id>/', InvoiceDetailAPIView.as_view(), name='invoice_detail'),
-    path('invoices/<int:invoice_id>/download/', InvoiceDownloadPDFAPIView.as_view(), name='invoice_download_pdf'),
     path('limit-orders/', GoldLimitOrderListAPIView.as_view(), name='gold-limit-order-list'),
     path('limit-orders/<int:pk>/', GoldLimitOrderDetailAPIView.as_view(), name='gold-limit-order-detail'),
     path('limit-orders/<int:pk>/cancel/', GoldLimitOrderCancelAPIView.as_view(), name='gold-limit-order-cancel'),
     path('limit-orders/<int:pk>/execute/', GoldLimitOrderExecuteAPIView.as_view(), name='gold-limit-order-execute'),
+
+    # INVOICES
+    path('invoices/', InvoiceListAPIView.as_view(), name='invoice_list'),
+    path('version/', VersionControlView.as_view(), name='version-control'),
+    path('invoices/<int:invoice_id>/', InvoiceDetailAPIView.as_view(), name='invoice_detail'),
+    path('invoices/<int:invoice_id>/download/', InvoiceDownloadPDFAPIView.as_view(), name='invoice_download_pdf'),
+
+    # PHYSICAL INVOICES
     path('physical-invoices/', PhysicalOrderInvoiceListView.as_view(), name='physical-invoice-list'),
     path('physical-invoices/<int:invoice_id>/', PhysicalOrderInvoiceDetailView.as_view(), name='physical-invoice-detail'),
     path('physical-invoices/<int:invoice_id>/download/', PhysicalOrderInvoiceDownloadView.as_view(), name='physical-invoice-download'),
 ]
-

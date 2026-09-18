@@ -6,6 +6,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-temp-key-for-dev")
 DEBUG = True
+TALASEA_API_KEY = "Op7X3CBWAp0fwHl1QnEcnoSk"
+
+
 # DEBUG = os.environ.get("DEBUG", "False") == "True"
 ALLOWED_HOSTS = [
     "127.0.0.1",
@@ -106,10 +109,14 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "accounts.authentication.CookieJWTAuthentication",
     ),
-    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
-    "EXCEPTION_HANDLER": "admin_panel.exceptions.custom_exception_handler",
+
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+
+    "EXCEPTION_HANDLER": "accounts.exceptions.custom_exception_handler",
+
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-    "EXCEPTION_HANDLER": "rest_framework.views.exception_handler",
 }
 
 # =========================================================
@@ -199,7 +206,7 @@ CORS_ALLOW_METHODS = [
     "POST",
     "PUT",
 ]
-TALASEA_API_KEY = "Op7X3CBWAp0fwHl1QnEcnoSk"
+
 HANZAEI_VALKEY = {
     "HOST": "vkey.hanzaeigold.com",
     "PORT": 6379,

@@ -963,10 +963,14 @@ class ProductCategorySerializer(serializers.ModelSerializer):
 
 from rest_framework import serializers
 
+# admin_panel/serializers.py
 
 class ProductSerializer(serializers.ModelSerializer):
 
+    # ✅ هر دو فیلد رو SerializerMethodField کن
+    image = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
+
     total_price = serializers.SerializerMethodField()
     profit_amount = serializers.SerializerMethodField()
     category_name = serializers.SerializerMethodField()
@@ -975,53 +979,94 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = "__all__"
 
+    # =========================================================
+    # نام دسته
+    # =========================================================
+
     def get_category_name(self, obj):
         return obj.category.name if obj.category else None
 
+    # =========================================================
+    # تصویر (مشترک)
+    # =========================================================
+
+    def _get_image(self, obj):
+        """
+        تصویر:
+        1. اول از دارینه (image فایل)
+        2. بعد از طلاسی (talasea_image_url → پراکسی)
+        """
+        # 1. تصویر دارینه
+        if obj.image:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+
+        # 2. تصویر طلاسی از طریق پراکسی دارینه
+        if obj.talasea_image_url:
+            filename = obj.talasea_image_url.split("/img/app/")[-1]
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(
+                    f"/gold/talasea/image/{filename}"
+                )
+            return f"/gold/talasea/image/{filename}"
+
+        # 3. هیچ‌کدوم
+        return None
+
+    def get_image(self, obj):
+        return self._get_image(obj)
+
     def get_image_url(self, obj):
+        return self._get_image(obj)
 
-        if not obj.image:
-            return None
-
-        request = self.context.get("request")
-
-        if request:
-            return request.build_absolute_uri(obj.image.url)
-
-        return obj.image.url
+    # =========================================================
+    # قیمت نهایی
+    # =========================================================
 
     def get_total_price(self, obj):
-
-        gold_price = get_live_gold_price()
-
-        if gold_price is None:
-            return None
-
-        weight = Decimal(str(obj.weight))
-        profit_percent = Decimal(str(obj.profit_percent))
-
-        # وزن پس از اعمال سود
-        final_weight = weight * (Decimal("1") + (profit_percent / Decimal("100")))
-
-        # قیمت نهایی
-        return int(final_weight * Decimal(str(gold_price)))
-
-    def get_profit_amount(self, obj):
-
         try:
-            weight = Decimal(str(self.weight))
+            # محصول طلاسی: از قیمت لحظه‌ای طلاسی
+            if obj.talasea_commodity_id and obj.talasea_irt_price:
+                return int(obj.talasea_irt_price)
+
+            # محصول دارینه: قیمت زنده
+            gold_price = get_live_gold_price()
+
+            if gold_price is None:
+                return int(obj.sell_price or 0)
+
+            weight = Decimal(str(obj.weight))
             profit_percent = Decimal(str(obj.profit_percent))
 
-            return float(weight * (profit_percent / Decimal("100")))
+            final_weight = weight * (Decimal("1") + (profit_percent / Decimal("100")))
 
+            return int(final_weight * Decimal(str(gold_price)))
+
+        except Exception:
+            return int(obj.sell_price or 0)
+
+    # =========================================================
+    # سود
+    # =========================================================
+
+    def get_profit_amount(self, obj):
+        try:
+            weight = Decimal(str(obj.weight))
+            profit_percent = Decimal(str(obj.profit_percent))
+            return float(weight * (profit_percent / Decimal("100")))
         except Exception:
             return 0
 
-    def to_representation(self, instance):
+    # =========================================================
+    # to_representation
+    # =========================================================
 
+    def to_representation(self, instance):
         data = super().to_representation(instance)
         data["category_name"] = self.get_category_name(instance)
-
         return data
 
 

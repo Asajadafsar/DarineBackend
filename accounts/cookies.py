@@ -1,5 +1,6 @@
 import os
 
+
 ACCESS_COOKIE = "accessToken"
 REFRESH_COOKIE = "refreshToken"
 
@@ -29,8 +30,8 @@ def set_auth_cookies(response, access, refresh):
     config = cookie_settings()
 
     response.set_cookie(
-        ACCESS_COOKIE,
-        access,
+        key=ACCESS_COOKIE,
+        value=access,
         httponly=True,
         secure=config["secure"],
         samesite=config["samesite"],
@@ -40,8 +41,8 @@ def set_auth_cookies(response, access, refresh):
     )
 
     response.set_cookie(
-        REFRESH_COOKIE,
-        refresh,
+        key=REFRESH_COOKIE,
+        value=refresh,
         httponly=True,
         secure=config["secure"],
         samesite=config["samesite"],
@@ -52,28 +53,43 @@ def set_auth_cookies(response, access, refresh):
 
     return response
 
-
 def clear_auth_cookies(response):
 
-    cookies = [
-        "accessToken",
-        "refreshToken",
-    ]
+    config = cookie_settings()
 
-    domains = [
-        None,
-        "api.darine.shop",
-        "gold.darine.shop",
-        "silver.darine.shop",
-        ".darine.shop",
-    ]
+    response.delete_cookie(
+        key=ACCESS_COOKIE,
+        path="/",
+        domain=config["domain"],
+        samesite=config["samesite"],
+    )
 
-    for cookie in cookies:
-        for domain in domains:
-            response.delete_cookie(
-                key=cookie,
-                path="/",
-                domain=domain,
-            )
+    response.delete_cookie(
+        key=REFRESH_COOKIE,
+        path="/",
+        domain=config["domain"],
+        samesite=config["samesite"],
+    )
+
+    # در صورت وجود Cookieهای قدیمی Production
+    if is_production():
+
+        old_domains = [
+            "api.darine.shop",
+            "gold.darine.shop",
+            "silver.darine.shop",
+            ".darine.shop",
+        ]
+
+        for cookie in [ACCESS_COOKIE, REFRESH_COOKIE]:
+
+            for domain in old_domains:
+
+                response.delete_cookie(
+                    key=cookie,
+                    path="/",
+                    domain=domain,
+                    samesite="None",
+                )
 
     return response

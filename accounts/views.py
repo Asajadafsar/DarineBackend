@@ -837,10 +837,10 @@ class RegisterStepThree(APIView):
 # LOGIN PASSWORD
 # ==========================================
 
-
 class LoginWithPassword(APIView):
 
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     @extend_schema(request=LoginSerializer)
     def post(self, request):
@@ -864,15 +864,19 @@ class LoginWithPassword(APIView):
             return response
 
         mobile = serializer.validated_data["mobile"]
-
         password = serializer.validated_data["password"]
 
-        user = authenticate(request, mobile=mobile, password=password)
+        user = authenticate(
+            request,
+            mobile=mobile,
+            password=password
+        )
 
         if not user:
 
             response = error_response(
-                "شماره موبایل یا رمز عبور اشتباه است", status_code=401
+                "شماره موبایل یا رمز عبور اشتباه است",
+                status_code=401
             )
 
             create_admin_log(
@@ -893,7 +897,6 @@ class LoginWithPassword(APIView):
         send_login_sms(user.mobile)
 
         refresh = RefreshToken.for_user(user)
-
         access = refresh.access_token
 
         response = success_response(
@@ -926,7 +929,11 @@ Password
 """,
         )
 
-        set_auth_cookies(response, str(access), str(refresh))
+        set_auth_cookies(
+            response,
+            str(access),
+            str(refresh)
+        )
 
         return response
 
@@ -935,10 +942,10 @@ Password
 # LOGIN OTP
 # ==========================================
 
-
 class LoginWithOTP(APIView):
 
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     @extend_schema(request=LoginOTPSerializer)
     def post(self, request):
@@ -947,7 +954,10 @@ class LoginWithOTP(APIView):
 
         if not serializer.is_valid():
 
-            response = error_response("اطلاعات نامعتبر", serializer.errors)
+            response = error_response(
+                "اطلاعات نامعتبر",
+                serializer.errors
+            )
 
             create_admin_log(
                 request=request,
@@ -962,10 +972,13 @@ class LoginWithOTP(APIView):
             return response
 
         mobile = serializer.validated_data["mobile"]
-
         code = serializer.validated_data["code"]
 
-        otp = OTPRequest.objects.filter(mobile=mobile, code=code, is_used=False).last()
+        otp = OTPRequest.objects.filter(
+            mobile=mobile,
+            code=code,
+            is_used=False
+        ).last()
 
         if not otp:
 
@@ -999,7 +1012,9 @@ class LoginWithOTP(APIView):
 
             return response
 
-        user = User.objects.filter(mobile=mobile).first()
+        user = User.objects.filter(
+            mobile=mobile
+        ).first()
 
         if not user:
 
@@ -1031,7 +1046,6 @@ class LoginWithOTP(APIView):
         send_login_sms(user.mobile)
 
         refresh = RefreshToken.for_user(user)
-
         access = refresh.access_token
 
         response = success_response(
@@ -1064,7 +1078,11 @@ OTP
 """,
         )
 
-        set_auth_cookies(response, str(access), str(refresh))
+        set_auth_cookies(
+            response,
+            str(access),
+            str(refresh)
+        )
 
         return response
 

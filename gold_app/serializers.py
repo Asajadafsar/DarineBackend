@@ -698,76 +698,76 @@ class FinancialTransactionSerializer(serializers.ModelSerializer):
 from rest_framework import serializers
 
 
-class ProductSerializer(serializers.ModelSerializer):
+# class ProductSerializer(serializers.ModelSerializer):
 
-    category_name = serializers.CharField(source="category.name", read_only=True)
+#     category_name = serializers.CharField(source="category.name", read_only=True)
 
-    image_url = serializers.SerializerMethodField()
+#     image_url = serializers.SerializerMethodField()
 
-    # مقدار وزنی هر محصول با اجرت
-    product_weight_with_fee = serializers.SerializerMethodField()
+#     # مقدار وزنی هر محصول با اجرت
+#     product_weight_with_fee = serializers.SerializerMethodField()
 
-    # قیمت نهایی نمایش به کاربر
-    total_price = serializers.SerializerMethodField()
+#     # قیمت نهایی نمایش به کاربر
+#     total_price = serializers.SerializerMethodField()
 
-    class Meta:
-        model = Product
-        fields = [
-            "id",
-            "name",
-            "category",
-            "category_name",
-            "delivery_type",
-            # وزن خالص
-            "weight",
-            # مقدار وزنی
-            "product_weight_with_fee",
-            # قیمت نهایی
-            "sell_price",
-            "total_price",
-            "inventory_count",
-            "image",
-            "image_url",
-            "description",
-            "is_active",
-            "created_at",
-        ]
+#     class Meta:
+#         model = Product
+#         fields = [
+#             "id",
+#             "name",
+#             "category",
+#             "category_name",
+#             "delivery_type",
+#             # وزن خالص
+#             "weight",
+#             # مقدار وزنی
+#             "product_weight_with_fee",
+#             # قیمت نهایی
+#             "sell_price",
+#             "total_price",
+#             "inventory_count",
+#             "image",
+#             "image_url",
+#             "description",
+#             "is_active",
+#             "created_at",
+#         ]
 
-    def get_image_url(self, obj):
+#     def get_image_url(self, obj):
 
-        if not obj.image:
-            return None
+#         if not obj.image:
+#             return None
 
-        request = self.context.get("request")
+#         request = self.context.get("request")
 
-        if request:
-            return request.build_absolute_uri(obj.image.url)
+#         if request:
+#             return request.build_absolute_uri(obj.image.url)
 
-        return obj.image.url
+#         return obj.image.url
 
-    def get_product_weight_with_fee(self, obj):
+#     def get_product_weight_with_fee(self, obj):
 
-        try:
+#         try:
 
-            return float(
-                Decimal(str(obj.weight))
-                * (Decimal("1") + (Decimal(str(obj.profit_percent)) / Decimal("100")))
-            )
+#             return float(
+#                 Decimal(str(obj.weight))
+#                 * (Decimal("1") + (Decimal(str(obj.profit_percent)) / Decimal("100")))
+#             )
 
-        except Exception:
-            return 0
+#         except Exception:
+#             return 0
 
-    def get_total_price(self, obj):
-        try:
-            live_price = get_live_gold_price()
-            if not live_price:
-                return int(obj.sell_price or 0)
-            total_price = Decimal(str(obj.total_weight_with_fees)) * Decimal(
-                str(live_price)
-            )
-            return int(total_price)
-        except Exception:
-            return int(obj.sell_price or 0)
+#     def get_total_price(self, obj):
+#         try:
+#             live_price = get_live_gold_price()
+#             if not live_price:
+#                 return int(obj.sell_price or 0)
+#             total_price = Decimal(str(obj.total_weight_with_fees)) * Decimal(
+#                 str(live_price)
+#             )
+#             return int(total_price)
+#         except Exception:
+#             return int(obj.sell_price or 0)
 
 
 # =========================================================
@@ -1871,11 +1871,458 @@ class WithdrawSerializer(serializers.Serializer):
 
 
 
+# # =========================================================
+# # CHECKOUT 
+# # =========================================================
+
+# class PhysicalOrderSerializer(serializers.Serializer):
+
+#     products = serializers.ListField(
+#         child=serializers.DictField(),
+#         allow_empty=False
+#     )
+
+#     payment_method = serializers.ChoiceField(
+#         choices=[
+#             ("TOMAN", "کیف پول"),
+#             ("GOLD", "طلا"),
+#         ]
+#     )
+
+#     def validate(self, data):
+
+#         products = data.get("products")
+
+#         if not products:
+#             raise serializers.ValidationError(
+#                 {"non_field_errors": ["سبد خرید خالی است"]}
+#             )
+
+#         for item in products:
+
+#             if "product_id" not in item:
+#                 raise serializers.ValidationError(
+#                     {"non_field_errors": ["product_id الزامی است"]}
+#                 )
+
+#             if "quantity" not in item:
+#                 raise serializers.ValidationError(
+#                     {"non_field_errors": ["quantity الزامی است"]}
+#                 )
+
+#             if int(item["quantity"]) < 1:
+#                 raise serializers.ValidationError(
+#                     {"non_field_errors": ["quantity نامعتبر است"]}
+#                 )
+
+#         return data
+
+
+
+# gold_app/serializers.py
+
+from decimal import Decimal
+
+from rest_framework import serializers
+
+from .models import Product, UserAddress, Order, OrderItem
+
+
 # =========================================================
-# CHECKOUT 
+# PRODUCT
 # =========================================================
 
+# gold_app/serializers.py
+class ProductSerializer(serializers.ModelSerializer):
+
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    image_url = serializers.SerializerMethodField()
+    product_weight_with_fee = serializers.SerializerMethodField()
+    total_price = serializers.SerializerMethodField()
+    is_talasea = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Product
+        fields = [
+            "id",
+            "name",
+            "category",
+            "category_name",
+            "delivery_type",
+            "weight",
+            "product_weight_with_fee",
+            "sell_price",
+            "total_price",
+            "inventory_count",
+            "image",
+            "image_url",
+            "description",
+            "is_active",
+            "created_at",
+            # ✅ فیلدهای طلاسی
+            "is_talasea",
+            "talasea_commodity_id",
+            "talasea_category",
+            "talasea_irt_price",
+            "talasea_image_url",   # ← اضافه کردم
+        ]
+
+    def get_image_url(self, obj):
+        """
+        تصویر: 
+        1. اول از دارینه (image)
+        2. بعد از طلاسی (talasea_image_url)
+        """
+        # 1. تصویر دارینه
+        if obj.image:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+
+        # 2. تصویر طلاسی ← ✅ این خط
+        if obj.talasea_image_url:
+            return obj.talasea_image_url
+
+        # 3. هیچ‌کدوم نبود
+        return None
+
+    def get_product_weight_with_fee(self, obj):
+        try:
+            return float(
+                Decimal(str(obj.weight))
+                * (Decimal("1") + (Decimal(str(obj.profit_percent)) / Decimal("100")))
+            )
+        except Exception:
+            return 0
+
+    def get_total_price(self, obj):
+        try:
+            # محصول طلاسی: قیمت لحظه‌ای طلاسی
+            if obj.talasea_commodity_id and obj.talasea_irt_price:
+                return int(obj.talasea_irt_price)
+
+            # محصول دارینه: قیمت زنده
+            from .utils import get_live_gold_price
+            live_price = get_live_gold_price()
+
+            if not live_price:
+                return int(obj.sell_price or 0)
+
+            total_price = Decimal(str(obj.total_weight_with_fees)) * Decimal(
+                str(live_price)
+            )
+            return int(total_price)
+
+        except Exception:
+            return int(obj.sell_price or 0)
+
+    def get_is_talasea(self, obj):
+        return bool(obj.talasea_commodity_id)
+
+
+
+
+
+
+# =========================================================
+# USER ADDRESS
+# =========================================================
+
+class UserAddressSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = UserAddress
+        fields = [
+            "id",
+            "province",
+            "city",
+            "address",
+            "postal_code",
+            "plaque",
+            "unit",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+
+
+# =========================================================
+# PHYSICAL ORDER
+# =========================================================
+
+# gold_app/serializers.py
+
+from .models import UserAddress, Product
+
+
 class PhysicalOrderSerializer(serializers.Serializer):
+    """
+    سریالایزر سفارش فیزیکی
+
+    ✅ اطلاعات کاربر خودکار از پروفایل خونده می‌شه
+    ✅ حضوری آدرس نمی‌خواد
+    ✅ درب منزل آدرس می‌خواد (address_id یا دستی)
+    """
+
+    products = serializers.ListField(
+        child=serializers.DictField(),
+        allow_empty=False,
+    )
+
+    payment_method = serializers.ChoiceField(
+        choices=[("TOMAN", "کیف پول"), ("GOLD", "طلا")]
+    )
+
+    # =============================================
+    # انتخاب روش تحویل
+    # =============================================
+    delivery_method = serializers.ChoiceField(
+        choices=[
+            ("IN_PERSON", "حضوری"),
+            ("HOME_DELIVERY", "درب منزل"),
+        ],
+        required=False,
+        help_text="IN_PERSON: حضوری | HOME_DELIVERY: درب منزل",
+    )
+
+    # =============================================
+    # آدرس (فقط برای درب منزل)
+    # =============================================
+    address_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=1,
+        help_text="اگه آدرس ذخیره‌شده داری، این رو بفرست",
+    )
+
+    province = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=100,
+    )
+    city = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=100,
+    )
+    address = serializers.CharField(
+        required=False,
+        allow_blank=True,
+    )
+    postal_code = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=20,
+    )
+    plaque = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=20,
+    )
+    unit = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=20,
+    )
+
+    # =============================================
+    # طلاسی
+    # =============================================
+    talasea_delivery_type = serializers.ChoiceField(
+        choices=[
+            ("PHYSICAL_DELIVERY", "حضوری"),
+            ("DIGIEXPRESS_DELIVERY", "درب منزل"),
+        ],
+        required=False,
+    )
+    talasea_city_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=1,
+    )
+    time_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+    )
+    latitude = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=7,
+        required=False,
+        allow_null=True,
+    )
+    longitude = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=7,
+        required=False,
+        allow_null=True,
+    )
+
+    # =============================================
+    # فیلدهای اختیاری (خودکار پر می‌شن)
+    # =============================================
+    national_code = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=10,
+    )
+    phone_number = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=15,
+    )
+    first_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=100,
+    )
+    last_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=100,
+    )
+
+    # =============================================
+    # VALIDATION
+    # =============================================
+
+    def validate_products(self, value):
+        if not value:
+            raise serializers.ValidationError("سبد خرید خالی است")
+        for item in value:
+            if "product_id" not in item:
+                raise serializers.ValidationError("product_id الزامی است")
+            if "quantity" not in item:
+                raise serializers.ValidationError("quantity الزامی است")
+            if int(item["quantity"]) < 1:
+                raise serializers.ValidationError("quantity نامعتبر است")
+        return value
+
+    def validate_national_code(self, value):
+        """اگه کد ملی داده شد، اعتبارسنجی کن"""
+        if not value:
+            return value
+
+        if not value.isdigit() or len(value) != 10:
+            raise serializers.ValidationError("کد ملی باید ۱۰ رقم باشد")
+
+        check = int(value[9])
+        s = sum(int(value[i]) * (10 - i) for i in range(9))
+        r = s % 11
+
+        if not ((r < 2 and check == r) or (r >= 2 and check == 11 - r)):
+            raise serializers.ValidationError("کد ملی نامعتبر است")
+
+        return value
+
+    def validate(self, data):
+        request = self.context.get("request")
+        user = request.user if request else None
+
+        if not user or not user.is_authenticated:
+            raise serializers.ValidationError({
+                "non_field_errors": ["کاربر احراز هویت نشده است"]
+            })
+
+        # =========================================
+        # 1. اطلاعات کاربر - خودکار از پروفایل
+        # =========================================
+        if not data.get("national_code"):
+            profile_national_code = getattr(user, "national_code", None)
+            if profile_national_code:
+                data["national_code"] = profile_national_code
+
+        if not data.get("phone_number"):
+            data["phone_number"] = getattr(user, "mobile", "") or ""
+
+        if not data.get("first_name"):
+            data["first_name"] = getattr(user, "first_name", "") or ""
+
+        if not data.get("last_name"):
+            data["last_name"] = getattr(user, "last_name", "") or ""
+
+        # چک نهایی
+        if not data.get("national_code"):
+            raise serializers.ValidationError({
+                "national_code": (
+                    "کد ملی الزامی است. لطفاً کد ملی را در پروفایل ذخیره کنید "
+                    "یا همراه سفارش ارسال کنید."
+                )
+            })
+
+        if not data.get("phone_number"):
+            raise serializers.ValidationError({
+                "phone_number": "شماره تلفن الزامی است"
+            })
+
+        # =========================================
+        # 2. تبدیل delivery_method → talasea_delivery_type
+        # =========================================
+        delivery_method = data.get("delivery_method")
+
+        if delivery_method:
+            if delivery_method == "IN_PERSON":
+                data["talasea_delivery_type"] = "PHYSICAL_DELIVERY"
+            elif delivery_method == "HOME_DELIVERY":
+                data["talasea_delivery_type"] = "DIGIEXPRESS_DELIVERY"
+
+        talasea_delivery_type = data.get(
+            "talasea_delivery_type", "PHYSICAL_DELIVERY"
+        )
+
+        # =========================================
+        # 3. شهر طلاسی (برای هر دو حالت الزامی)
+        # =========================================
+        if not data.get("talasea_city_id"):
+            raise serializers.ValidationError({
+                "talasea_city_id": "شناسه شهر طلاسی الزامی است."
+            })
+
+        # =========================================
+        # 4. بررسی بر اساس نوع تحویل
+        # =========================================
+        if talasea_delivery_type == "PHYSICAL_DELIVERY":
+            # ✅ حضوری: فقط time_id لازمه، آدرس نمی‌خواد
+            if not data.get("time_id"):
+                raise serializers.ValidationError({
+                    "time_id": "برای مراجعه حضوری، شناسه زمان (timeId) الزامی است."
+                })
+
+        elif talasea_delivery_type == "DIGIEXPRESS_DELIVERY":
+            # ✅ درب منزل: آدرس لازمه
+            address_id = data.get("address_id")
+
+            if address_id:
+                # آدرس ذخیره‌شده
+                address = UserAddress.objects.filter(
+                    id=address_id, user=user
+                ).first()
+
+                if not address:
+                    raise serializers.ValidationError({
+                        "address_id": "آدرس انتخاب‌شده یافت نشد"
+                    })
+            else:
+                # آدرس دستی
+                required_fields = ["province", "city", "address"]
+                missing = [f for f in required_fields if not data.get(f)]
+
+                if missing:
+                    raise serializers.ValidationError({
+                        "non_field_errors": [
+                            f"برای ارسال درب منزل، این فیلدها الزامی هستند: {', '.join(missing)}"
+                        ]
+                    })
+
+        return data
+# =========================================================
+# PHYSICAL ORDER (بدون آدرس - سبک برای پیش‌نمایش)
+# =========================================================
+
+class PhysicalOrderNoAddressSerializer(serializers.Serializer):
+    """
+    سریالایزر ساده برای پیش‌نمایش سفارش فیزیکی بدون آدرس
+    (فقط برای محاسبه قیمت)
+    """
 
     products = serializers.ListField(
         child=serializers.DictField(),
@@ -1889,33 +2336,83 @@ class PhysicalOrderSerializer(serializers.Serializer):
         ]
     )
 
-    def validate(self, data):
+    def validate_products(self, value):
+        if not value:
+            raise serializers.ValidationError("سبد خرید خالی است")
 
-        products = data.get("products")
-
-        if not products:
-            raise serializers.ValidationError(
-                {"non_field_errors": ["سبد خرید خالی است"]}
-            )
-
-        for item in products:
-
+        for item in value:
             if "product_id" not in item:
-                raise serializers.ValidationError(
-                    {"non_field_errors": ["product_id الزامی است"]}
-                )
-
+                raise serializers.ValidationError("product_id الزامی است")
             if "quantity" not in item:
-                raise serializers.ValidationError(
-                    {"non_field_errors": ["quantity الزامی است"]}
-                )
-
+                raise serializers.ValidationError("quantity الزامی است")
             if int(item["quantity"]) < 1:
-                raise serializers.ValidationError(
-                    {"non_field_errors": ["quantity نامعتبر است"]}
-                )
+                raise serializers.ValidationError("quantity نامعتبر است")
 
-        return data
+        return value
+
+
+# =========================================================
+# ORDER (نمایش)
+# =========================================================
+
+class OrderItemSerializer(serializers.ModelSerializer):
+
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    product_image = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrderItem
+        fields = [
+            "id",
+            "product",
+            "product_name",
+            "product_image",
+            "quantity",
+            "price_at_time",
+            "weight_at_time",
+        ]
+
+    def get_product_image(self, obj):
+        if not obj.product or not obj.product.image:
+            return None
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.product.image.url)
+        return obj.product.image.url
+
+
+class OrderSerializer(serializers.ModelSerializer):
+
+    items = OrderItemSerializer(many=True, read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            "id",
+            "tracking_code",
+            "status",
+            "status_display",
+            "payment_method",
+            "delivery_type",
+            "province",
+            "city",
+            "address",
+            "postal_code",
+            "plaque",
+            "unit",
+            "total_gold_amount",
+            "total_toman_amount",
+            "talasea_request_id",
+            "talasea_delivery_type",
+            "national_code",
+            "user_phone_number",
+            "items",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
 
 # gold_app/serializers.py - اضافه کردن PhysicalOrderInvoiceSerializer
 
@@ -2044,61 +2541,61 @@ class PhysicalOrderInvoiceSerializer(serializers.ModelSerializer):
 from rest_framework import serializers
 
 
-class UserAddressSerializer(serializers.ModelSerializer):
+# class UserAddressSerializer(serializers.ModelSerializer):
 
-    class Meta:
-        model = UserAddress
-        fields = [
-            "id",
-            "province",
-            "city",
-            "address",
-            "postal_code",
-            "plaque",
-            "unit",
-            "created_at",
-        ]
+#     class Meta:
+#         model = UserAddress
+#         fields = [
+#             "id",
+#             "province",
+#             "city",
+#             "address",
+#             "postal_code",
+#             "plaque",
+#             "unit",
+#             "created_at",
+#         ]
 
-        extra_kwargs = {
-            "province": {
-                "required": True,
-                "error_messages": {"required": "استان اجباری است"},
-            },
-            "city": {
-                "required": True,
-                "error_messages": {"required": "شهر اجباری است"},
-            },
-            "address": {
-                "required": True,
-                "error_messages": {"required": "آدرس اجباری است"},
-            },
-            "postal_code": {
-                "required": True,
-                "error_messages": {"required": "کد پستی اجباری است"},
-            },
-            "plaque": {
-                "required": True,
-                "error_messages": {"required": "پلاک اجباری است"},
-            },
-            "unit": {
-                "required": True,
-                "error_messages": {"required": "واحد اجباری است"},
-            },
-        }
+#         extra_kwargs = {
+#             "province": {
+#                 "required": True,
+#                 "error_messages": {"required": "استان اجباری است"},
+#             },
+#             "city": {
+#                 "required": True,
+#                 "error_messages": {"required": "شهر اجباری است"},
+#             },
+#             "address": {
+#                 "required": True,
+#                 "error_messages": {"required": "آدرس اجباری است"},
+#             },
+#             "postal_code": {
+#                 "required": True,
+#                 "error_messages": {"required": "کد پستی اجباری است"},
+#             },
+#             "plaque": {
+#                 "required": True,
+#                 "error_messages": {"required": "پلاک اجباری است"},
+#             },
+#             "unit": {
+#                 "required": True,
+#                 "error_messages": {"required": "واحد اجباری است"},
+#             },
+#         }
 
-    # =========================
-    # VALIDATION
-    # =========================
+#     # =========================
+#     # VALIDATION
+#     # =========================
 
-    def validate_postal_code(self, value):
+#     def validate_postal_code(self, value):
 
-        if not str(value).isdigit():
-            raise serializers.ValidationError("کد پستی فقط باید عدد باشد")
+#         if not str(value).isdigit():
+#             raise serializers.ValidationError("کد پستی فقط باید عدد باشد")
 
-        if len(str(value)) != 10:
-            raise serializers.ValidationError("کد پستی باید دقیقاً ۱۰ رقم باشد")
+#         if len(str(value)) != 10:
+#             raise serializers.ValidationError("کد پستی باید دقیقاً ۱۰ رقم باشد")
 
-        return value
+#         return value
 
 
 # =========================================================

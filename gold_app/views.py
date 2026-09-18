@@ -2926,6 +2926,483 @@ target نامعتبر:
 # =========================================================
 
 
+# class ProductListAPIView(APIView):
+
+#     permission_classes = [AllowAny]
+
+#     def get(self, request):
+
+#         queryset = (
+#             Product.objects.filter(
+#                 is_active=True,
+#                 inventory_count__gt=0,
+#             )
+#             .select_related("category")
+#             .order_by("-created_at")
+#         )
+
+#         category = request.GET.get("category")
+#         delivery_type = request.GET.get("delivery_type")
+
+#         if category:
+#             queryset = queryset.filter(category__slug=category)
+
+#         if delivery_type:
+#             queryset = queryset.filter(delivery_type=delivery_type)
+
+#         serializer = ProductSerializer(
+#             queryset,
+#             many=True,
+#             context={"request": request},
+#         )
+
+#         return success_response(
+#             message="محصولات دریافت شد",
+#             data=serializer.data,
+#         )
+        
+
+from django.db import transaction
+# from rest_framework.views import APIView
+# from rest_framework.permissions import IsAuthenticated
+
+
+# class PhysicalOrderAPIView(APIView):
+
+#     permission_classes = [IsAuthenticated]
+
+#     @transaction.atomic
+#     def post(self, request):
+
+#         serializer = PhysicalOrderSerializer(data=request.data)
+
+#         if not serializer.is_valid():
+#             return error_response(
+#                 message="خطا در داده‌های ارسالی", data=serializer.errors
+#             )
+
+#         user = request.user
+
+#         products_data = serializer.validated_data["products"]
+
+#         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+#         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(
+#             user=user
+#         )
+
+#         total_gold = Decimal("0")
+#         total_toman = Decimal("0")
+
+#         order_items = []
+
+#         # =====================================================
+#         # VALIDATE PRODUCTS
+#         # =====================================================
+#         for item in products_data:
+
+#             product = Product.objects.filter(
+#                 id=item["product_id"], is_active=True
+#             ).first()
+
+#             if not product:
+#                 return error_response(message=f"محصول {item['product_id']} یافت نشد")
+
+#             quantity = int(item["quantity"])
+
+#             if product.inventory_count < quantity:
+#                 return error_response(message=f"موجودی {product.name} کافی نیست")
+
+#             item_gold = product.total_weight_with_fees * quantity
+#             item_toman = product.buy_price * quantity
+
+#             total_gold += item_gold
+#             total_toman += item_toman
+
+#             order_items.append(
+#                 {
+#                     "product": product,
+#                     "quantity": quantity,
+#                     "price_at_time": product.buy_price,
+#                     "weight_at_time": product.total_weight_with_fees,
+#                 }
+#             )
+
+#         payment_method = serializer.validated_data["payment_method"]
+
+#         # =====================================================
+#         # PAYMENT HANDLING
+#         # =====================================================
+
+#         if payment_method == "TOMAN":
+
+#             if wallet.accessible_toman < total_toman:
+#                 return error_response(message="موجودی کیف پول کافی نیست")
+
+#             # ❗ بهتر: به blocked منتقل شود (نه حذف مستقیم)
+#             wallet.accessible_toman -= total_toman
+#             wallet.blocked_toman += total_toman
+
+#             wallet.save(
+#                 update_fields=["accessible_toman", "blocked_toman", "updated_at"]
+#             )
+
+#         elif payment_method == "GOLD":
+
+#             if inventory.accessible_balance < total_gold:
+#                 return error_response(message="موجودی طلا کافی نیست")
+
+#             inventory.accessible_balance -= total_gold
+#             inventory.blocked_balance += total_gold
+
+#             inventory.save(
+#                 update_fields=["accessible_balance", "blocked_balance", "updated_at"]
+#             )
+
+#         else:
+#             return error_response(message="روش پرداخت نامعتبر است")
+
+#         # =====================================================
+#         # ADDRESS (FIXED + REQUIRED HANDLING)
+#         # =====================================================
+
+#         address_id = serializer.validated_data.get("address_id")
+
+#         if address_id:
+
+#             address = UserAddress.objects.filter(id=address_id, user=user).first()
+
+#             if not address:
+#                 return error_response(message="آدرس انتخابی یافت نشد")
+
+#         else:
+
+#             address = UserAddress.objects.create(
+#                 user=user,
+#                 province=serializer.validated_data["province"],
+#                 city=serializer.validated_data["city"],
+#                 address=serializer.validated_data["address"],
+#                 postal_code=serializer.validated_data.get("postal_code"),
+#                 plaque=serializer.validated_data.get("plaque"),
+#                 unit=serializer.validated_data.get("unit"),
+#             )
+
+#         # =====================================================
+#         # CREATE ORDER
+#         # =====================================================
+
+#         order = Order.objects.create(
+#             user=user,
+#             province=address.province,
+#             city=address.city,
+#             address=address.address,
+#             postal_code=address.postal_code,
+#             plaque=address.plaque,
+#             unit=address.unit,
+#             payment_method=payment_method,
+#             delivery_type=serializer.validated_data["delivery_type"],
+#             total_gold_amount=total_gold,
+#             total_toman_amount=total_toman,
+#             tracking_code=generate_tracking_code("ORD"),
+#             status="REQUESTED",
+#         )
+
+#         OrderStatusHistory.objects.create(
+#             order=order, status="REQUESTED", description="سفارش ثبت شد"
+#         )
+
+#         # =====================================================
+#         # ORDER ITEMS + STOCK
+#         # =====================================================
+
+#         for item in order_items:
+
+#             product = item["product"]
+
+#             OrderItem.objects.create(
+#                 order=order,
+#                 product=product,
+#                 quantity=item["quantity"],
+#                 price_at_time=item["price_at_time"],
+#                 weight_at_time=item["weight_at_time"],
+#             )
+
+#         # =====================================================
+#         # RESPONSE (WITH DATE FIX)
+#         # =====================================================
+
+#         return success_response(
+#             message="سفارش با موفقیت ثبت شد",
+#             status_code=201,
+#             data={
+#                 "order_id": order.id,
+#                 "tracking_code": order.tracking_code,
+#                 "status": order.status,
+#                 "status_display": order.get_status_display(),
+#                 # ⏱ تاریخ و ساعت اضافه شد
+#                 "created_at": order.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+#                 "total_gold": float(total_gold),
+#                 "total_price": int(total_toman),
+#                 "wallet": {
+#                     "accessible_toman": float(wallet.accessible_toman),
+#                     "blocked_toman": float(wallet.blocked_toman),
+#                     "toman_total": float(wallet.toman_total),
+#                 },
+#                 "gold_inventory": {
+#                     "accessible_balance": float(inventory.accessible_balance),
+#                     "blocked_balance": float(inventory.blocked_balance),
+#                     "total_balance": float(inventory.total_balance),
+#                 },
+#             },
+#         )
+
+
+# class PhysicalOrderNoAddressAPIView(APIView):
+
+#     permission_classes = [IsAuthenticated]
+
+#     @transaction.atomic
+#     def post(self, request):
+
+#         serializer = PhysicalOrderSerializer(data=request.data)
+
+#         if not serializer.is_valid():
+#             return error_response(
+#                 message="خطا در داده‌های ارسالی",
+#                 data=serializer.errors
+#             )
+
+#         user = request.user
+
+#         products_data = serializer.validated_data["products"]
+#         payment_method = serializer.validated_data["payment_method"]
+
+#         if payment_method not in ["TOMAN", "GOLD"]:
+#             return error_response(message="روش پرداخت نامعتبر است")
+
+#         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+#         inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+
+#         total_gold = Decimal("0")
+#         total_toman = Decimal("0")
+
+#         order_items = []
+#         locked_products = {}
+
+#         # =====================================================
+#         # VALIDATE PRODUCTS (با قفل روی موجودی محصول برای جلوگیری از race condition)
+#         # =====================================================
+
+#         for item in products_data:
+
+#             product = (
+#                 Product.objects.select_for_update()
+#                 .filter(id=item["product_id"], is_active=True)
+#                 .first()
+#             )
+
+#             if not product:
+#                 return error_response(
+#                     message=f"محصول {item['product_id']} یافت نشد"
+#                 )
+
+#             quantity = int(item["quantity"])
+
+#             # -----------------------------------------
+#             # اگر یک محصول چند بار در لیست ارسال شده باشد،
+#             # موجودی تجمعی چک شود نه فقط تک‌تک
+#             # -----------------------------------------
+#             already_requested = locked_products.get(product.id, 0)
+#             total_requested = already_requested + quantity
+
+#             if product.inventory_count < total_requested:
+#                 return error_response(
+#                     message=f"موجودی {product.name} کافی نیست"
+#                 )
+
+#             locked_products[product.id] = total_requested
+
+#             item_gold = product.total_weight_with_fees * quantity
+#             item_toman = product.buy_price * quantity
+
+#             total_gold += item_gold
+#             total_toman += item_toman
+
+#             order_items.append({
+#                 "product": product,
+#                 "quantity": quantity,
+#                 "price_at_time": product.buy_price,
+#                 "weight_at_time": product.total_weight_with_fees,
+#             })
+
+#         # =====================================================
+#         # PAYMENT HANDLING
+#         # =====================================================
+
+#         if payment_method == "TOMAN":
+
+#             if wallet.accessible_toman < total_toman:
+#                 return error_response(message="موجودی کیف پول کافی نیست")
+
+#             wallet.accessible_toman -= total_toman
+#             wallet.blocked_toman += total_toman
+
+#             wallet.save(update_fields=["accessible_toman", "blocked_toman"])
+
+#         elif payment_method == "GOLD":
+
+#             if inventory.accessible_balance < total_gold:
+#                 return error_response(message="موجودی طلا کافی نیست")
+
+#             inventory.accessible_balance -= total_gold
+#             inventory.blocked_balance += total_gold
+
+#             inventory.save(update_fields=["accessible_balance", "blocked_balance"])
+
+#         # =====================================================
+#         # DECREASE PRODUCT INVENTORY
+#         # =====================================================
+
+#         # for product_id, requested_qty in locked_products.items():
+#         #     Product.objects.filter(id=product_id).update(
+#         #         inventory_count=F("inventory_count") - requested_qty
+#         #     )
+
+#         # =====================================================
+#         # CREATE ORDER (NO ADDRESS)
+#         # =====================================================
+
+#         order = Order.objects.create(
+#             user=user,
+#             province="",
+#             city="",
+#             address="",
+#             postal_code="",
+#             plaque="",
+#             unit="",
+#             payment_method=payment_method,
+#             total_gold_amount=total_gold,
+#             total_toman_amount=total_toman,
+#             tracking_code=generate_tracking_code("ORD"),
+#             status="REQUESTED",
+#         )
+
+#         OrderStatusHistory.objects.create(
+#             order=order,
+#             status="REQUESTED",
+#             description="سفارش ثبت شد"
+#         )
+
+#         # =====================================================
+#         # ORDER ITEMS
+#         # =====================================================
+
+#         for item in order_items:
+
+#             OrderItem.objects.create(
+#                 order=order,
+#                 product=item["product"],
+#                 quantity=item["quantity"],
+#                 price_at_time=item["price_at_time"],
+#                 weight_at_time=item["weight_at_time"],
+#             )
+
+#         # =====================================================
+#         # LOG
+#         # =====================================================
+
+#         create_admin_log(
+#             request=request,
+#             admin=None,
+#             user=user,
+#             action_type="ORDER",
+#             action="ثبت سفارش فیزیکی",
+#             model_name="Order",
+#             tracking_code=order.tracking_code,
+#             object_id=order.id,
+#             description=f"""
+# کاربر: {user.mobile}
+
+# روش پرداخت:
+# {payment_method}
+
+# مبلغ تومانی:
+# {total_toman:,}
+
+# وزن طلا:
+# {total_gold}
+
+# موجودی قابل برداشت تومان:
+# {wallet.accessible_toman:,}
+
+# موجودی قابل برداشت طلا:
+# {inventory.accessible_balance}
+# """,
+#         )
+
+#         # =====================================================
+#         # RESPONSE
+#         # =====================================================
+
+#         return success_response(
+#             message="سفارش با موفقیت ثبت شد",
+#             status_code=201,
+#             data={
+#                 "order_id": order.id,
+#                 "tracking_code": order.tracking_code,
+#                 "status": order.status,
+#                 "status_display": order.get_status_display(),
+#                 "created_at": order.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+#                 "total_gold": float(total_gold),
+#                 "total_price": int(total_toman),
+#                 "wallet": {
+#                     "accessible_toman": float(wallet.accessible_toman),
+#                     "blocked_toman": float(wallet.blocked_toman),
+#                 },
+#                 "gold_inventory": {
+#                     "accessible_balance": float(inventory.accessible_balance),
+#                     "blocked_balance": float(inventory.blocked_balance),
+#                 },
+#             },
+#         )
+
+
+# gold_app/views.py
+
+import uuid
+from decimal import Decimal, ROUND_DOWN
+
+from django.db import transaction
+from django.db.models import F
+from django.utils import timezone
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated, AllowAny
+
+from .models import (
+    Product,
+    Order,
+    OrderItem,
+    OrderStatusHistory,
+    Wallet,
+    GoldInventory,
+    UserAddress,
+    PhysicalOrderInvoice,
+)
+from .serializers import (
+    ProductSerializer,
+    PhysicalOrderSerializer,
+    PhysicalOrderNoAddressSerializer,
+    OrderSerializer,
+    UserAddressSerializer,
+)
+from gold_app.services.talasea import TalaseaClient, TalaseaError
+
+
+
+# =========================================================
+# PRODUCTS
+# =========================================================
+# gold_app/views.py
+
 class ProductListAPIView(APIView):
 
     permission_classes = [AllowAny]
@@ -2943,12 +3420,19 @@ class ProductListAPIView(APIView):
 
         category = request.GET.get("category")
         delivery_type = request.GET.get("delivery_type")
+        source = request.GET.get("source")  # ✅ جدید: talasea یا darine
 
         if category:
             queryset = queryset.filter(category__slug=category)
 
         if delivery_type:
             queryset = queryset.filter(delivery_type=delivery_type)
+
+        # ✅ فیلتر بر اساس منبع
+        if source == "talasea":
+            queryset = queryset.filter(talasea_commodity_id__isnull=False)
+        elif source == "darine":
+            queryset = queryset.filter(talasea_commodity_id__isnull=True)
 
         serializer = ProductSerializer(
             queryset,
@@ -2960,162 +3444,425 @@ class ProductListAPIView(APIView):
             message="محصولات دریافت شد",
             data=serializer.data,
         )
-        
-
-from django.db import transaction
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
 
 
+# =========================================================
+# PHYSICAL ORDER — با اتصال به طلاسی (با آدرس)
+# =========================================================
 class PhysicalOrderAPIView(APIView):
+    """
+    ثبت سفارش فیزیکی با اتصال به طلاسی
+    
+    منطق:
+    - حضوری (IN_PERSON): فقط time_id + talasea_city_id نیازه، آدرس نمی‌خواد
+    - درب منزل (HOME_DELIVERY): address_id یا فیلدهای آدرس + talasea_city_id
+    - اطلاعات کاربر (کد ملی، نام، فامیل، شماره) خودکار از پروفایل
+    """
 
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request):
 
-        serializer = PhysicalOrderSerializer(data=request.data)
+        # =========================================================
+        # 1. دریافت قیمت لحظه‌ای از Talasea
+        # =========================================================
+
+        try:
+            talasea = TalaseaClient()
+            talasea_gold_price = Decimal(str(talasea.get_gold_price()))
+        except TalaseaError as exc:
+            return error_response(
+                message=str(exc),
+                status_code=400
+            )
+
+        if talasea_gold_price <= 0:
+            return error_response(
+                message="قیمت طلا نامعتبر است.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 2. تبدیل قیمت Talasea به قیمت سیستم
+        # Talasea: 22556 → سیستم: 22,556,000
+        # =========================================================
+
+        gold_price = (
+            talasea_gold_price * Decimal("1000")
+        ).quantize(
+            Decimal("1"),
+            rounding=ROUND_DOWN
+        )
+
+        if gold_price <= 0:
+            return error_response(
+                message="قیمت طلا نامعتبر است.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 3. Serializer (با context)
+        # =========================================================
+
+        serializer = PhysicalOrderSerializer(
+            data=request.data,
+            context={"request": request},   # ✅ حیاتی
+        )
 
         if not serializer.is_valid():
             return error_response(
-                message="خطا در داده‌های ارسالی", data=serializer.errors
+                message="اطلاعات سفارش نامعتبر است.",
+                errors=serializer.errors,
+                status_code=400
             )
 
+        validated_data = serializer.validated_data
         user = request.user
 
-        products_data = serializer.validated_data["products"]
+        products_data = validated_data["products"]
+        payment_method = validated_data["payment_method"]
 
-        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
-        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(
-            user=user
+        # ✅ اینا الان همیشه مقدار دارن (از سریالایزر خودکار پر شدن)
+        national_code = validated_data["national_code"]
+        phone_number = validated_data["phone_number"]
+        first_name = validated_data.get("first_name") or "کاربر"
+        last_name = validated_data.get("last_name") or "دارینه"
+
+        # نوع تحویل
+        talasea_delivery_type = validated_data.get(
+            "talasea_delivery_type", "PHYSICAL_DELIVERY"
         )
+        time_id = validated_data.get("time_id")
+        talasea_city_id = validated_data.get("talasea_city_id")
+
+        # =========================================================
+        # 4. اعتبارسنجی محصولات + محاسبه مجموع
+        # =========================================================
 
         total_gold = Decimal("0")
         total_toman = Decimal("0")
-
+        talasea_volume_total = Decimal("0")
         order_items = []
+        talasea_items = []
+        locked_products = {}
 
-        # =====================================================
-        # VALIDATE PRODUCTS
-        # =====================================================
         for item in products_data:
 
-            product = Product.objects.filter(
-                id=item["product_id"], is_active=True
-            ).first()
+            product = (
+                Product.objects
+                .select_for_update()
+                .filter(id=item["product_id"], is_active=True)
+                .first()
+            )
 
             if not product:
-                return error_response(message=f"محصول {item['product_id']} یافت نشد")
+                return error_response(
+                    message=f"محصول {item['product_id']} یافت نشد",
+                    status_code=404
+                )
+
+            if not product.talasea_commodity_id:
+                return error_response(
+                    message=f"محصول «{product.name}» به طلاسی متصل نیست.",
+                    status_code=400
+                )
 
             quantity = int(item["quantity"])
 
-            if product.inventory_count < quantity:
-                return error_response(message=f"موجودی {product.name} کافی نیست")
+            already_requested = locked_products.get(product.id, 0)
+            total_requested = already_requested + quantity
 
-            item_gold = product.total_weight_with_fees * quantity
-            item_toman = product.buy_price * quantity
+            if product.inventory_count < total_requested:
+                return error_response(
+                    message=f"موجودی «{product.name}» کافی نیست",
+                    status_code=400
+                )
 
-            total_gold += item_gold
+            locked_products[product.id] = total_requested
+
+            # محاسبه وزن و مبلغ
+            item_weight = Decimal(str(product.total_weight_with_fees)) * quantity
+            item_toman = (
+                Decimal(str(product.total_weight_with_fees))
+                * gold_price
+                * quantity
+            ).quantize(Decimal("1"))
+
+            # حجم طلاسی (میلی‌گرم)
+            item_talasea_volume = (
+                item_weight * Decimal("1000")
+            ).quantize(Decimal("1"), rounding=ROUND_DOWN)
+
+            total_gold += item_weight
             total_toman += item_toman
+            talasea_volume_total += item_talasea_volume
 
-            order_items.append(
-                {
-                    "product": product,
-                    "quantity": quantity,
-                    "price_at_time": product.buy_price,
-                    "weight_at_time": product.total_weight_with_fees,
-                }
+            order_items.append({
+                "product": product,
+                "quantity": quantity,
+                "price_at_time": gold_price,
+                "weight_at_time": product.total_weight_with_fees,
+                "total_weight": item_weight,
+                "total_price": item_toman,
+                "talasea_volume": item_talasea_volume,
+            })
+
+            talasea_items.append({
+                "commodityId": product.talasea_commodity_id,
+                "count": quantity,
+            })
+
+        # =========================================================
+        # 5. چک حداقل مبلغ Talasea (50,000 تومان)
+        # =========================================================
+
+        talasea_gold_value = (
+            talasea_volume_total * talasea_gold_price
+        ).quantize(Decimal("1"), rounding=ROUND_DOWN)
+
+        if talasea_gold_value < Decimal("50000"):
+            return error_response(
+                message=(
+                    f"حداقل مبلغ سفارش از Talasea 50 هزار تومان می‌باشد. "
+                    f"(مبلغ فعلی: {int(talasea_gold_value):,} تومان)"
+                ),
+                status_code=400
             )
 
-        payment_method = serializer.validated_data["payment_method"]
+        # =========================================================
+        # 6. دریافت کیف پول و موجودی طلا با Lock
+        # =========================================================
 
-        # =====================================================
-        # PAYMENT HANDLING
-        # =====================================================
+        wallet = (
+            Wallet.objects
+            .select_for_update()
+            .filter(user=user)
+            .first()
+        )
+
+        if not wallet:
+            return error_response(
+                message="کیف پول کاربر پیدا نشد.",
+                status_code=404
+            )
+
+        inventory = (
+            GoldInventory.objects
+            .select_for_update()
+            .filter(user=user)
+            .first()
+        )
+
+        if not inventory:
+            return error_response(
+                message="موجودی طلای کاربر پیدا نشد.",
+                status_code=404
+            )
+
+        # =========================================================
+        # 7. بررسی موجودی بر اساس روش پرداخت
+        # =========================================================
 
         if payment_method == "TOMAN":
-
             if wallet.accessible_toman < total_toman:
-                return error_response(message="موجودی کیف پول کافی نیست")
+                return error_response(
+                    message="موجودی کیف پول کافی نیست.",
+                    status_code=400
+                )
+        elif payment_method == "GOLD":
+            if inventory.accessible_balance < total_gold:
+                return error_response(
+                    message="موجودی طلا کافی نیست.",
+                    status_code=400
+                )
+        else:
+            return error_response(
+                message="روش پرداخت نامعتبر است.",
+                status_code=400
+            )
 
-            # ❗ بهتر: به blocked منتقل شود (نه حذف مستقیم)
+        # =========================================================
+        # 8. مدیریت آدرس
+        # =========================================================
+
+        address = None
+        address_id = validated_data.get("address_id")
+
+        if talasea_delivery_type == "PHYSICAL_DELIVERY":
+            # ✅ حضوری: آدرس نمی‌خواد
+            # ولی برای loca طلاسی، یه آدرس پیش‌فرض می‌ذاریم
+            address = UserAddress.objects.filter(user=user).first()
+            
+            if not address:
+                # آدرس پیش‌فرض موقت
+                address = UserAddress.objects.create(
+                    user=user,
+                    province="قم",
+                    city="قم",
+                    address="پاساژ شهر طلا، مغازه دارینه",
+                    postal_code="3719813651",
+                    plaque="21",
+                    unit="1",
+                )
+
+        elif talasea_delivery_type == "DIGIEXPRESS_DELIVERY":
+            # ✅ درب منزل: آدرس الزامی
+            if address_id:
+                # آدرس ذخیره‌شده
+                address = UserAddress.objects.filter(
+                    id=address_id, user=user
+                ).first()
+
+                if not address:
+                    return error_response(
+                        message="آدرس انتخابی یافت نشد.",
+                        status_code=404
+                    )
+            else:
+                # آدرس جدید از فیلدهای ورودی
+                address = UserAddress.objects.create(
+                    user=user,
+                    province=validated_data["province"],
+                    city=validated_data["city"],
+                    address=validated_data["address"],
+                    postal_code=validated_data.get("postal_code") or "",
+                    plaque=validated_data.get("plaque") or "",
+                    unit=validated_data.get("unit") or "",
+                )
+
+        if not address:
+            return error_response(
+                message="آدرس معتبر پیدا نشد.",
+                status_code=400
+            )
+
+        # =========================================================
+        # 9. آماده‌سازی loca برای Talasea
+        # =========================================================
+
+        loca = {
+            "address": address.address,
+            "postalCode": address.postal_code or "0000000000",
+            "buildingNumber": address.plaque or "0",
+            "apartmentNumber": address.unit or "0",
+            "locationId": int(talasea_city_id),
+            "long": float(validated_data.get("longitude") or 0),
+            "lat": float(validated_data.get("latitude") or 0),
+            "firstName": first_name,
+            "lastName": last_name,
+        }
+
+        # =========================================================
+        # 10. Request ID
+        # =========================================================
+
+        request_id = str(uuid.uuid4())
+
+        # =========================================================
+        # 11. ارسال به Talasea
+        # =========================================================
+
+        try:
+            talasea_result = talasea.create_bulk_receive(
+                items=talasea_items,
+                gold_price=talasea_gold_price,
+                user_phone_number=phone_number,
+                user_national_code=national_code,
+                loca=loca,
+                delivery_type=talasea_delivery_type,
+                time_id=time_id,
+                base_asset="gold",
+                request_id=request_id,
+                address_id=talasea_city_id,
+            )
+        except TalaseaError as exc:
+            print("TALASEA ERROR:", str(exc))
+            return error_response(
+                message=str(exc),
+                status_code=400
+            )
+
+        # =========================================================
+        # 12. بلوکه کردن موجودی
+        # =========================================================
+
+        if payment_method == "TOMAN":
             wallet.accessible_toman -= total_toman
             wallet.blocked_toman += total_toman
-
             wallet.save(
-                update_fields=["accessible_toman", "blocked_toman", "updated_at"]
+                update_fields=[
+                    "accessible_toman",
+                    "blocked_toman",
+                    "updated_at",
+                ]
             )
-
         elif payment_method == "GOLD":
-
-            if inventory.accessible_balance < total_gold:
-                return error_response(message="موجودی طلا کافی نیست")
-
             inventory.accessible_balance -= total_gold
             inventory.blocked_balance += total_gold
-
             inventory.save(
-                update_fields=["accessible_balance", "blocked_balance", "updated_at"]
+                update_fields=[
+                    "accessible_balance",
+                    "blocked_balance",
+                    "updated_at",
+                ]
             )
 
-        else:
-            return error_response(message="روش پرداخت نامعتبر است")
+        # =========================================================
+        # 13. Tracking Code
+        # =========================================================
 
-        # =====================================================
-        # ADDRESS (FIXED + REQUIRED HANDLING)
-        # =====================================================
+        tracking_code = generate_tracking_code("ORD")
 
-        address_id = serializer.validated_data.get("address_id")
+        # =========================================================
+        # 14. Talasea Request ID
+        # =========================================================
 
-        if address_id:
+        talasea_request_id = (
+            talasea_result.get("requestIds")
+            or talasea_result.get("requestId")
+            or request_id
+        )
 
-            address = UserAddress.objects.filter(id=address_id, user=user).first()
-
-            if not address:
-                return error_response(message="آدرس انتخابی یافت نشد")
-
-        else:
-
-            address = UserAddress.objects.create(
-                user=user,
-                province=serializer.validated_data["province"],
-                city=serializer.validated_data["city"],
-                address=serializer.validated_data["address"],
-                postal_code=serializer.validated_data.get("postal_code"),
-                plaque=serializer.validated_data.get("plaque"),
-                unit=serializer.validated_data.get("unit"),
-            )
-
-        # =====================================================
-        # CREATE ORDER
-        # =====================================================
+        # =========================================================
+        # 15. ثبت سفارش
+        # =========================================================
 
         order = Order.objects.create(
             user=user,
             province=address.province,
             city=address.city,
             address=address.address,
-            postal_code=address.postal_code,
-            plaque=address.plaque,
-            unit=address.unit,
+            postal_code=address.postal_code or "",
+            plaque=address.plaque or "",
+            unit=address.unit or "",
             payment_method=payment_method,
-            delivery_type=serializer.validated_data["delivery_type"],
+            delivery_type="IN_PERSON" if talasea_delivery_type == "PHYSICAL_DELIVERY" else "HOME",
             total_gold_amount=total_gold,
             total_toman_amount=total_toman,
-            tracking_code=generate_tracking_code("ORD"),
+            tracking_code=tracking_code,
             status="REQUESTED",
+            talasea_request_id=request_id,
+            talasea_response=talasea_result,
+            national_code=national_code,
+            user_phone_number=phone_number,
+            talasea_delivery_type=talasea_delivery_type,
+            latitude=validated_data.get("latitude"),
+            longitude=validated_data.get("longitude"),
+            talasea_city_id=talasea_city_id,
         )
 
         OrderStatusHistory.objects.create(
-            order=order, status="REQUESTED", description="سفارش ثبت شد"
+            order=order,
+            status="REQUESTED",
+            description=f"سفارش ثبت و به طلاسی ارسال شد - {request_id}",
         )
 
-        # =====================================================
-        # ORDER ITEMS + STOCK
-        # =====================================================
+        # =========================================================
+        # 16. ثبت آیتم‌ها + کاهش موجودی
+        # =========================================================
 
         for item in order_items:
-
             product = item["product"]
 
             OrderItem.objects.create(
@@ -3126,243 +3873,623 @@ class PhysicalOrderAPIView(APIView):
                 weight_at_time=item["weight_at_time"],
             )
 
-        # =====================================================
-        # RESPONSE (WITH DATE FIX)
-        # =====================================================
+            product.inventory_count -= item["quantity"]
+            product.save(update_fields=["inventory_count"])
+
+        # =========================================================
+        # 17. ثبت فاکتور (اختیاری)
+        # =========================================================
+
+        invoice = None
+        try:
+            invoice = PhysicalOrderInvoice.objects.create(
+                order=order,
+                invoice_type="BUY",
+                buyer_name=f"{first_name} {last_name}".strip(),
+                buyer_national_id=national_code,
+                buyer_phone=phone_number,
+                buyer_address=address.address,
+                buyer_province=address.province,
+                buyer_city=address.city,
+                buyer_postal_code=address.postal_code or "",
+                order_tracking_code=order.tracking_code,
+                payment_method=payment_method,
+                gold_weight=total_gold,
+                gold_carat=18,
+                gold_price_per_gram=gold_price,
+                pure_gold_price=gold_price,
+                total_amount=total_toman,
+                products_summary=[
+                    {
+                        "name": it["product"].name,
+                        "quantity": it["quantity"],
+                        "price": int(it["total_price"]),
+                        "weight": float(it["total_weight"]),
+                    }
+                    for it in order_items
+                ],
+            )
+        except Exception as e:
+            print(f"⚠️ خطا در ثبت فاکتور: {e}")
+
+        # =========================================================
+        # 18. لاگ ادمین (اختیاری)
+        # =========================================================
+
+        try:
+            create_admin_log(
+                request=request,
+                admin=None,
+                user=user,
+                action_type="ORDER",
+                action="ثبت سفارش فیزیکی",
+                model_name="Order",
+                tracking_code=order.tracking_code,
+                object_id=order.id,
+                description=(
+                    f"کاربر: {user.mobile}\n"
+                    f"کد ملی: {national_code}\n"
+                    f"روش پرداخت: {payment_method}\n"
+                    f"مبلغ: {int(total_toman):,} تومان\n"
+                    f"وزن: {total_gold} گرم\n"
+                    f"طلاسی: {request_id}"
+                ),
+            )
+        except Exception as e:
+            print(f"⚠️ خطا در لاگ: {e}")
+
+        # =========================================================
+        # 19. Response
+        # =========================================================
 
         return success_response(
-            message="سفارش با موفقیت ثبت شد",
-            status_code=201,
+            message="سفارش فیزیکی با موفقیت ثبت شد.",
+
             data={
                 "order_id": order.id,
-                "tracking_code": order.tracking_code,
+                "tracking_code": tracking_code,
+                "request_id": request_id,
                 "status": order.status,
                 "status_display": order.get_status_display(),
-                # ⏱ تاریخ و ساعت اضافه شد
                 "created_at": order.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+
+                # قیمت
+                "gold_price": int(gold_price),
+                "gold_price_display": f"{gold_price:,.0f}",
+                "talasea_gold_price": str(talasea_gold_price),
+
+                # وزن
                 "total_gold": float(total_gold),
-                "total_price": int(total_toman),
+                "total_gold_display": f"{total_gold:,.3f} گرم",
+                "talasea_volume": int(talasea_volume_total),
+
+                # مبلغ
+                "total_toman": int(total_toman),
+                "total_toman_display": f"{total_toman:,.0f}",
+
+                # Talasea
+                "talasea": {
+                    "type": "bulk_receive",
+                    "delivery_type": talasea_delivery_type,
+                    "requestId": talasea_result.get("requestId", request_id),
+                    "requestIds": talasea_result.get("requestIds"),
+                    "message": talasea_result.get("message"),
+                },
+
+                # فاکتور
+                "invoice": {
+                    "id": invoice.id if invoice else None,
+                    "invoice_number": invoice.invoice_number if invoice else None,
+                } if invoice else None,
+
+                # کیف پول
                 "wallet": {
                     "accessible_toman": float(wallet.accessible_toman),
                     "blocked_toman": float(wallet.blocked_toman),
                     "toman_total": float(wallet.toman_total),
                 },
+
+                # موجودی طلا
                 "gold_inventory": {
                     "accessible_balance": float(inventory.accessible_balance),
                     "blocked_balance": float(inventory.blocked_balance),
                     "total_balance": float(inventory.total_balance),
                 },
             },
-        )
 
+            status_code=201,
+        )
+# =========================================================
+# PHYSICAL ORDER — بدون آدرس (فقط محاسبه)
+# =========================================================
 
 class PhysicalOrderNoAddressAPIView(APIView):
+    """
+    محاسبه قیمت سفارش فیزیکی بدون آدرس
+    (برای پیش‌نمایش قبل از ثبت نهایی)
+    """
 
     permission_classes = [IsAuthenticated]
 
-    @transaction.atomic
     def post(self, request):
 
-        serializer = PhysicalOrderSerializer(data=request.data)
+        serializer = PhysicalOrderNoAddressSerializer(data=request.data)
 
         if not serializer.is_valid():
             return error_response(
                 message="خطا در داده‌های ارسالی",
-                data=serializer.errors
+                data=serializer.errors,
+                status_code=400,
             )
 
-        user = request.user
+        validated = serializer.validated_data
+        products_data = validated["products"]
+        payment_method = validated["payment_method"]
 
-        products_data = serializer.validated_data["products"]
-        payment_method = serializer.validated_data["payment_method"]
+        # دریافت قیمت لحظه‌ای
+        try:
+            talasea = TalaseaClient()
+            talasea_gold_price = Decimal(str(talasea.get_gold_price()))
+        except TalaseaError as exc:
+            return error_response(message=str(exc), status_code=400)
 
-        if payment_method not in ["TOMAN", "GOLD"]:
-            return error_response(message="روش پرداخت نامعتبر است")
-
-        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
-        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=user)
+        gold_price = (talasea_gold_price * Decimal("1000")).quantize(
+            Decimal("1"), rounding=ROUND_DOWN
+        )
 
         total_gold = Decimal("0")
         total_toman = Decimal("0")
-
-        order_items = []
-        locked_products = {}
-
-        # =====================================================
-        # VALIDATE PRODUCTS (با قفل روی موجودی محصول برای جلوگیری از race condition)
-        # =====================================================
+        items_response = []
 
         for item in products_data:
 
-            product = (
-                Product.objects.select_for_update()
-                .filter(id=item["product_id"], is_active=True)
-                .first()
-            )
+            product = Product.objects.filter(
+                id=item["product_id"], is_active=True
+            ).first()
 
             if not product:
                 return error_response(
-                    message=f"محصول {item['product_id']} یافت نشد"
+                    message=f"محصول {item['product_id']} یافت نشد",
+                    status_code=404,
                 )
 
             quantity = int(item["quantity"])
 
-            # -----------------------------------------
-            # اگر یک محصول چند بار در لیست ارسال شده باشد،
-            # موجودی تجمعی چک شود نه فقط تک‌تک
-            # -----------------------------------------
-            already_requested = locked_products.get(product.id, 0)
-            total_requested = already_requested + quantity
-
-            if product.inventory_count < total_requested:
+            if product.inventory_count < quantity:
                 return error_response(
-                    message=f"موجودی {product.name} کافی نیست"
+                    message=f"موجودی «{product.name}» کافی نیست",
+                    status_code=400,
                 )
 
-            locked_products[product.id] = total_requested
+            item_weight = Decimal(str(product.total_weight_with_fees)) * quantity
+            item_toman = (
+                Decimal(str(product.total_weight_with_fees))
+                * gold_price
+                * quantity
+            ).quantize(Decimal("1"))
 
-            item_gold = product.total_weight_with_fees * quantity
-            item_toman = product.buy_price * quantity
-
-            total_gold += item_gold
+            total_gold += item_weight
             total_toman += item_toman
 
-            order_items.append({
-                "product": product,
+            items_response.append({
+                "product_id": product.id,
+                "name": product.name,
                 "quantity": quantity,
-                "price_at_time": product.buy_price,
-                "weight_at_time": product.total_weight_with_fees,
+                "unit_price": int(gold_price),
+                "unit_weight": float(product.total_weight_with_fees),
+                "total_weight": float(item_weight),
+                "total_price": int(item_toman),
             })
 
-        # =====================================================
-        # PAYMENT HANDLING
-        # =====================================================
+        # چک موجودی کاربر
+        wallet = Wallet.objects.filter(user=request.user).first()
+        inventory = GoldInventory.objects.filter(user=request.user).first()
+
+        wallet_ok = True
+        inventory_ok = True
 
         if payment_method == "TOMAN":
-
-            if wallet.accessible_toman < total_toman:
-                return error_response(message="موجودی کیف پول کافی نیست")
-
-            wallet.accessible_toman -= total_toman
-            wallet.blocked_toman += total_toman
-
-            wallet.save(update_fields=["accessible_toman", "blocked_toman"])
-
+            if not wallet or wallet.accessible_toman < total_toman:
+                wallet_ok = False
         elif payment_method == "GOLD":
+            if not inventory or inventory.accessible_balance < total_gold:
+                inventory_ok = False
 
-            if inventory.accessible_balance < total_gold:
-                return error_response(message="موجودی طلا کافی نیست")
+        return success_response(
+            message="پیش‌فاکتور سفارش فیزیکی",
+            data={
+                "gold_price": int(gold_price),
+                "total_gold": float(total_gold),
+                "total_price": int(total_toman),
+                "items": items_response,
+                "can_pay": wallet_ok if payment_method == "TOMAN" else inventory_ok,
+                "wallet": {
+                    "accessible_toman": float(wallet.accessible_toman) if wallet else 0,
+                },
+                "gold_inventory": {
+                    "accessible_balance": float(inventory.accessible_balance) if inventory else 0,
+                },
+            },
+        )
 
-            inventory.accessible_balance -= total_gold
-            inventory.blocked_balance += total_gold
 
+
+# gold_app/views.py
+
+import requests
+from django.http import HttpResponse, Http404
+from django.views import View
+
+
+class TalaseaImageProxyView(View):
+    """
+    پراکسی برای تصاویر طلاسی
+    فرانت از این آدرس می‌گیره، بک‌اند می‌ره از طلاسی می‌گیره
+    """
+    
+    def get(self, request, image_path):
+        # آدرس کامل تصویر در طلاسی
+        talasea_url = f"https://api.talasea.ir/img/app/{image_path}"
+        
+        try:
+            # درخواست از طلاسی
+            response = requests.get(
+                talasea_url,
+                timeout=10,
+                headers={
+                    "User-Agent": "Darine/1.0",
+                },
+            )
+            
+            if response.status_code != 200:
+                raise Http404("تصویر یافت نشد")
+            
+            # برگرداندن تصویر
+            http_response = HttpResponse(
+                response.content,
+                content_type=response.headers.get("Content-Type", "image/jpeg"),
+            )
+            
+            # ✅ کش کردن برای 7 روز
+            http_response["Cache-Control"] = "public, max-age=604800"
+            
+            return http_response
+            
+        except requests.RequestException:
+            raise Http404("خطا در دریافت تصویر")
+# =========================================================
+# PHYSICAL ORDER — لغو
+# =========================================================
+
+class PhysicalOrderCancelAPIView(APIView):
+    """
+    لغو سفارش فیزیکی
+    - سفارش از طلاسی لغو می‌شود
+    - موجودی به کاربر برگردانده می‌شود
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, order_id):
+
+        order = Order.objects.select_for_update().filter(
+            id=order_id, user=request.user
+        ).first()
+
+        if not order:
+            return error_response(message="سفارش یافت نشد", status_code=404)
+
+        if order.status not in ["REQUESTED", "PREPARING"]:
+            return error_response(
+                message="این سفارش در وضعیت فعلی قابل لغو نیست",
+                status_code=400,
+            )
+
+        if not order.talasea_request_id:
+            return error_response(
+                message="شناسه طلاسی یافت نشد",
+                status_code=400,
+            )
+
+        # لغو در طلاسی
+        try:
+            talasea = TalaseaClient()
+            talasea.cancel_receive(order.talasea_request_id)
+        except TalaseaError as exc:
+            return error_response(message=str(exc), status_code=400)
+
+        # برگرداندن موجودی
+        wallet, _ = Wallet.objects.select_for_update().get_or_create(user=request.user)
+        inventory, _ = GoldInventory.objects.select_for_update().get_or_create(user=request.user)
+
+        if order.payment_method == "TOMAN":
+            wallet.accessible_toman += order.total_toman_amount
+            wallet.blocked_toman -= order.total_toman_amount
+            wallet.save(update_fields=["accessible_toman", "blocked_toman"])
+        elif order.payment_method == "GOLD":
+            inventory.accessible_balance += order.total_gold_amount
+            inventory.blocked_balance -= order.total_gold_amount
             inventory.save(update_fields=["accessible_balance", "blocked_balance"])
 
-        # =====================================================
-        # DECREASE PRODUCT INVENTORY
-        # =====================================================
+        # برگرداندن موجودی محصولات
+        for item in order.items.select_related("product"):
+            product = item.product
+            product.inventory_count += item.quantity
+            product.save(update_fields=["inventory_count"])
 
-        # for product_id, requested_qty in locked_products.items():
-        #     Product.objects.filter(id=product_id).update(
-        #         inventory_count=F("inventory_count") - requested_qty
-        #     )
-
-        # =====================================================
-        # CREATE ORDER (NO ADDRESS)
-        # =====================================================
-
-        order = Order.objects.create(
-            user=user,
-            province="",
-            city="",
-            address="",
-            postal_code="",
-            plaque="",
-            unit="",
-            payment_method=payment_method,
-            total_gold_amount=total_gold,
-            total_toman_amount=total_toman,
-            tracking_code=generate_tracking_code("ORD"),
-            status="REQUESTED",
-        )
+        order.status = "CANCELLED"
+        order.save(update_fields=["status", "updated_at"])
 
         OrderStatusHistory.objects.create(
             order=order,
-            status="REQUESTED",
-            description="سفارش ثبت شد"
+            status="CANCELLED",
+            description="سفارش توسط کاربر لغو شد",
         )
-
-        # =====================================================
-        # ORDER ITEMS
-        # =====================================================
-
-        for item in order_items:
-
-            OrderItem.objects.create(
-                order=order,
-                product=item["product"],
-                quantity=item["quantity"],
-                price_at_time=item["price_at_time"],
-                weight_at_time=item["weight_at_time"],
-            )
-
-        # =====================================================
-        # LOG
-        # =====================================================
-
-        create_admin_log(
-            request=request,
-            admin=None,
-            user=user,
-            action_type="ORDER",
-            action="ثبت سفارش فیزیکی",
-            model_name="Order",
-            tracking_code=order.tracking_code,
-            object_id=order.id,
-            description=f"""
-کاربر: {user.mobile}
-
-روش پرداخت:
-{payment_method}
-
-مبلغ تومانی:
-{total_toman:,}
-
-وزن طلا:
-{total_gold}
-
-موجودی قابل برداشت تومان:
-{wallet.accessible_toman:,}
-
-موجودی قابل برداشت طلا:
-{inventory.accessible_balance}
-""",
-        )
-
-        # =====================================================
-        # RESPONSE
-        # =====================================================
 
         return success_response(
-            message="سفارش با موفقیت ثبت شد",
-            status_code=201,
+            message="سفارش با موفقیت لغو شد",
             data={
                 "order_id": order.id,
                 "tracking_code": order.tracking_code,
                 "status": order.status,
-                "status_display": order.get_status_display(),
-                "created_at": order.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-                "total_gold": float(total_gold),
-                "total_price": int(total_toman),
-                "wallet": {
-                    "accessible_toman": float(wallet.accessible_toman),
-                    "blocked_toman": float(wallet.blocked_toman),
-                },
-                "gold_inventory": {
-                    "accessible_balance": float(inventory.accessible_balance),
-                    "blocked_balance": float(inventory.blocked_balance),
-                },
             },
+        )
+
+
+# =========================================================
+# TALASEA HELPERS
+# =========================================================
+
+class TalaseaCityListAPIView(APIView):
+    """دریافت لیست استان‌ها و شهرهای طلاسی"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        province_id = request.GET.get("province_id", 0)
+
+        try:
+            province_id = int(province_id)
+        except (ValueError, TypeError):
+            province_id = 0
+
+        try:
+            talasea = TalaseaClient()
+            cities = talasea.get_cities(province_id)
+        except TalaseaError as exc:
+            return error_response(message=str(exc), status_code=400)
+
+        return success_response(
+            message="لیست شهرها دریافت شد",
+            data=cities,
+        )
+
+
+class TalaseaCommodityListAPIView(APIView):
+    """دریافت لیست کالاهای قابل تحویل فیزیکی از طلاسی"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        try:
+            talasea = TalaseaClient()
+            commodities = talasea.get_commodities()
+        except TalaseaError as exc:
+            return error_response(message=str(exc), status_code=400)
+
+        return success_response(
+            message="لیست کالاها دریافت شد",
+            data=commodities,
+        )
+
+
+class TalaseaReceiveTimeAPIView(APIView):
+    """دریافت زمان‌های قابل انتخاب برای مراجعه حضوری"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        try:
+            talasea = TalaseaClient()
+            times = talasea.get_receive_times()
+        except TalaseaError as exc:
+            return error_response(message=str(exc), status_code=400)
+
+        return success_response(
+            message="زمان‌های دریافت شد",
+            data=times,
+        )
+
+
+class TalaseaCalculateShipmentAPIView(APIView):
+    """محاسبه هزینه ارسال با استفاده از API طلاسی"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+
+        items = request.data.get("items", [])
+        delivery_type = request.data.get("delivery_type", "PHYSICAL_DELIVERY")
+        address_id = request.data.get("address_id")
+
+        if not items:
+            return error_response(
+                message="لیست کالاها الزامی است",
+                status_code=400,
+            )
+
+        try:
+            talasea = TalaseaClient()
+            result = talasea.calculate_shipment_cost(
+                items=items,
+                delivery_type=delivery_type,
+                address_id=address_id,
+            )
+        except TalaseaError as exc:
+            return error_response(message=str(exc), status_code=400)
+
+        return success_response(
+            message="هزینه ارسال محاسبه شد",
+            data=result,
+        )
+
+
+# =========================================================
+# USER ADDRESSES
+# =========================================================
+
+class UserAddressListAPIView(APIView):
+    """لیست آدرس‌های کاربر"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        addresses = UserAddress.objects.filter(user=request.user).order_by("-created_at")
+        serializer = UserAddressSerializer(addresses, many=True)
+
+        return success_response(
+            message="لیست آدرس‌ها دریافت شد",
+            data=serializer.data,
+        )
+
+
+class UserAddressCreateAPIView(APIView):
+    """ایجاد آدرس جدید"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+
+        serializer = UserAddressSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return error_response(
+                message="خطا در داده‌های ارسالی",
+                data=serializer.errors,
+                status_code=400,
+            )
+
+        address = serializer.save(user=request.user)
+
+        return success_response(
+            message="آدرس با موفقیت ثبت شد",
+            status_code=201,
+            data=UserAddressSerializer(address).data,
+        )
+
+
+class UserAddressAPIView(APIView):
+    """دریافت / ویرایش / حذف یک آدرس"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, address_id):
+
+        address = UserAddress.objects.filter(id=address_id, user=request.user).first()
+
+        if not address:
+            return error_response(message="آدرس یافت نشد", status_code=404)
+
+        return success_response(
+            message="آدرس دریافت شد",
+            data=UserAddressSerializer(address).data,
+        )
+
+    def put(self, request, address_id):
+
+        address = UserAddress.objects.filter(id=address_id, user=request.user).first()
+
+        if not address:
+            return error_response(message="آدرس یافت نشد", status_code=404)
+
+        serializer = UserAddressSerializer(address, data=request.data, partial=True)
+
+        if not serializer.is_valid():
+            return error_response(
+                message="خطا در داده‌های ارسالی",
+                data=serializer.errors,
+                status_code=400,
+            )
+
+        serializer.save()
+
+        return success_response(
+            message="آدرس با موفقیت بروزرسانی شد",
+            data=serializer.data,
+        )
+
+    def delete(self, request, address_id):
+
+        address = UserAddress.objects.filter(id=address_id, user=request.user).first()
+
+        if not address:
+            return error_response(message="آدرس یافت نشد", status_code=404)
+
+        address.delete()
+
+        return success_response(message="آدرس حذف شد")
+
+
+# =========================================================
+# ORDER HISTORY
+# =========================================================
+
+class OrderHistoryAPIView(APIView):
+    """لیست سفارش‌های کاربر"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+
+        orders = (
+            Order.objects
+            .filter(user=request.user)
+            .prefetch_related("items__product")
+            .order_by("-created_at")
+        )
+
+        serializer = OrderSerializer(
+            orders,
+            many=True,
+            context={"request": request},
+        )
+
+        return success_response(
+            message="لیست سفارش‌ها دریافت شد",
+            data=serializer.data,
+        )
+
+
+class OrderDetailAPIView(APIView):
+    """جزئیات یک سفارش"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+
+        order = (
+            Order.objects
+            .filter(id=pk, user=request.user)
+            .prefetch_related("items__product")
+            .first()
+        )
+
+        if not order:
+            return error_response(message="سفارش یافت نشد", status_code=404)
+
+        serializer = OrderSerializer(
+            order,
+            context={"request": request},
+        )
+
+        return success_response(
+            message="سفارش دریافت شد",
+            data=serializer.data,
         )
 
 

@@ -360,89 +360,257 @@ class ProductCategory(models.Model):
     
 
 
-class Product(models.Model):
+# class Product(models.Model):
 
+#     DELIVERY_CHOICES = (
+#         ('HOME', 'ارسال به منزل'),
+#         ('IN_PERSON', 'تحویل حضوری'),
+#     )
+
+#     category = models.ForeignKey(
+#         ProductCategory,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         related_name='products'
+#     )
+
+#     name = models.CharField(max_length=255)
+
+#     delivery_type = models.CharField(
+#         max_length=20,
+#         choices=DELIVERY_CHOICES,
+#         default='HOME'
+#     )
+
+#     weight = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=3
+#     )
+
+#     total_weight_with_fees = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=3,
+#         default=0
+#     )
+
+#     buy_price = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=0,
+#         null=True,
+#         blank=True
+#     )
+
+#     sell_price = models.DecimalField(
+#         max_digits=20,
+#         decimal_places=0,
+#         null=True,
+#         blank=True
+#     )
+
+#     inventory_count = models.PositiveIntegerField(default=0)
+
+#     image = models.ImageField(
+#         upload_to='products/',
+#         null=True,
+#         blank=True
+#     )
+
+#     description = models.TextField(
+#         blank=True,
+#         null=True
+#     )
+#     profit_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)  
+#     is_active = models.BooleanField(default=True)
+
+#     created_at = models.DateTimeField(auto_now_add=True)
+
+#     def __str__(self):
+#         return self.name
+
+# gold_app/models.py
+
+from django.db import models
+
+
+class Product(models.Model):
+    
     DELIVERY_CHOICES = (
         ('HOME', 'ارسال به منزل'),
         ('IN_PERSON', 'تحویل حضوری'),
     )
-
+    
     category = models.ForeignKey(
-        ProductCategory,
+        'ProductCategory',
         on_delete=models.SET_NULL,
         null=True,
         related_name='products'
     )
-
+    
     name = models.CharField(max_length=255)
-
+    
     delivery_type = models.CharField(
         max_length=20,
         choices=DELIVERY_CHOICES,
         default='HOME'
     )
-
+    
     weight = models.DecimalField(
         max_digits=20,
         decimal_places=3
     )
-
+    
     total_weight_with_fees = models.DecimalField(
         max_digits=20,
         decimal_places=3,
         default=0
     )
+    talasea_image_url = models.URLField(
+        max_length=500,
+        blank=True,
+        null=True,
+        verbose_name="URL تصویر طلاسی",
+    )
+    talasea_irt_price = models.DecimalField(
+        max_digits=20,
+        decimal_places=0,
+        null=True,
+        blank=True,
+        verbose_name="قیمت لحظه‌ای طلاسی (تومان)",
+    )
 
+    talasea_last_price_update = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="آخرین بروزرسانی قیمت طلاسی",
+    )
     buy_price = models.DecimalField(
         max_digits=20,
         decimal_places=0,
         null=True,
         blank=True
     )
-
+    
     sell_price = models.DecimalField(
         max_digits=20,
         decimal_places=0,
         null=True,
         blank=True
     )
-
+    
     inventory_count = models.PositiveIntegerField(default=0)
-
+    
     image = models.ImageField(
         upload_to='products/',
         null=True,
         blank=True
     )
-
+    
     description = models.TextField(
         blank=True,
         null=True
     )
-    profit_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)  
+    
+    profit_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0
+    )
+    
     is_active = models.BooleanField(default=True)
-
+    
+    # =========================================================
+    # ✅ فیلدهای جدید برای اتصال به طلاسی
+    # =========================================================
+    
+    talasea_commodity_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name="شناسه کالا در طلاسی",
+        help_text="commodityId دریافتی از سرویس /partners/commodity طلاسی"
+    )
+    
+    talasea_category = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name="دسته‌بندی طلاسی",
+        help_text="مثلاً gold_BAR"
+    )
+    
+    talasea_last_sync = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="آخرین همگام‌سازی با طلاسی"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
-
+    
     def __str__(self):
         return self.name
-
-
 
 
 # =========================================================
 # ORDERS
 # =========================================================
 
+# class Order(models.Model):
+#     PAYMENT_CHOICES = (
+#         ("GOLD", "طلا"),
+#         ("TOMAN", "کیف پول"),
+#     )
+#     DELIVERY_CHOICES = (
+#         ("HOME", "ارسال"),
+#         ("IN_PERSON", "حضوری"),
+#     )
+#     STATUS_CHOICES = (
+#         ("REQUESTED", "درخواست سفارش"),
+#         ("PREPARING", "در حال آماده‌سازی"),
+#         ("DELIVERING", "در حال تحویل"),
+#         ("DELIVERED", "تحویل داده شد"),
+#         ("CANCELLED", "لغو شده"),
+#     )
+
+#     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+#     province = models.CharField(max_length=100)
+#     city = models.CharField(max_length=100)
+#     address = models.TextField()
+#     postal_code = models.CharField(max_length=20, blank=True, null=True)
+#     plaque = models.CharField(max_length=20, blank=True, null=True)
+#     unit = models.CharField(max_length=20, blank=True, null=True)
+#     payment_method = models.CharField(max_length=20, choices=PAYMENT_CHOICES)
+#     delivery_type = models.CharField(max_length=20, choices=DELIVERY_CHOICES)
+#     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="REQUESTED")
+#     total_gold_amount = models.DecimalField(max_digits=20, decimal_places=3)
+#     total_toman_amount = models.DecimalField(max_digits=20, decimal_places=0)
+#     tracking_code = models.CharField(max_length=100, unique=True)
+#     admin_note = models.TextField(blank=True, null=True)
+#     description = models.TextField(blank=True, null=True)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
+
+#     def __str__(self):
+#         return self.tracking_code
+    
+    
+# gold_app/models.py
+
+from django.db import models
+from django.conf import settings
+
+
 class Order(models.Model):
+    
     PAYMENT_CHOICES = (
         ("GOLD", "طلا"),
         ("TOMAN", "کیف پول"),
     )
+    
     DELIVERY_CHOICES = (
         ("HOME", "ارسال"),
         ("IN_PERSON", "حضوری"),
     )
+    
     STATUS_CHOICES = (
         ("REQUESTED", "درخواست سفارش"),
         ("PREPARING", "در حال آماده‌سازی"),
@@ -450,30 +618,117 @@ class Order(models.Model):
         ("DELIVERED", "تحویل داده شد"),
         ("CANCELLED", "لغو شده"),
     )
-
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    province = models.CharField(max_length=100)
-    city = models.CharField(max_length=100)
-    address = models.TextField()
+    
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE
+    )
+    
+    province = models.CharField(max_length=100, blank=True, default="")
+    city = models.CharField(max_length=100, blank=True, default="")
+    address = models.TextField(blank=True, default="")
     postal_code = models.CharField(max_length=20, blank=True, null=True)
     plaque = models.CharField(max_length=20, blank=True, null=True)
     unit = models.CharField(max_length=20, blank=True, null=True)
-    payment_method = models.CharField(max_length=20, choices=PAYMENT_CHOICES)
-    delivery_type = models.CharField(max_length=20, choices=DELIVERY_CHOICES)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="REQUESTED")
+    
+    payment_method = models.CharField(
+        max_length=20,
+        choices=PAYMENT_CHOICES
+    )
+    
+    delivery_type = models.CharField(
+        max_length=20,
+        choices=DELIVERY_CHOICES,
+        default="HOME"
+    )
+    
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="REQUESTED"
+    )
+    
     total_gold_amount = models.DecimalField(max_digits=20, decimal_places=3)
     total_toman_amount = models.DecimalField(max_digits=20, decimal_places=0)
+    
     tracking_code = models.CharField(max_length=100, unique=True)
+    
     admin_note = models.TextField(blank=True, null=True)
     description = models.TextField(blank=True, null=True)
+    
+    # =========================================================
+    # ✅ فیلدهای جدید برای اتصال به طلاسی
+    # =========================================================
+    
+    talasea_request_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name="شناسه درخواست طلاسی"
+    )
+    
+    talasea_response = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="پاسخ کامل طلاسی"
+    )
+    
+    national_code = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        verbose_name="کد ملی"
+    )
+    
+    user_phone_number = models.CharField(
+        max_length=15,
+        blank=True,
+        null=True,
+        verbose_name="شماره تلفن کاربر"
+    )
+    
+    talasea_delivery_type = models.CharField(
+        max_length=30,
+        blank=True,
+        null=True,
+        choices=[
+            ('PHYSICAL_DELIVERY', 'ارسال با پست'),
+            ('DIGIEXPRESS_DELIVERY', 'ارسال با دیجی‌اکسپرس'),
+        ],
+        verbose_name="نوع تحویل طلاسی"
+    )
+    
+    latitude = models.DecimalField(
+        max_digits=10,
+        decimal_places=7,
+        null=True,
+        blank=True,
+        verbose_name="عرض جغرافیایی"
+    )
+    
+    longitude = models.DecimalField(
+        max_digits=10,
+        decimal_places=7,
+        null=True,
+        blank=True,
+        verbose_name="طول جغرافیایی"
+    )
+    
+    talasea_city_id = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="شناسه شهر طلاسی"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
+    
     def __str__(self):
         return self.tracking_code
-    
-    
-    
+
+
+
+  
 # =========================================================
 # STATUS HISTORIES
 # =========================================================
